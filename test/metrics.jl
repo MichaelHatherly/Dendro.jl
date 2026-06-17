@@ -34,6 +34,33 @@
     @test Dendro.cyclomatic(u.node, prof, src) == 9
 end
 
+@testset "nested functions do not inflate the enclosing unit (julia)" begin
+    p = Dendro.parser_for(:julia)
+    prof = Dendro.PROFILES[:julia]
+
+    # `outer` owns one `for`; the closure's `if` and `&&` belong to the closure.
+    src = """
+    function outer(xs)
+        for x in xs
+            g = function (y)
+                if y > 0 && y < 10
+                    return y
+                end
+            end
+        end
+        return xs
+    end
+    """
+    units = Dendro.functions(parse(p, src), prof)
+    outer = units[findfirst(u -> u.firstline == 1, units)]
+    inner = units[findfirst(u -> u.firstline != 1, units)]
+
+    @test Dendro.cyclomatic(outer.node, prof, src) == 2   # base + for
+    @test Dendro.nesting_depth(outer.node, prof) == 1      # the for only
+    @test Dendro.cyclomatic(inner.node, prof, src) == 3   # base + if + &&
+    @test Dendro.nesting_depth(inner.node, prof) == 1      # the if only
+end
+
 @testset "function_length (julia)" begin
     p = Dendro.parser_for(:julia)
     prof = Dendro.PROFILES[:julia]

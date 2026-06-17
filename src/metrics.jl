@@ -25,6 +25,19 @@ end
 # Metric names carried in baselines and findings, in report order.
 const SCALAR_METRICS = (:cyclomatic, :function_length, :nesting_depth, :parameter_count)
 
+# Depth-first over `node`'s own subtree, calling `f(n, enter)` on enter and exit
+# like `TreeSitter.traverse`, but never descending into a nested callable: each
+# is reported as its own unit, so its complexity stays out of the enclosing one.
+function traverse_unit(f, node::TreeSitter.Node, profile::LanguageProfile)
+    f(node, true)
+    for c in TreeSitter.children(node)
+        TreeSitter.node_type(c) in profile.function_types && continue
+        traverse_unit(f, c, profile)
+    end
+    f(node, false)
+    return nothing
+end
+
 """
     unit_metrics(unit, profile, source) -> NamedTuple
 
@@ -73,7 +86,7 @@ Maximum depth of nested control constructs (`profile.nesting_types`) within
 function nesting_depth(node::TreeSitter.Node, profile::LanguageProfile)
     maxdepth = 0
     depth = 0
-    TreeSitter.traverse(node) do n, enter
+    traverse_unit(node, profile) do n, enter
         if TreeSitter.is_named(n) && TreeSitter.node_type(n) in profile.nesting_types
             if enter
                 depth += 1
@@ -97,7 +110,7 @@ operators (`&&`, `||`), which each add an independent path.
 function cyclomatic(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
     count = 1
     has_ops = !isempty(profile.short_circuit_ops)
-    TreeSitter.traverse(node) do n, enter
+    traverse_unit(node, profile) do n, enter
         if enter
             if TreeSitter.is_named(n) && TreeSitter.node_type(n) in profile.decision_types
                 count += 1
