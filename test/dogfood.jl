@@ -12,7 +12,7 @@
     # No genuine complexity smell. parameter_count is excluded: the
     # LanguageProfile keyword constructor takes one argument per field by design.
     smells = filter(findings) do f
-        f.absolute == :high && f.metric in (:cyclomatic, :nesting_depth, :function_length, :boolean_complexity)
+        f.absolute == :high && f.metric in (:cyclomatic, :cognitive_complexity, :nesting_depth, :function_length, :boolean_complexity)
     end
     @test isempty(smells)
 

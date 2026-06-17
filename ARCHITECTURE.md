@@ -73,8 +73,9 @@ Measurement:
   and `functions(tree, profile)`, which collects every node whose type the profile
   marks as a function.
 - `metrics.jl` defines the scalar metrics and `severity`: `cyclomatic`,
-  `function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
-  `return_count`. `severity` classifies a value against a `(warn, high)` band.
+  `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
+  `boolean_complexity`, `return_count`. `severity` classifies a value against a
+  `(warn, high)` band.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`, plus
   the helpers for reading a body's real-work count.

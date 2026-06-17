@@ -27,6 +27,7 @@ end
 # its own median. Drawn from common complexity guidance.
 const BUILTIN_RULES = Rule[
     Rule(:cyclomatic,         :scalar, (11, 21),  (u, p, s) -> cyclomatic(u.node, p, s)),
+    Rule(:cognitive_complexity, :scalar, (15, 25), (u, p, s) -> cognitive_complexity(u.node, p, s)),
     Rule(:function_length,    :scalar, (50, 100), (u, p, s) -> function_length(u)),
     Rule(:nesting_depth,      :scalar, (4, 6),    (u, p, s) -> nesting_depth(u.node, p)),
     Rule(:parameter_count,    :scalar, (5, 8),    (u, p, s) -> parameter_count(u.node, p)),

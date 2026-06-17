@@ -24,6 +24,16 @@ function coalesce_lines(lines::Vector{Int})
     return ranges
 end
 
+# Effect of one diff body line, read from its prefix char: whether it is an added
+# line, and the step to the new-side cursor and the remaining old/new hunk counts. A
+# `\` line ("\ No newline at end of file") is not content and moves nothing.
+function body_line_effect(c::Char)
+    c == '+' && return (added = true, cur = 1, old = 0, new = -1)
+    c == '-' && return (added = false, cur = 0, old = -1, new = 0)
+    c == '\\' && return (added = false, cur = 0, old = 0, new = 0)
+    return (added = false, cur = 1, old = -1, new = -1)
+end
+
 """
     changed_ranges(diff) -> Dict{String,Vector{UnitRange{Int}}}
 
@@ -47,20 +57,11 @@ function changed_ranges(diff::AbstractString)
             oldleft = m.captures[1] === nothing ? 1 : parse(Int, m.captures[1])
             newleft = m.captures[3] === nothing ? 1 : parse(Int, m.captures[3])
         elseif oldleft > 0 || newleft > 0
-            c = isempty(ln) ? ' ' : ln[1]
-            if c == '+'
-                push!(get!(() -> Int[], added, file), curnew)
-                curnew += 1
-                newleft -= 1
-            elseif c == '-'
-                oldleft -= 1
-            elseif c == '\\'
-                # "\ No newline at end of file": not a content line.
-            else
-                curnew += 1
-                oldleft -= 1
-                newleft -= 1
-            end
+            e = body_line_effect(isempty(ln) ? ' ' : ln[1])
+            e.added && push!(get!(() -> Int[], added, file), curnew)
+            curnew += e.cur
+            oldleft += e.old
+            newleft += e.new
         elseif startswith(ln, "+++ ")
             path = ln[5:end]
             file = startswith(path, "b/") ? path[3:end] : path

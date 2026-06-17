@@ -113,15 +113,21 @@ function return_count(node::TreeSitter.Node, profile::LanguageProfile)
     return count
 end
 
-# True when `node` has a direct child that is a short-circuit operator leaf, so it
-# is the root of one `&&`/`||` link in a boolean expression.
-function has_op_child(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+# The short-circuit operator joining `node`'s direct children, or `nothing`. A
+# boolean expression node carries its operator as a leaf child; this returns its text.
+function op_child_text(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
     for c in TreeSitter.children(node)
         TreeSitter.is_leaf(c) || continue
-        strip(TreeSitter.slice(source, c)) in profile.short_circuit_ops && return true
+        text = strip(TreeSitter.slice(source, c))
+        text in profile.short_circuit_ops && return String(text)
     end
-    return false
+    return nothing
 end
+
+# True when `node` has a direct child that is a short-circuit operator leaf, so it
+# is the root of one `&&`/`||` link in a boolean expression.
+has_op_child(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString) =
+    op_child_text(node, profile, source) !== nothing
 
 # Number of operator nodes in `node`'s subtree, the size of one connected boolean
 # expression once `node` is its top.
@@ -157,4 +163,51 @@ function boolean_complexity(node::TreeSitter.Node, profile::LanguageProfile, sou
         nothing
     end
     return best
+end
+
+# Number of maximal same-operator runs of short-circuit operators in the unit. A run
+# is an unbroken chain of one operator; `a && b && c` is one run, `a && b || c` two.
+function boolean_runs(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+    isempty(profile.short_circuit_ops) && return 0
+    runs = 0
+    stack = String[]
+    traverse_unit(node, profile) do n, enter
+        op = op_child_text(n, profile, source)
+        if op !== nothing
+            if enter
+                (isempty(stack) || stack[end] != op) && (runs += 1)
+                push!(stack, op)
+            else
+                pop!(stack)
+            end
+        end
+        nothing
+    end
+    return runs
+end
+
+"""
+    cognitive_complexity(node, profile, source) -> Int
+
+A structural reading of how hard a function is to follow, after SonarSource's
+Cognitive Complexity. Each decision point (`profile.decision_types`) adds one plus
+the nesting (`profile.nesting_types`) it sits under, so a branch three levels deep
+costs more than a flat one of the same cyclomatic count. Each maximal run of one
+short-circuit operator adds one; an operator change starts a new run.
+"""
+function cognitive_complexity(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+    score = 0
+    nesting = 0
+    traverse_unit(node, profile) do n, enter
+        TreeSitter.is_named(n) || return nothing
+        t = TreeSitter.node_type(n)
+        if enter
+            t in profile.decision_types && (score += 1 + nesting)
+            t in profile.nesting_types && (nesting += 1)
+        else
+            t in profile.nesting_types && (nesting -= 1)
+        end
+        nothing
+    end
+    return score + boolean_runs(node, profile, source)
 end

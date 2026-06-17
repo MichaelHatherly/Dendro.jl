@@ -135,6 +135,78 @@ end
     @test Dendro.return_count(outer.node, prof) == 1
 end
 
+@testset "cognitive_complexity (julia)" begin
+    p, prof = fixture(:julia)
+
+    # Straight-line code breaks the flow nowhere, so it scores 0.
+    simple = "function f(x)\n    x + 1\nend\n"
+    u = only(Dendro.functions(parse(p, simple), prof))
+    @test Dendro.cognitive_complexity(u.node, prof, simple) == 0
+
+    # Nesting is the penalty cyclomatic misses. Three ifs nested three deep cost
+    # 1 + 2 + 3 = 6: each decision adds one plus the levels it sits under.
+    nested = """
+    function f(x)
+        if x > 0
+            if x > 1
+                if x > 2
+                    g()
+                end
+            end
+        end
+    end
+    """
+    u = only(Dendro.functions(parse(p, nested), prof))
+    @test Dendro.cognitive_complexity(u.node, prof, nested) == 6
+
+    # A boolean run adds one however long it is; an operator change starts a new
+    # run. `a && b && c` is one run (if + 1 = 2); `a && b || c` is two (if + 2 = 3).
+    onerun = "function f(a, b, c)\n    if a && b && c\n        g()\n    end\nend\n"
+    u = only(Dendro.functions(parse(p, onerun), prof))
+    @test Dendro.cognitive_complexity(u.node, prof, onerun) == 2
+
+    tworun = "function f(a, b, c)\n    if a && b || c\n        g()\n    end\nend\n"
+    u = only(Dendro.functions(parse(p, tworun), prof))
+    @test Dendro.cognitive_complexity(u.node, prof, tworun) == 3
+
+    # A loop, a nested if, and a catch each add one plus their nesting: for (1),
+    # if under the loop (2), catch under try (2), for 5.
+    mixed = """
+    function f(xs)
+        for x in xs
+            if x > 0
+                g(x)
+            end
+        end
+        try
+            h()
+        catch e
+            r()
+        end
+    end
+    """
+    u = only(Dendro.functions(parse(p, mixed), prof))
+    @test Dendro.cognitive_complexity(u.node, prof, mixed) == 5
+
+    # A nested function carries its own complexity, not the enclosing unit's.
+    closure = """
+    function outer(xs)
+        g = function (y)
+            if y > 0 && y < 10
+                return y
+            end
+        end
+        for x in xs
+            g(x)
+        end
+    end
+    """
+    units = Dendro.functions(parse(p, closure), prof)
+    outer = units[findfirst(u -> u.firstline == 1, units)]
+    # outer owns one for (1); the closure's if and && belong to the closure.
+    @test Dendro.cognitive_complexity(outer.node, prof, closure) == 1
+end
+
 @testset "absolute severity bands" begin
     # Classification against a (warn, high) band.
     @test Dendro.severity(10, (11, 21)) == :ok
@@ -144,6 +216,7 @@ end
     # The built-in bands the classification runs against.
     band(name) = only(r.band for r in Dendro.BUILTIN_RULES if r.name == name)
     @test band(:cyclomatic) == (11, 21)
+    @test band(:cognitive_complexity) == (15, 25)
     @test band(:nesting_depth) == (4, 6)
     @test band(:parameter_count) == (5, 8)
     @test band(:function_length) == (50, 100)

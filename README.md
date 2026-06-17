@@ -87,7 +87,9 @@ calls a uniformly-weak codebase fine. Reporting both avoids each trap.
 
 ## Metrics
 
-Scalar (per function): cyclomatic complexity, length, maximum nesting depth,
+Scalar (per function): cyclomatic complexity, cognitive complexity (the same branch
+points weighted by the nesting they sit under, so a deeply-nested function scores
+worse than a flat one of the same path count), length, maximum nesting depth,
 parameter count, boolean complexity (the most `&&`/`||` operators joined into one
 expression).
 
@@ -163,8 +165,9 @@ end
 ```
 
 Metric names are the active rules' names plus the relational `duplicate` and
-`near_duplicate`: by default `cyclomatic`, `function_length`, `nesting_depth`,
-`parameter_count`, `boolean_complexity`, `empty_catch`, `stub_marker`,
+`near_duplicate`: by default `cyclomatic`, `cognitive_complexity`,
+`function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
+`empty_catch`, `stub_marker`,
 `empty_body`, `return_in_finally`, `duplicate`, `near_duplicate`. A custom rule's
 name is accepted too. An unknown name warns, so a typo does not silently disable a
 check.
