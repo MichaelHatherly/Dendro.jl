@@ -38,51 +38,73 @@ end
 line_of(node) = Int(TreeSitter.start_point(node).row) + 1
 
 """
-    findings_for_tree(tree, profile, source, file; baseline, cut, within) -> Vector{Finding}
+    Scan
+
+The fixed context for analysing one file: its `profile`, `source`, and `file`
+path, the optional `baseline` and `cut` percentile for relative scoring, and the
+optional `within` line ranges that restrict findings to a diff.
+"""
+struct Scan
+    profile::LanguageProfile
+    source::String
+    file::String
+    baseline::Union{Baseline,Nothing}
+    cut::Float64
+    within::Union{Vector{UnitRange{Int}},Nothing}
+end
+
+Scan(profile, source, file; baseline = nothing, cut = 0.95, within = nothing) =
+    Scan(profile, String(source), String(file), baseline, Float64(cut), within)
+
+# Whether a line span (or single line) is reported, given the scan's diff scope.
+in_scope(scan::Scan, a::Int, b::Int) = scan.within === nothing || intersects(scan.within, a, b)
+in_scope(scan::Scan, line::Int) = scan.within === nothing || inrange(scan.within, line)
+
+# Scalar and empty-body findings for one function unit.
+function unit_findings!(out, scan::Scan, unit::FunctionUnit)
+    name = unit_name(unit, scan.profile, scan.source)
+    metrics = unit_metrics(unit, scan.profile, scan.source)
+    for metric in SCALAR_METRICS
+        value = getfield(metrics, metric)
+        band = severity(metric, value)
+        pct = scan.baseline === nothing ? nothing :
+              percentile(scan.baseline, scan.profile.name, metric, value)
+        outlier = pct !== nothing && pct >= scan.cut
+        if band != :ok || outlier
+            push!(out, Finding(scan.file, unit.firstline, name, metric, value, band, pct, :scalar))
+        end
+    end
+    if empty_body(unit.node, scan.profile)
+        push!(out, Finding(scan.file, unit.firstline, name, :empty_body, nothing, :high, nothing, :flag))
+    end
+    return out
+end
+
+# Flag findings for a set of nodes, all reported with the same metric.
+function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
+    for node in nodes
+        line = line_of(node)
+        in_scope(scan, line) && push!(out, Finding(scan.file, line, "", metric, nothing, :high, nothing, :flag))
+    end
+    return out
+end
+
+"""
+    findings_for_tree(tree, scan) -> Vector{Finding}
 
 Collect findings for an already-parsed `tree`. Scalar metrics fire when they
-breach their absolute band or, given a `baseline`, land at or above the `cut`
-percentile. Flag metrics fire on presence. When `within` is a vector of line
-ranges, only units overlapping a range and flags on a line in a range report,
-the diff-scoped mode.
+breach their absolute band or, given a baseline, land at or above the cut
+percentile. Flag metrics fire on presence. A diff-scoped `scan` reports only
+units overlapping a changed range and flags on a changed line.
 """
-function findings_for_tree(
-    tree,
-    profile::LanguageProfile,
-    source::AbstractString,
-    file::AbstractString;
-    baseline::Union{Baseline,Nothing} = nothing,
-    cut::Real = 0.95,
-    within::Union{Vector{UnitRange{Int}},Nothing} = nothing,
-)
-    lang = profile.name
+function findings_for_tree(tree, scan::Scan)
     out = Finding[]
-    for unit in functions(tree, profile)
-        within !== nothing && !intersects(within, unit.firstline, unit.lastline) && continue
-        name = unit_name(unit, profile, source)
-        metrics = unit_metrics(unit, profile, source)
-        for metric in SCALAR_METRICS
-            value = getfield(metrics, metric)
-            band = severity(metric, value)
-            pct = baseline === nothing ? nothing : percentile(baseline, lang, metric, value)
-            if band != :ok || (pct !== nothing && pct >= cut)
-                push!(out, Finding(file, unit.firstline, name, metric, value, band, pct, :scalar))
-            end
-        end
-        if empty_body(unit.node, profile)
-            push!(out, Finding(file, unit.firstline, name, :empty_body, nothing, :high, nothing, :flag))
-        end
+    for unit in functions(tree, scan.profile)
+        in_scope(scan, unit.firstline, unit.lastline) || continue
+        unit_findings!(out, scan, unit)
     end
-    for node in empty_catches(tree, profile)
-        line = line_of(node)
-        within !== nothing && !inrange(within, line) && continue
-        push!(out, Finding(file, line, "", :empty_catch, nothing, :high, nothing, :flag))
-    end
-    for node in stub_markers(tree, profile, source)
-        line = line_of(node)
-        within !== nothing && !inrange(within, line) && continue
-        push!(out, Finding(file, line, "", :stub_marker, nothing, :high, nothing, :flag))
-    end
+    flag_findings!(out, scan, empty_catches(tree, scan.profile), :empty_catch)
+    flag_findings!(out, scan, stub_markers(tree, scan.profile, scan.source), :stub_marker)
     return out
 end
 
@@ -100,7 +122,7 @@ function analyze(path::AbstractString; language = nothing, baseline = nothing, c
     profile = PROFILES[lang]
     source = read(path, String)
     tree = parse(parser_for(lang), source)
-    return findings_for_tree(tree, profile, source, path; baseline = baseline, cut = cut)
+    return findings_for_tree(tree, Scan(profile, source, path; baseline = baseline, cut = cut))
 end
 
 """
