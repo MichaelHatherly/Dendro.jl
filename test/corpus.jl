@@ -1,25 +1,3 @@
-@testset "structural_digest tolerates renames and literals" begin
-    p, prof = fixture(:julia)
-    a = "function f(x)\n    y = x + 1\n    return y * 2\nend\n"
-    b = "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n"
-    c = "function h(x)\n    while x > 0\n        x -= 1\n    end\nend\n"
-    da, _ = Dendro.structural_digest(only(Dendro.functions(parse(p, a), prof)), prof)
-    db, _ = Dendro.structural_digest(only(Dendro.functions(parse(p, b), prof)), prof)
-    dc, _ = Dendro.structural_digest(only(Dendro.functions(parse(p, c), prof)), prof)
-    @test da == db
-    @test da != dc
-end
-
-@testset "structural_digest excludes nested functions" begin
-    p, prof = fixture(:julia)
-    plain = "function f(x)\n    y = x + 1\n    return y\nend\n"
-    nested = "function f(x)\n    function helper()\n        0\n    end\n    y = x + 1\n    return y\nend\n"
-    # The outer unit is the first one traversal yields.
-    dp, _ = Dendro.structural_digest(first(Dendro.functions(parse(p, plain), prof)), prof)
-    dn, _ = Dendro.structural_digest(first(Dendro.functions(parse(p, nested), prof)), prof)
-    @test dp == dn
-end
-
 duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :duplicate, findings))
 
 @testset "analyze clusters duplicates across files" begin
@@ -80,7 +58,7 @@ end
         write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\nfunction f2(x)\n    y = x + 1\n    return y * 2\nend\n")
         write(joinpath(dir, "a.py"), "def f(x):\n    y = x + 1\n    return y * 2\ndef f2(x):\n    y = x + 1\n    return y * 2\n")
 
-        # Each language has its own duplicate pair; the (language, digest) key keeps
+        # Each language has its own duplicate pair; the (language, hash) key keeps
         # them from merging into one cross-language cluster.
         findings = duplicates(analyze(dir; min_size = 1))
         @test length(findings) == 2
@@ -179,5 +157,38 @@ end
     mktempdir() do dir
         write(joinpath(dir, "readme.md"), "# heading\n")
         @test analyze(dir) == Dendro.Finding[]
+    end
+end
+
+@testset "analyze detects a duplicated block across functions" begin
+    mktempdir() do dir
+        a = joinpath(dir, "a.jl")
+        b = joinpath(dir, "b.jl")
+        # alpha and beta are not whole-function clones: beta has an extra call and a
+        # different return. Only the while-loop body is shared, an identical block.
+        write(a, "function alpha(x)\n    seen = 0\n    while x > 0\n        seen += x\n        seen *= 2\n        x -= 1\n    end\n    return seen\nend\n")
+        write(b, "function beta(p, q)\n    acc = 1\n    helper(q)\n    while p > 0\n        acc += p\n        acc *= 2\n        p -= 1\n    end\n    return acc + q\nend\n")
+
+        hit = only(duplicates(analyze(dir; min_size = 1)))
+        @test hit.metric == :duplicate
+        @test hit.value == 2
+        @test Set(loc.unit for loc in hit.locations) == Set(["alpha", "beta"])
+        @test sort([loc.file for loc in hit.locations]) == sort([a, b])
+    end
+end
+
+@testset "maximality reports the function, not its blocks" begin
+    mktempdir() do dir
+        # Two renamed-clone functions, each with a nested if-block. The function, its
+        # body, and the if-body all duplicate; only the maximal one, the function, is
+        # reported, so the result is a single finding anchored at line 1.
+        src = "function f(x)\n    if x > 0\n        y = x + 1\n        z = y * 2\n        return z\n    end\n    return 0\nend\n"
+        write(joinpath(dir, "a.jl"), src)
+        write(joinpath(dir, "b.jl"), replace(src, "f(x)" => "g(w)"))
+
+        hits = duplicates(analyze(dir; min_size = 1))
+        @test length(hits) == 1
+        @test first(hits).value == 2
+        @test all(loc.line == 1 for loc in first(hits).locations)
     end
 end

@@ -95,12 +95,16 @@ markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies.
 
 ## Duplicate detection
 
-`analyze` reports duplicates as part of a full analysis: functions duplicated
-across the corpus, including across different files. It hashes each function by
-its node-type sequence, type not text, so functions that differ only in variable
-names or literal values still match (Type-2 clones). It catches the
-copy-paste-then-rename that generated code produces. Each cluster of two or more
-comes back as one `:duplicate` finding whose `locations` list every member:
+`analyze` reports duplicates as part of a full analysis: code duplicated across
+the corpus, including across different files. It hashes each subtree by its
+structure, type not text, so fragments that differ only in variable names or
+literal values still match (Type-2 clones). It catches the copy-paste-then-rename
+that generated code produces. Detection works at two scales from the same
+mechanism: a whole function duplicated, or one block, an `if` or loop body, copied
+between functions that otherwise differ. A maximality filter keeps only the largest
+clone, so a duplicated function is reported once, not again for every block inside
+it. Each cluster of two or more comes back as one `:duplicate` finding whose
+`locations` list every member:
 
 ```
 src/a.jl:10  parse_header  duplicate 3 (high)
@@ -109,7 +113,9 @@ src/a.jl:10  parse_header  duplicate 3 (high)
 ```
 
 `min_size` (default 10 named nodes) gates out trivial functions, so one-line
-getters do not cluster. Pass it lower to widen the net, higher to focus on large
+getters do not cluster. Blocks must clear twice that, since a short block of
+boilerplate coincides across unrelated code while a small whole function is already
+a meaningful unit. Pass `min_size` lower to widen the net, higher to focus on large
 clones.
 
 ### Near-misses

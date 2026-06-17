@@ -1,46 +1,69 @@
-# Near-miss (Type-3) duplicate detection. The exact path in `corpus.jl` clusters
-# functions whose whole node-type sequence hashes the same. This finds functions
-# that are close but not identical, the copy-paste-then-edit shape, by comparing
-# the multiset of their subtree hashes. It stays inside the syntactic bargain: no
-# symbol resolution, just node types and tree shape, always within one language.
+# Duplicate detection over tree-sitter structure. Two functions duplicated across
+# the corpus, or two identical blocks inside different functions, are one question
+# asked at different scales: does this shape appear more than once. Exact clones go
+# through `cluster_duplicates`, near-misses through `cluster_near_duplicates`. Both
+# stay inside the syntactic bargain, no symbol resolution, just node types and tree
+# shape, always within one language.
 
-# Structural hash of every named subtree under a function, as a sorted multiset.
-# Each hash folds a node's type with its children's hashes in order, so identifier
-# names and literal values drop out (Type-2 invariant) while shape is kept. Two
-# near-identical functions share most of these hashes; Dice over the two multisets
-# scores how near. Nested callables are not descended into, matching `traverse_unit`.
-function subtree_hashes(unit::FunctionUnit, profile::LanguageProfile)
-    acc = UInt64[]
-    subtree_hash!(acc, unit.node, profile)
-    sort!(acc)
+# Minimum size, in named nodes, for a subtree to count as a possible clone. Below
+# this a fragment is too small to be a meaningful duplicate: a one-line getter or a
+# lone call is a handful of nodes, a real function or block clears it.
+const DEFAULT_MIN_SIZE = 10
+
+# One named subtree: its structural hash, the node, and its named-node count. The
+# hash folds a node's type with its children's hashes in order, so identifier names
+# and literal values drop out (Type-2 invariant) while shape is kept.
+struct Subtree
+    hash::UInt64
+    node::TreeSitter.Node
+    size::Int
+end
+
+"""
+    subtrees(unit, profile) -> Vector{Subtree}
+
+Every named subtree of a function unit, bottom-up, stopping at nested callables so
+each is its own unit. The last entry is the unit's own node, the whole-function
+subtree.
+"""
+function subtrees(unit::FunctionUnit, profile::LanguageProfile)
+    acc = Subtree[]
+    collect_subtrees!(acc, unit.node, profile)
     return acc
 end
 
-# Push the structural hash of `node` and each named descendant into `acc`,
-# returning `node`'s own hash so a parent can fold it in.
-function subtree_hash!(acc::Vector{UInt64}, node::TreeSitter.Node, profile::LanguageProfile)
+# Push every named subtree of `node` into `acc`, returning `node`'s own so a parent
+# can fold its hash and size in.
+function collect_subtrees!(acc::Vector{Subtree}, node::TreeSitter.Node, profile::LanguageProfile)
     h = hash(TreeSitter.node_type(node))
+    size = 1
     for c in TreeSitter.named_children(node)
         TreeSitter.node_type(c) in profile.function_types && continue
-        h = hash(subtree_hash!(acc, c, profile), h)
+        child = collect_subtrees!(acc, c, profile)
+        h = hash(child.hash, h)
+        size += child.size
     end
-    push!(acc, h)
-    return h
+    s = Subtree(h, node, size)
+    push!(acc, s)
+    return s
 end
 
-# Count of each named node type under a function, the DECKARD characteristic
-# vector. Same named-node set as `subtree_hashes`, so the counts sum to its length.
-function node_histogram(unit::FunctionUnit, profile::LanguageProfile)
+# Count of each named node type in a subtree set, the DECKARD characteristic vector.
+function histogram_of(st::Vector{Subtree})
     hist = Dict{String,Int}()
-    traverse_unit(unit.node, profile) do node, enter
-        if enter && TreeSitter.is_named(node)
-            t = TreeSitter.node_type(node)
-            hist[t] = get(hist, t, 0) + 1
-        end
-        nothing
+    for s in st
+        t = TreeSitter.node_type(s.node)
+        hist[t] = get(hist, t, 0) + 1
     end
     return hist
 end
+
+# Sorted multiset of a function's subtree hashes, the input to Dice.
+subtree_hashes(unit::FunctionUnit, profile::LanguageProfile) =
+    sort!([s.hash for s in subtrees(unit, profile)])
+
+node_histogram(unit::FunctionUnit, profile::LanguageProfile) =
+    histogram_of(subtrees(unit, profile))
 
 """
     dice(a, b) -> Float64
@@ -66,6 +89,81 @@ function dice(a::Vector{UInt64}, b::Vector{UInt64})
         end
     end
     return 2 * inter / total
+end
+
+# The size floor for a subtree to anchor a clone, or `nothing` if it is neither a
+# function nor a block. Blocks must clear twice the function floor: a short block of
+# boilerplate, a couple of counter updates, coincides across unrelated code, while a
+# whole small function is already a meaningful unit. Expressions and lone statements
+# never anchor, so a recurring call shape is not a finding.
+function anchor_floor(node::TreeSitter.Node, profile::LanguageProfile, min_size::Integer)
+    t = TreeSitter.node_type(node)
+    t in profile.function_types && return min_size
+    t in profile.body_types && return 2 * min_size
+    return nothing
+end
+
+"""
+    cluster_duplicates(files; min_size=$DEFAULT_MIN_SIZE) -> Vector{Finding}
+
+Exact clones across the corpus, keyed by language so shapes never collide across
+grammars. Indexes every function- or block-shaped subtree large enough to matter,
+buckets by structural hash, and reports each bucket of two or more as one
+`:duplicate`. Functions clear `min_size` named nodes, blocks twice that. A
+maximality filter keeps only the largest clone, so a duplicated function is reported
+once, not again for every block nested inside it. Suppressed when any member carries
+a `dendro-ignore: duplicate` directive.
+"""
+function cluster_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE)
+    entries = NamedTuple[]
+    buckets = Dict{Tuple{Symbol,UInt64},Vector{Int}}()
+    anchor_at = Dict{Tuple{String,Int,Int},Int}()
+    for f in files
+        for unit in functions(f.tree, f.profile)
+            name = unit_name(unit, f.profile, f.source)
+            for s in subtrees(unit, f.profile)
+                floor = anchor_floor(s.node, f.profile, min_size)
+                (floor === nothing || s.size < floor) && continue
+                line = Int(TreeSitter.start_point(s.node).row) + 1
+                sup = is_suppressed(f.directives, line, :duplicate)
+                push!(entries, (language = f.language, hash = s.hash, node = s.node,
+                                file = f.file, line = line, unit = name, suppressed = sup))
+                idx = length(entries)
+                push!(get!(() -> Int[], buckets, (f.language, s.hash)), idx)
+                anchor_at[(f.file, TreeSitter.byte_range(s.node)...)] = idx
+            end
+        end
+    end
+
+    findings = Finding[]
+    for idxs in values(buckets)
+        length(idxs) < 2 && continue
+        maximal = filter(i -> !subsumed(i, entries, buckets, anchor_at), idxs)
+        length(maximal) < 2 && continue
+        locations = [Location(entries[i].file, entries[i].line, entries[i].unit) for i in maximal]
+        suppressed = any(entries[i].suppressed for i in maximal)
+        push!(findings, Finding(:duplicate, locations, length(locations), :high, nothing, :flag, suppressed))
+    end
+    sort!(findings; by = f -> (-length(f.locations), first(f.locations).file, first(f.locations).line))
+    return findings
+end
+
+# An anchor is subsumed when its nearest enclosing anchor is a clone of at least the
+# same multiplicity: the larger clone already covers it. Multiplicity never rises
+# going up the tree, so the nearest anchor ancestor is the one to check.
+function subsumed(i::Int, entries, buckets, anchor_at)
+    e = entries[i]
+    k = length(buckets[(e.language, e.hash)])
+    p = TreeSitter.parent(e.node)
+    while !TreeSitter.is_null(p)
+        j = get(anchor_at, (e.file, TreeSitter.byte_range(p)...), 0)
+        if j != 0
+            a = entries[j]
+            return length(buckets[(a.language, a.hash)]) >= k
+        end
+        p = TreeSitter.parent(p)
+    end
+    return false
 end
 
 # Default Dice cutoff for a near-miss. Stricter than the GumTree container-match
@@ -154,22 +252,23 @@ function near_miss_edges!(edges, units::Vector{CloneUnit}, idxs::Vector{Int},
     return edges
 end
 
-# Cluster the corpus's functions into near-miss groups, keyed by language so
-# shapes never cross grammars. Returns one `:near_duplicate` finding per cluster,
-# its `value` the weakest pairwise Dice in the cluster as a percent, suppressed
-# when any member carries a `dendro-ignore: near_duplicate` directive.
+# Cluster the corpus's functions into near-miss groups, keyed by language so shapes
+# never cross grammars. Returns one `:near_duplicate` finding per cluster, its
+# `value` the weakest pairwise Dice in the cluster as a percent, suppressed when any
+# member carries a `dendro-ignore: near_duplicate` directive.
 function cluster_near_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE,
                                  threshold::Real = DEFAULT_THRESHOLD,
                                  radius_factor::Real = DEFAULT_RADIUS_FACTOR)
     units = CloneUnit[]
     for f in files
         for unit in functions(f.tree, f.profile)
-            digest, size = structural_digest(unit, f.profile)
-            size < min_size && continue
+            st = subtrees(unit, f.profile)
+            root = st[end]
+            root.size < min_size && continue
             loc = Location(f.file, unit.firstline, unit_name(unit, f.profile, f.source))
             sup = is_suppressed(f.directives, unit.firstline, :near_duplicate)
-            push!(units, CloneUnit(f.language, loc, sup, subtree_hashes(unit, f.profile),
-                                   node_histogram(unit, f.profile), digest, size))
+            hashes = sort!([s.hash for s in st])
+            push!(units, CloneUnit(f.language, loc, sup, hashes, histogram_of(st), root.hash, root.size))
         end
     end
 

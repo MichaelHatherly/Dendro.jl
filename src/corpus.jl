@@ -1,12 +1,8 @@
 # Corpus analysis. The per-file pipeline scores one file; this scores a whole
 # project, building the baseline from the corpus and adding cross-file duplicate
-# detection. Duplicate detection crosses the single-file boundary but stays inside
-# the syntactic bargain, no symbol resolution, just node-type sequences.
-
-# Default minimum unit size, in named nodes, for a function to be considered a
-# possible duplicate. Below this a function is too small to make a meaningful
-# clone, a one-line getter is a handful of nodes; a real function clears it.
-const DEFAULT_MIN_SIZE = 10
+# detection (exact and near, defined in `clones.jl`). Detection crosses the
+# single-file boundary but stays inside the syntactic bargain, no symbol
+# resolution, just node types and tree shape.
 
 # Parse each path once. Each record carries everything the baseline, the per-file
 # scoring pass, and duplicate clustering need, so no file is parsed twice. Files
@@ -40,54 +36,6 @@ function baseline_from(files)
         sort!(samples)
     end
     return baseline
-end
-
-"""
-    structural_digest(unit, profile) -> (UInt64, Int)
-
-Hash a function unit by the enter-order sequence of its named node types,
-hashing the type and never the text, so functions that differ only in identifier
-names or literal values share a digest (Type-2 clones). Nested callables are not
-descended into. Returns the digest and the count of named nodes, the size used to
-gate trivial units.
-"""
-function structural_digest(unit::FunctionUnit, profile::LanguageProfile)
-    h = hash(:dendro_clone)
-    n = 0
-    traverse_unit(unit.node, profile) do node, enter
-        if enter && TreeSitter.is_named(node)
-            h = hash(TreeSitter.node_type(node), h)
-            n += 1
-        end
-        nothing
-    end
-    return h, n
-end
-
-# Cluster the corpus records' functions by structural digest, keyed by language
-# so shapes never collide across languages. Each cluster of two or more above the
-# size gate becomes one `:duplicate` finding, suppressed when any member carries a
-# `dendro-ignore: duplicate` directive.
-function cluster_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE)
-    groups = Dict{Tuple{Symbol,UInt64},Vector{Tuple{Location,Bool}}}()
-    for f in files
-        for unit in functions(f.tree, f.profile)
-            digest, size = structural_digest(unit, f.profile)
-            size < min_size && continue
-            loc = Location(f.file, unit.firstline, unit_name(unit, f.profile, f.source))
-            sup = is_suppressed(f.directives, unit.firstline, :duplicate)
-            push!(get!(() -> Tuple{Location,Bool}[], groups, (f.language, digest)), (loc, sup))
-        end
-    end
-    findings = Finding[]
-    for members in values(groups)
-        length(members) < 2 && continue
-        locations = [loc for (loc, _) in members]
-        suppressed = any(sup for (_, sup) in members)
-        push!(findings, Finding(:duplicate, locations, length(locations), :high, nothing, :flag, suppressed))
-    end
-    sort!(findings; by = f -> (-length(f.locations), first(f.locations).file, first(f.locations).line))
-    return findings
 end
 
 # Keep only cluster findings touching a changed line, the diff-scoped view shared

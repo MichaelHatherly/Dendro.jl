@@ -50,15 +50,17 @@ The diff is the question. Whole-file analysis asks whether code is bad.
 Diff-scoping asks whether an edit made it worse, which is what review actually
 wants to know. That is why `analyze` takes a `base` git ref.
 
-Duplicates are structure, not meaning. Dendro flags functions duplicated across
-the corpus, exact clones and near-misses both. This crosses the single-file
-boundary, but it never resolves a symbol: it compares node-type sequences and tree
-shape, nothing more. Near-miss detection scores subtree overlap with Dice and runs
-a size-banded vector query only to propose candidate pairs. The query is a
-prefilter; Dice is the verdict. Keep that split, and keep clone detection within
-one language. The vector tier earns its dependency by making the prefilter cheap,
-not by deciding anything. The moment clone detection reaches for types or call
-graphs, it has left the bargain.
+Duplicates are structure, not meaning. Dendro flags code duplicated across the
+corpus, exact clones and near-misses both, a whole function or one block copied
+between functions. This crosses the single-file boundary, but it never resolves a
+symbol: it compares subtree hashes and tree shape, nothing more. Exact detection
+indexes every subtree and keeps only the maximal clone, so a duplicated function is
+not also reported as each block inside it. Near-miss detection scores subtree
+overlap with Dice and runs a size-banded vector query only to propose candidate
+pairs. The query is a prefilter; Dice is the verdict. Keep that split, keep clone
+detection within one language, and keep the block size floor above the function
+floor: small blocks of boilerplate coincide and turn into noise. The moment clone
+detection reaches for types or call graphs, it has left the bargain.
 
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never

@@ -33,12 +33,14 @@ against that ref via `changed_ranges` and restricts each file's findings (and th
 duplicate clusters, exact and near, through the shared `scope_clusters`) to the
 touched line ranges. Nothing else branches the flow.
 
-Duplicate detection crosses the single-file boundary in two passes, both syntactic,
-both comparing only structure with no symbol resolution. Exact detection
-(`cluster_duplicates`) hashes each function's whole node-type sequence and emits a
-`:duplicate` `Finding` for every shape shared by two or more functions. Near-miss
-detection (`cluster_near_duplicates`, in `clones.jl`) catches functions that are
-close but not identical, the copy-paste-then-edit, and emits `:near_duplicate`.
+Duplicate detection crosses the single-file boundary in two passes, both in
+`clones.jl`, both syntactic, both comparing only structure with no symbol
+resolution. Exact detection (`cluster_duplicates`) hashes every function- or
+block-shaped subtree and emits a `:duplicate` `Finding` for each shape shared by
+two or more, a whole duplicated function or one block copied between functions,
+keeping only the maximal clone. Near-miss detection (`cluster_near_duplicates`)
+catches functions that are close but not identical, the copy-paste-then-edit, and
+emits `:near_duplicate`.
 
 ## Layers
 
@@ -82,20 +84,21 @@ Reporting:
   annotations. Both share `score_suffix`.
 - `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
   that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
-- `clones.jl` defines near-miss detection: `subtree_hashes` and `node_histogram`
-  (the per-function index), `dice` (multiset similarity), `near_miss_edges!` (the
-  size-banded characteristic-vector prefilter over `NearestNeighbors`, confirmed by
-  Dice), and `cluster_near_duplicates` (union-find over the confirmed pairs into
-  `:near_duplicate` findings). Included before `corpus.jl`, which calls it.
+- `clones.jl` defines both duplicate passes over a shared subtree index. `subtrees`
+  hashes every named subtree of a function bottom-up; `subtree_hashes` and
+  `node_histogram` derive from it. Exact: `anchor_floor` and `cluster_duplicates`
+  bucket function- and block-shaped subtrees by hash, with `subsumed` as the
+  maximality filter. Near-miss: `dice` (multiset similarity), `near_miss_edges!`
+  (the size-banded characteristic-vector prefilter over `NearestNeighbors`,
+  confirmed by Dice), and `cluster_near_duplicates` (union-find over confirmed pairs
+  into `:near_duplicate` findings). Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
   folder for analysable files), `parse_corpus` (parse each path once),
-  `baseline_from`, `structural_digest` and `cluster_duplicates` (the
-  rename-tolerant exact detector, hashing node-type sequences gated by named-node
-  count), `scope_clusters` (the shared diff filter for both duplicate passes), and
-  `analyze` (the public entrypoint, orchestrating corpus, baseline, per-file
-  findings, exact and near duplicates, and optional diff scoping). It is included
-  after `report.jl`, `diff.jl`, and `clones.jl` so everything it calls is defined
-  first.
+  `baseline_from`, `scope_clusters` (the shared diff filter for both duplicate
+  passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
+  per-file findings, exact and near duplicates, and optional diff scoping). It is
+  included after `report.jl`, `diff.jl`, and `clones.jl` so everything it calls is
+  defined first.
 
 ## Core types
 
@@ -107,6 +110,10 @@ the only place a language's concrete grammar leaks in.
 
 `FunctionUnit` (`units.jl`). One callable definition: the node and its line span.
 The granularity at which scalar metrics report.
+
+`Subtree` (`clones.jl`). One named subtree of a function: its structural hash, the
+node, and its named-node count. The unit of duplicate detection, which works below
+the function as well as at it.
 
 `Location` (`report.jl`). A code site: file, 1-based line, and enclosing unit
 name. A `Finding` carries one or more.
@@ -151,17 +158,33 @@ either trips.
 Flag metrics have no distribution. Presence is the finding, always reported at
 `:high`.
 
-## Near-miss detection
+## Duplicate detection
 
-`cluster_near_duplicates` runs four tiers, cheapest first, all at function
-granularity so the `Finding`/`Location` model is unchanged.
+Both passes share one index. `subtrees` walks a function bottom-up and returns a
+`Subtree` (structural hash, node, named-node count) for every named subtree,
+stopping at nested callables. Each hash folds a node's type with its children's
+hashes in order, so renames and literals drop out (Type-2) while shape stays. The
+last entry is the function's own node.
 
-1. Index. `subtree_hashes` folds each named subtree's type with its children's
-   hashes into one structural hash, returning the sorted multiset for a function.
-   Renames and literals drop out; shape stays. `node_histogram` counts named node
-   types, the characteristic vector. Both stop at nested callables, like the exact
-   path.
-2. Exact classes are the existing `cluster_duplicates`, left untouched.
+Exact (`cluster_duplicates`) buckets subtrees by `(language, hash)`. Only
+function- and block-shaped subtrees anchor a finding: `anchor_floor` admits a
+function at `min_size` named nodes and a block at twice that, because a short block
+of boilerplate coincides across unrelated code while a small whole function is
+already a meaningful unit. Expressions and lone statements never anchor. A bucket of
+two or more is a clone class. `subsumed` then drops any anchor whose nearest
+enclosing anchor is a clone of at least the same multiplicity, so a duplicated
+function is reported once, not again for each block inside it. Multiplicity never
+rises going up the tree, so the nearest anchor ancestor is the only one to check.
+This is what makes a whole-function clone and a sub-function block clone the same
+mechanism at different scales.
+
+Near-miss (`cluster_near_duplicates`) compares whole functions and runs four tiers,
+cheapest first, at function granularity so the `Finding`/`Location` model is
+unchanged.
+
+1. Index. The sorted multiset of a function's subtree hashes, plus `node_histogram`,
+   the characteristic vector. Both come from the shared `subtrees` walk.
+2. Exact classes are `cluster_duplicates` above.
 3. Confirm. `dice` scores two multisets as `2|a∩b| / (|a|+|b|)`. A pair clears the
    `threshold` (default 0.85) to count as a near-miss.
 4. Prefilter. Comparing every pair is O(n²). `near_miss_edges!` densifies the
@@ -173,12 +196,11 @@ The radius scales with size, because L1 distance grows with function size. Units
 bin into size bands by `floor(log2(size))`, and each band queries against itself
 and the next band up, so a near-miss whose two functions straddle a power-of-two
 boundary is still proposed. Confirmed pairs feed a union-find into clusters. Pairs
-with equal exact digests are dropped: those are exact clones, already reported by
-tier 2.
+with equal digests are dropped: those are exact clones, already reported by tier 2.
 
-Two reasons this is a separate metric, not a smarter `:duplicate`: the exact path
-is O(n) and must stay that way, and an exact match and a 0.85 match are different
-signals a reviewer reads differently.
+Two reasons near-miss is a separate metric, not a smarter `:duplicate`: the exact
+path stays near-linear, and an exact match and a 0.85 match are different signals a
+reviewer reads differently.
 
 ## Suppression
 
