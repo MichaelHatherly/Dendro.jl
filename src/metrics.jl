@@ -74,7 +74,7 @@ function nesting_depth(node::TreeSitter.Node, profile::LanguageProfile)
     maxdepth = 0
     depth = 0
     TreeSitter.traverse(node) do n, enter
-        if TreeSitter.node_type(n) in profile.nesting_types
+        if TreeSitter.is_named(n) && TreeSitter.node_type(n) in profile.nesting_types
             if enter
                 depth += 1
                 depth > maxdepth && (maxdepth = depth)
@@ -99,7 +99,7 @@ function cyclomatic(node::TreeSitter.Node, profile::LanguageProfile, source::Abs
     has_ops = !isempty(profile.short_circuit_ops)
     TreeSitter.traverse(node) do n, enter
         if enter
-            if TreeSitter.node_type(n) in profile.decision_types
+            if TreeSitter.is_named(n) && TreeSitter.node_type(n) in profile.decision_types
                 count += 1
             elseif has_ops &&
                    TreeSitter.is_leaf(n) &&

@@ -10,4 +10,5 @@ using Dendro, TreeSitter, Test
     include("report.jl")
     include("diff.jl")
     include("python.jl")
+    include("languages.jl")
 end

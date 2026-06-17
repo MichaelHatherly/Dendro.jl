@@ -32,3 +32,33 @@ struct LanguageProfile
     name_types::Set{String}
     trivial_body_types::Set{String}
 end
+
+# Keyword constructor. Sets that a language does not use default to empty, so
+# each profile lists only the node types it actually has.
+function LanguageProfile(
+    name::Symbol;
+    function_types,
+    decision_types,
+    body_types,
+    name_types,
+    short_circuit_ops = String[],
+    nesting_types = String[],
+    parameter_types = String[],
+    catch_types = String[],
+    comment_types = String[],
+    trivial_body_types = String[],
+)
+    return LanguageProfile(
+        name,
+        Set{String}(function_types),
+        Set{String}(decision_types),
+        Set{String}(short_circuit_ops),
+        Set{String}(nesting_types),
+        Set{String}(parameter_types),
+        Set{String}(body_types),
+        Set{String}(catch_types),
+        Set{String}(comment_types),
+        Set{String}(name_types),
+        Set{String}(trivial_body_types),
+    )
+end
