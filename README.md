@@ -103,6 +103,13 @@ operands (`x == x`, `a && a`), and a conditional whose branches are all identica
 Each metric is a [rule](#custom-rules). The set above is the default; a caller can
 add their own or opt into rules that are off by default.
 
+Relational (computed across the corpus, not per function): duplicates (below), and
+naturalness. Naturalness scores each function's token sequence against a per-language
+trigram model of the rest of the corpus, in bits per token. A surprising,
+unidiomatic function scores high, and surprise correlates with bugs. Reported as
+`:unnatural` with both scores, the absolute cross-entropy band and the corpus
+percentile. A language with too few tokens to model is skipped.
+
 ## Duplicate detection
 
 `analyze` reports duplicates as part of a full analysis: code duplicated across
@@ -171,7 +178,8 @@ Metric names are the active rules' names plus the relational `duplicate` and
 `near_duplicate`: by default `cyclomatic`, `cognitive_complexity`,
 `function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
 `empty_catch`, `stub_marker`, `empty_body`, `return_in_finally`,
-`identical_operands`, `duplicate_branches`, `duplicate`, `near_duplicate`. A custom rule's
+`identical_operands`, `duplicate_branches`, `duplicate`, `near_duplicate`,
+`unnatural`. A custom rule's
 name is accepted too. An unknown name warns, so a typo does not silently disable a
 check.
 

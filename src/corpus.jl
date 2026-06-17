@@ -134,5 +134,6 @@ function analyze(path; base = nothing, cut::Real = 0.95,
     append!(findings, scope_clusters(cluster_duplicates(files; min_size), scope))
     append!(findings, scope_clusters(
         cluster_near_duplicates(files; min_size, threshold, radius_factor), scope))
+    append!(findings, scope_clusters(cluster_unnatural(files; cut), scope))
     return Findings(findings)
 end

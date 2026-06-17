@@ -24,7 +24,8 @@ source text
 `analyze` (corpus.jl) is the one entrypoint. It resolves `path` to a corpus (every
 profile-resolvable file under a folder, or one file), parses each once, builds a
 baseline from that corpus, runs the per-file path above against it for each file,
-and appends cross-file duplicates. The active rule set is a value it carries: the
+and appends the corpus-relational findings: cross-file duplicates and naturalness
+outliers. The active rule set is a value it carries: the
 `rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
 per-file scoring, and suppression validation, so a caller extends the checks
 without touching the pipeline. The baseline-from-the-corpus step is what makes
@@ -111,6 +112,15 @@ Reporting:
   (the size-banded characteristic-vector prefilter over `NearestNeighbors`,
   confirmed by Dice), and `cluster_near_duplicates` (union-find over confirmed pairs
   into `:near_duplicate` findings). Included before `corpus.jl`, which calls it.
+- `naturalness.jl` defines cross-entropy scoring, the other corpus-relational pass.
+  `token_stream` reduces a function to leaf tokens (identifier and literal text
+  abstracted, the grammar's anonymous tokens kept); `build_model` counts a per-language
+  trigram model with add-one smoothing; `cross_entropy` scores a function's surprise
+  under that model in bits per token; `cluster_unnatural` emits an `:unnatural` finding
+  per function, carrying both an absolute cross-entropy band and the corpus percentile,
+  skipping a language whose corpus is below `MIN_CORPUS_TOKENS`. A surprising function
+  reads as unidiomatic, which correlates with bugs. Structure only, no symbol
+  resolution; within one language. Included before `corpus.jl`, which calls it.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
@@ -118,11 +128,11 @@ Reporting:
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
   folder for analysable files, pruning ignored paths), `parse_corpus` (parse each
   path once),
-  `baseline_from`, `scope_clusters` (the shared diff filter for both duplicate
+  `baseline_from`, `scope_clusters` (the shared diff filter for the relational
   passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
-  per-file findings, exact and near duplicates, and optional diff scoping). It is
-  included after `report.jl`, `diff.jl`, and `clones.jl` so everything it calls is
-  defined first.
+  per-file findings, exact and near duplicates, naturalness, and optional diff
+  scoping). It is included after `report.jl`, `diff.jl`, `clones.jl`, and
+  `naturalness.jl` so everything it calls is defined first.
 
 ## Core types
 

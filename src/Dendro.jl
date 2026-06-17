@@ -19,6 +19,7 @@ include("suppress.jl")
 include("report.jl")
 include("diff.jl")
 include("clones.jl")
+include("naturalness.jl")
 include("ignore.jl")
 include("corpus.jl")
 

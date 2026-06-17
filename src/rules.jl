@@ -53,7 +53,7 @@ scalar_rules(rules) = Iterators.filter(r -> r.kind == :scalar, rules)
 flag_rules(rules) = Iterators.filter(r -> r.kind == :flag, rules)
 
 # Metrics produced by corpus clustering rather than a rule.
-const RELATIONAL_METRICS = (:duplicate, :near_duplicate)
+const RELATIONAL_METRICS = (:duplicate, :near_duplicate, :unnatural)
 
 # Metric names a directive may name: the active rules plus the relational clone
 # metrics. An inline `dendro-ignore` naming anything else warns.
