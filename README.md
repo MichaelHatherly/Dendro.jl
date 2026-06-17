@@ -59,6 +59,19 @@ src/parser.jl:1070  predicate  nesting_depth 8 (high; p100)
 src/api.jl:289  stub_marker (high)
 ```
 
+For pull-request review, `github_annotations(io, findings)` emits the same findings
+as GitHub Actions workflow commands. Each becomes an inline annotation on the diff,
+high-band findings as `::error`, the rest as `::warning`:
+
+```
+::error file=src/parser.jl,line=1070,title=Dendro%3A cyclomatic::predicate: cyclomatic 51 (high; p100)
+```
+
+GitHub renders annotations only on changed lines, so pair this with `base`.
+`analyze` loads each language's parser from the active environment, so the workflow
+adds the `tree_sitter_<lang>_jll` for the languages it analyses. See
+`.github/workflows/dendro.yml` for a working setup.
+
 ## Scoring
 
 Every scalar metric reports two scores, and a function is flagged when either

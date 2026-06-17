@@ -152,6 +152,13 @@ The findings not suppressed by an inline directive. Use this for gating.
 """
 active(findings) = Findings(filter(f -> !f.suppressed, findings))
 
+# The score column shared by every renderer: the absolute band, plus the corpus
+# percentile when one ranks the value.
+function score_suffix(f::Finding)
+    rel = f.percentile === nothing ? "" : string("; p", round(Int, f.percentile * 100))
+    return string("(", f.absolute, rel, ")")
+end
+
 # The REPL display for the `Findings` `analyze` returns. Each finding prints as
 # `file:line  unit  metric value (scores)`, with an `also at` line per extra
 # location, and a trailing count of findings suppressed by directives so
@@ -167,8 +174,7 @@ function Base.show(io::IO, ::MIME"text/plain", findings::Findings)
         loc = string(anchor.file, ":", anchor.line)
         label = isempty(anchor.unit) ? "" : string("  ", anchor.unit)
         val = f.value === nothing ? "" : string(" ", f.value)
-        rel = f.percentile === nothing ? "" : string("; p", round(Int, f.percentile * 100))
-        println(io, loc, label, "  ", f.metric, val, " (", f.absolute, rel, ")")
+        println(io, loc, label, "  ", f.metric, val, " ", score_suffix(f))
         for extra in Iterators.drop(f.locations, 1)
             tag = isempty(extra.unit) ? "" : string("  ", extra.unit)
             println(io, "    also at ", extra.file, ":", extra.line, tag)
@@ -179,3 +185,47 @@ function Base.show(io::IO, ::MIME"text/plain", findings::Findings)
     suppressed > 0 && println(io, suppressed, " finding(s) suppressed by directives")
     return nothing
 end
+
+# GitHub Actions workflow commands escape `%`, `\r`, `\n` in a message, and
+# additionally `:` and `,` in a property value, so neither breaks the line.
+escape_data(s::AbstractString) = replace(s, "%" => "%25", "\r" => "%0D", "\n" => "%0A")
+escape_prop(s::AbstractString) = replace(escape_data(s), ":" => "%3A", "," => "%2C")
+
+# The single-line message for one finding: `unit: metric value (scores)`, with a
+# trailing `; also at file:line` per extra location so a multi-site finding names
+# its other members where annotations are line-anchored.
+function annotation_message(f::Finding)
+    anchor = first(f.locations)
+    prefix = isempty(anchor.unit) ? "" : string(anchor.unit, ": ")
+    val = f.value === nothing ? "" : string(" ", f.value)
+    msg = string(prefix, f.metric, val, " ", score_suffix(f))
+    for extra in Iterators.drop(f.locations, 1)
+        msg = string(msg, "; also at ", extra.file, ":", extra.line)
+    end
+    return msg
+end
+
+"""
+    github_annotations(io, findings)
+    github_annotations(findings)
+
+Write `findings` as GitHub Actions workflow commands, one `::error`/`::warning`
+line per finding, anchored at its first location. GitHub renders each as an inline
+annotation on the matching diff line, so pair this with `analyze`'s `base` to scope
+to changed lines. Suppressed findings are omitted. High-band findings map to
+`::error`, the rest to `::warning`.
+"""
+function github_annotations(io::IO, findings::Findings)
+    for f in findings
+        f.suppressed && continue
+        anchor = first(f.locations)
+        level = f.absolute === :high ? "error" : "warning"
+        title = string("Dendro: ", f.metric)
+        println(io, "::", level, " file=", escape_prop(anchor.file),
+                ",line=", anchor.line, ",title=", escape_prop(title),
+                "::", escape_data(annotation_message(f)))
+    end
+    return nothing
+end
+
+github_annotations(findings::Findings) = github_annotations(stdout, findings)

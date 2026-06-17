@@ -73,7 +73,10 @@ Reporting:
 - `report.jl` defines `Location`, `Finding`, `Scan`, `findings_for_tree`,
   `Findings` (the result wrapper, an `AbstractVector{Finding}` with a `show`
   method that renders the report), and `active`. This is where measurement,
-  scoring, and suppression meet.
+  scoring, and suppression meet. Two renderers walk `Findings`: the `show`
+  method for `text/plain`, and `github_annotations`, a standalone function (not a
+  `show` method) that emits GitHub Actions workflow commands for inline PR
+  annotations. Both share `score_suffix`.
 - `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
   that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a

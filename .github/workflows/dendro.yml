@@ -1,0 +1,36 @@
+name: Dendro
+
+# Run Dendro on its own source for each pull request and surface findings as
+# inline annotations on the diff. Diff-scoped against the PR base, so only the
+# functions a change touched are reported.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0  # base ref must be present for the diff
+
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32 # v3.0.2
+        with:
+          version: '1'
+
+      - uses: julia-actions/cache@a45e8fa8be21c18a06b7177052533149e61e9b38 # v3.1.0
+
+      # analyze loads tree_sitter_<lang>_jll from the active environment, and the
+      # grammar JLLs are test-only deps. Build an env carrying the package plus the
+      # grammar for the source under review.
+      - run: julia --project=@dendro-ci -e 'using Pkg; Pkg.develop(path="."); Pkg.add("tree_sitter_julia_jll")'
+
+      - run: |
+          julia --project=@dendro-ci -e '
+            using Dendro
+            findings = Dendro.active(Dendro.analyze("src"; base = "origin/" * ENV["GITHUB_BASE_REF"]))
+            Dendro.github_annotations(stdout, findings)'

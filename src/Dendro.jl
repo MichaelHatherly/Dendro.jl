@@ -2,7 +2,7 @@ module Dendro
 
 import TreeSitter
 
-public analyze, active
+public analyze, active, github_annotations
 public Finding, Findings, Location
 
 include("resolve.jl")
