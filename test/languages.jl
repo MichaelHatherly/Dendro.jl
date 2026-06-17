@@ -3,25 +3,25 @@
 # empty catch. Expected metric values are hand-derived from that structure.
 const LANGUAGE_CASES = [
     (lang = :bash, src = "f() {\n  # TODO\n  if [ \"\$1\" -gt 0 ] && [ \"\$2\" -gt 0 ]; then\n    for i in 1 2; do echo \$i; done\n  fi\n}\n",
-        cyclomatic = 4, params = 0, catches = 0, stubs = 1),
+        cyclomatic = 4, params = 0, catches = 0, stubs = 1, nesting = 2, length = 6),
     (lang = :c, src = "int f(int x, int y) {\n  // TODO\n  if (x > 0 && y > 0) {\n    for (int i = 0; i < x; i++) { }\n  }\n  return 0;\n}\n",
-        cyclomatic = 4, params = 2, catches = 0, stubs = 1),
+        cyclomatic = 4, params = 2, catches = 0, stubs = 1, nesting = 2, length = 7),
     (lang = :cpp, src = "int f(int x, int y) {\n  if (x > 0 && y > 0) { }\n  try { g(); } catch (...) { }\n  return 0;\n}\n",
-        cyclomatic = 4, params = 2, catches = 1, stubs = 0),
+        cyclomatic = 4, params = 2, catches = 1, stubs = 0, nesting = 1, length = 5),
     (lang = :go, src = "func f(x int, y int) int {\n  if x > 0 && y > 0 {\n    for i := 0; i < x; i++ { }\n  }\n  return 0\n}\n",
-        cyclomatic = 4, params = 2, catches = 0, stubs = 0),
+        cyclomatic = 4, params = 2, catches = 0, stubs = 0, nesting = 2, length = 6),
     (lang = :java, src = "class C {\n  int f(int x, int y) {\n    if (x > 0 && y > 0) { }\n    try { g(); } catch (Exception e) { }\n    return 0;\n  }\n}\n",
-        cyclomatic = 4, params = 2, catches = 1, stubs = 0),
+        cyclomatic = 4, params = 2, catches = 1, stubs = 0, nesting = 1, length = 5),
     (lang = :javascript, src = "function f(x, y) {\n  if (x > 0 && y > 0) { }\n  try { g(); } catch (e) { }\n  return 0;\n}\n",
-        cyclomatic = 4, params = 2, catches = 1, stubs = 0),
+        cyclomatic = 4, params = 2, catches = 1, stubs = 0, nesting = 1, length = 5),
     (lang = :php, src = "<?php\nfunction f(\$x, \$y) {\n  if (\$x > 0 && \$y > 0) { }\n  try { g(); } catch (Exception \$e) { }\n  return 0;\n}\n",
-        cyclomatic = 4, params = 2, catches = 1, stubs = 0),
+        cyclomatic = 4, params = 2, catches = 1, stubs = 0, nesting = 1, length = 5),
     (lang = :ruby, src = "def f(x, y)\n  # TODO\n  if x > 0 && y > 0\n    z = 1\n  end\nend\n",
-        cyclomatic = 3, params = 2, catches = 0, stubs = 1),
+        cyclomatic = 3, params = 2, catches = 0, stubs = 1, nesting = 1, length = 6),
     (lang = :rust, src = "fn f(x: i32, y: i32) -> i32 {\n  if x > 0 && y > 0 {\n    while x > 0 { }\n  }\n  0\n}\n",
-        cyclomatic = 4, params = 2, catches = 0, stubs = 0),
+        cyclomatic = 4, params = 2, catches = 0, stubs = 0, nesting = 2, length = 6),
     (lang = :typescript, src = "function f(x: number, y: number): number {\n  if (x > 0 && y > 0) { }\n  try { g(); } catch (e) { }\n  return 0;\n}\n",
-        cyclomatic = 4, params = 2, catches = 1, stubs = 0),
+        cyclomatic = 4, params = 2, catches = 1, stubs = 0, nesting = 1, length = 5),
 ]
 
 for case in LANGUAGE_CASES
@@ -35,6 +35,8 @@ for case in LANGUAGE_CASES
         @test Dendro.unit_name(u, prof, case.src) == "f"
         @test Dendro.cyclomatic(u.node, prof, case.src) == case.cyclomatic
         @test Dendro.parameter_count(u.node, prof) == case.params
+        @test Dendro.nesting_depth(u.node, prof) == case.nesting
+        @test Dendro.function_length(u) == case.length
         @test length(Dendro.empty_catches(tree, prof)) == case.catches
         @test length(Dendro.stub_markers(tree, prof, case.src)) == case.stubs
     end

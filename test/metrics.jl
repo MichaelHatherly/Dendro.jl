@@ -1,6 +1,5 @@
 @testset "cyclomatic (julia)" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     # A straight-line function has complexity 1.
     simple = "function f(x)\n    x + 1\nend\n"
@@ -35,8 +34,7 @@
 end
 
 @testset "nested functions do not inflate the enclosing unit (julia)" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     # `outer` owns one `for`; the closure's `if` and `&&` belong to the closure.
     src = """
@@ -62,8 +60,7 @@ end
 end
 
 @testset "function_length (julia)" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
     src = "function f(x)\n    y = x + 1\n    return y\nend\n"
     tree = parse(p, src)
     u = only(Dendro.functions(tree, prof))
@@ -71,8 +68,7 @@ end
 end
 
 @testset "nesting_depth (julia)" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     flat = "function f(x)\n    x + 1\nend\n"
     u = only(Dendro.functions(parse(p, flat), prof))
@@ -94,8 +90,7 @@ end
 end
 
 @testset "parameter_count (julia)" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     u = only(Dendro.functions(parse(p, "function f(x, y, z)\n    x\nend\n"), prof))
     @test Dendro.parameter_count(u.node, prof) == 3

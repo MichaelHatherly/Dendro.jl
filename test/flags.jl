@@ -1,6 +1,5 @@
 @testset "empty_catches (julia)" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     swallowed = "try\n    f()\ncatch\nend\n"
     @test length(Dendro.empty_catches(parse(p, swallowed), prof)) == 1
@@ -14,12 +13,10 @@
 end
 
 @testset "stub_markers (julia)" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     todo = "function f()\n    # TODO: implement\n    1\nend\n"
-    src = todo
-    @test length(Dendro.stub_markers(parse(p, src), prof, src)) == 1
+    @test length(Dendro.stub_markers(parse(p, todo), prof, todo)) == 1
 
     fixme = "# FIXME later\nx = 1\n"
     @test length(Dendro.stub_markers(parse(p, fixme), prof, fixme)) == 1
@@ -29,8 +26,7 @@ end
 end
 
 @testset "empty_body (julia)" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     u = only(Dendro.functions(parse(p, "function g()\nend\n"), prof))
     @test Dendro.empty_body(u.node, prof)

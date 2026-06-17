@@ -26,8 +26,7 @@
 end
 
 @testset "suppressions parsing" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     src = "# dendro-ignore\nfunction f()\nend\n"
     dirs = Dendro.suppressions(parse(p, src), prof, src; file = "x.jl")
@@ -55,8 +54,7 @@ end
 end
 
 @testset "suppressions typo guard" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
     src = "# dendro-ignore: cyclomatc\nfunction f()\nend\n"
 
     dirs = @test_logs (:warn,) Dendro.suppressions(parse(p, src), prof, src; file = "x.jl")
@@ -65,8 +63,7 @@ end
 end
 
 @testset "suppression directive with a reason" begin
-    p = Dendro.parser_for(:julia)
-    prof = Dendro.PROFILES[:julia]
+    p, prof = fixture(:julia)
 
     # A reason after a `--` delimiter is ignored, with no warning.
     src = "# dendro-ignore: cyclomatic -- it is a dispatch table\nfunction f()\nend\n"
@@ -81,59 +78,60 @@ end
 end
 
 @testset "suppression integration (julia)" begin
-    dir = mktempdir()
+    mktempdir() do dir
+        # Preceding-line directive on a 6-parameter function suppresses only that
+        # metric; other findings on the function survive.
+        path = joinpath(dir, "p.jl")
+        write(path, "# dendro-ignore: parameter_count\nfunction f(a, b, c, d, e, f)\n    1\nend\n")
+        findings = Dendro.analyze(path)
+        @test count(f -> f.suppressed, findings) == 1
+        pc = only(filter(f -> f.metric == :parameter_count, findings))
+        @test pc.suppressed
+        @test isempty(filter(f -> f.metric == :parameter_count, Dendro.active(findings)))
 
-    # Preceding-line directive on a 6-parameter function suppresses only that
-    # metric; other findings on the function survive.
-    path = joinpath(dir, "p.jl")
-    write(path, "# dendro-ignore: parameter_count\nfunction f(a, b, c, d, e, f)\n    1\nend\n")
-    findings = Dendro.analyze(path)
-    @test count(f -> f.suppressed, findings) == 1
-    pc = only(filter(f -> f.metric == :parameter_count, findings))
-    @test pc.suppressed
-    @test isempty(filter(f -> f.metric == :parameter_count, Dendro.active(findings)))
+        # Same-line directive on a swallowed catch.
+        path = joinpath(dir, "c.jl")
+        write(path, "function f()\n    try\n        g()\n    catch  # dendro-ignore: empty_catch\n    end\nend\n")
+        findings = Dendro.analyze(path)
+        @test isempty(filter(f -> f.metric == :empty_catch, Dendro.active(findings)))
+        @test any(f -> f.metric == :empty_catch && f.suppressed, findings)
 
-    # Same-line directive on a swallowed catch.
-    path = joinpath(dir, "c.jl")
-    write(path, "function f()\n    try\n        g()\n    catch  # dendro-ignore: empty_catch\n    end\nend\n")
-    findings = Dendro.analyze(path)
-    @test isempty(filter(f -> f.metric == :empty_catch, Dendro.active(findings)))
-    @test any(f -> f.metric == :empty_catch && f.suppressed, findings)
-
-    # Whole-file directive empties active.
-    path = joinpath(dir, "f.jl")
-    write(path, "# dendro-ignore-file\nfunction f(a, b, c, d, e, f)\n    1\nend\n")
-    findings = Dendro.analyze(path)
-    @test !isempty(findings)
-    @test isempty(Dendro.active(findings))
+        # Whole-file directive empties active.
+        path = joinpath(dir, "f.jl")
+        write(path, "# dendro-ignore-file\nfunction f(a, b, c, d, e, f)\n    1\nend\n")
+        findings = Dendro.analyze(path)
+        @test !isempty(findings)
+        @test isempty(Dendro.active(findings))
+    end
 end
 
 @testset "suppression is language-agnostic" begin
-    dir = mktempdir()
+    mktempdir() do dir
+        # Python: a hash comment.
+        py = joinpath(dir, "p.py")
+        write(py, "# dendro-ignore: parameter_count\ndef f(a, b, c, d, e, f):\n    return 1\n")
+        findings = Dendro.analyze(py)
+        @test isempty(filter(f -> f.metric == :parameter_count, Dendro.active(findings)))
 
-    # Python: a hash comment.
-    py = joinpath(dir, "p.py")
-    write(py, "# dendro-ignore: parameter_count\ndef f(a, b, c, d, e, f):\n    return 1\n")
-    findings = Dendro.analyze(py)
-    @test isempty(filter(f -> f.metric == :parameter_count, Dendro.active(findings)))
-
-    # JavaScript: a slash comment.
-    js = joinpath(dir, "p.js")
-    write(js, "// dendro-ignore: parameter_count\nfunction f(a, b, c, d, e, f) {\n  return 1;\n}\n")
-    findings = Dendro.analyze(js)
-    @test isempty(filter(f -> f.metric == :parameter_count, Dendro.active(findings)))
+        # JavaScript: a slash comment.
+        js = joinpath(dir, "p.js")
+        write(js, "// dendro-ignore: parameter_count\nfunction f(a, b, c, d, e, f) {\n  return 1;\n}\n")
+        findings = Dendro.analyze(js)
+        @test isempty(filter(f -> f.metric == :parameter_count, Dendro.active(findings)))
+    end
 end
 
 @testset "report suppression footer" begin
-    dir = mktempdir()
-    path = joinpath(dir, "p.jl")
-    write(path, "# dendro-ignore: parameter_count\nfunction f(a, b, c, d, e, f)\n    1\nend\n")
-    findings = Dendro.analyze(path)
+    mktempdir() do dir
+        path = joinpath(dir, "p.jl")
+        write(path, "# dendro-ignore: parameter_count\nfunction f(a, b, c, d, e, f)\n    1\nend\n")
+        findings = Dendro.analyze(path)
 
-    io = IOBuffer()
-    show(io, MIME("text/plain"), findings)
-    out = String(take!(io))
-    @test occursin("1 finding", out)
-    @test occursin("suppressed", out)
-    @test !occursin("parameter_count", out)   # the only suppressed finding is hidden
+        io = IOBuffer()
+        show(io, MIME("text/plain"), findings)
+        out = String(take!(io))
+        @test occursin("1 finding", out)
+        @test occursin("suppressed", out)
+        @test !occursin("parameter_count", out)   # the only suppressed finding is hidden
+    end
 end

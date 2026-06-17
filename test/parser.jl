@@ -9,5 +9,5 @@
     @test Dendro.parser_for("julia") isa TreeSitter.Parser
 
     # A missing language reports a helpful error, not a bare lookup failure.
-    @test_throws Exception Dendro.parser_for(:nonexistent_language)
+    @test_throws "no parser for language" Dendro.parser_for(:nonexistent_language)
 end

@@ -1,6 +1,9 @@
 using Dendro, TreeSitter, Test
 using Dendro: analyze, active, Finding, Findings, Location
 
+# A parser and profile for one language, the recurring setup across unit tests.
+fixture(lang) = (Dendro.parser_for(lang), Dendro.PROFILES[lang])
+
 @testset "Dendro" begin
     include("resolve.jl")
     include("parser.jl")

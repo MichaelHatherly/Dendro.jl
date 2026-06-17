@@ -8,14 +8,15 @@
 end
 
 @testset "baseline_from accumulates corpus samples" begin
-    dir = mktempdir()
-    write(joinpath(dir, "a.jl"), "function s(x)\n    x + 1\nend\n")
-    write(joinpath(dir, "b.jl"), "function t(x)\n    if x > 0\n        1\n    else\n        2\n    end\nend\n")
+    mktempdir() do dir
+        write(joinpath(dir, "a.jl"), "function s(x)\n    x + 1\nend\n")
+        write(joinpath(dir, "b.jl"), "function t(x)\n    if x > 0\n        1\n    else\n        2\n    end\nend\n")
 
-    files = Dendro.parse_corpus([joinpath(dir, "a.jl"), joinpath(dir, "b.jl")])
-    b = Dendro.baseline_from(files)
-    cyc = b.samples[(:julia, :cyclomatic)]
-    @test length(cyc) == 2
-    @test cyc == [1.0, 2.0]
-    @test Dendro.percentile(b, :julia, :cyclomatic, 2) == 1.0
+        files = Dendro.parse_corpus([joinpath(dir, "a.jl"), joinpath(dir, "b.jl")])
+        b = Dendro.baseline_from(files)
+        cyc = b.samples[(:julia, :cyclomatic)]
+        @test length(cyc) == 2
+        @test cyc == [1.0, 2.0]
+        @test Dendro.percentile(b, :julia, :cyclomatic, 2) == 1.0
+    end
 end
