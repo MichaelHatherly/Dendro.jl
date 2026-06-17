@@ -23,6 +23,9 @@ PROFILES[:julia] = LanguageProfile(
     return_types = ["return_statement"],
     finally_types = ["finally_clause"],
     call_types = ["call_expression"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_statement"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement"],
 )
 
 PROFILES[:python] = LanguageProfile(
@@ -42,6 +45,9 @@ PROFILES[:python] = LanguageProfile(
     return_types = ["return_statement"],
     finally_types = ["finally_clause"],
     call_types = ["call"],
+    binary_expr_types = ["comparison_operator", "boolean_operator", "binary_operator"],
+    conditional_types = ["if_statement", "match_statement"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement", "raise_statement"],
 )
 
 PROFILES[:bash] = LanguageProfile(
@@ -57,6 +63,7 @@ PROFILES[:bash] = LanguageProfile(
     # Bash has no return-statement node (`return` is a command) and no finally
     # construct, so those concepts stay empty.
     call_types = ["command"],
+    conditional_types = ["if_statement", "case_statement"],
 )
 
 PROFILES[:c] = LanguageProfile(
@@ -74,6 +81,9 @@ PROFILES[:c] = LanguageProfile(
     # C has no finally construct, so that concept stays empty.
     return_types = ["return_statement"],
     call_types = ["call_expression"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_statement", "switch_statement"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement"],
 )
 
 PROFILES[:cpp] = LanguageProfile(
@@ -93,6 +103,9 @@ PROFILES[:cpp] = LanguageProfile(
     # C++ try has no finally clause, so that concept stays empty.
     return_types = ["return_statement"],
     call_types = ["call_expression"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_statement", "switch_statement"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement", "throw_statement"],
 )
 
 PROFILES[:go] = LanguageProfile(
@@ -110,6 +123,9 @@ PROFILES[:go] = LanguageProfile(
     # Go has no finally construct, so that concept stays empty.
     return_types = ["return_statement"],
     call_types = ["call_expression"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_statement", "expression_switch_statement", "type_switch_statement"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement"],
 )
 
 PROFILES[:java] = LanguageProfile(
@@ -129,6 +145,9 @@ PROFILES[:java] = LanguageProfile(
     return_types = ["return_statement"],
     finally_types = ["finally_clause"],
     call_types = ["method_invocation"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_statement", "switch_expression"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement", "throw_statement"],
 )
 
 PROFILES[:javascript] = LanguageProfile(
@@ -148,6 +167,9 @@ PROFILES[:javascript] = LanguageProfile(
     return_types = ["return_statement"],
     finally_types = ["finally_clause"],
     call_types = ["call_expression"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_statement", "switch_statement"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement", "throw_statement"],
 )
 
 PROFILES[:php] = LanguageProfile(
@@ -167,6 +189,9 @@ PROFILES[:php] = LanguageProfile(
     return_types = ["return_statement"],
     finally_types = ["finally_clause"],
     call_types = ["function_call_expression"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_statement", "switch_statement"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement", "throw_statement"],
 )
 
 # Ruby's begin/rescue keeps the handler body inline rather than in a block node,
@@ -186,6 +211,9 @@ PROFILES[:ruby] = LanguageProfile(
     return_types = ["return"],
     finally_types = ["ensure"],
     call_types = ["call"],
+    binary_expr_types = ["binary"],
+    conditional_types = ["if", "unless", "case"],
+    terminal_types = ["return", "break", "next"],
 )
 
 PROFILES[:rust] = LanguageProfile(
@@ -205,6 +233,9 @@ PROFILES[:rust] = LanguageProfile(
     # undercounts explicit `return` only by design.
     return_types = ["return_expression"],
     call_types = ["call_expression"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_expression", "match_expression"],
+    terminal_types = ["return_expression", "break_expression", "continue_expression"],
 )
 
 PROFILES[:typescript] = LanguageProfile(
@@ -224,4 +255,7 @@ PROFILES[:typescript] = LanguageProfile(
     return_types = ["return_statement"],
     finally_types = ["finally_clause"],
     call_types = ["call_expression"],
+    binary_expr_types = ["binary_expression"],
+    conditional_types = ["if_statement", "switch_statement"],
+    terminal_types = ["return_statement", "break_statement", "continue_statement", "throw_statement"],
 )

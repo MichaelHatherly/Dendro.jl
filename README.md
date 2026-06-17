@@ -95,7 +95,10 @@ expression).
 
 Flag (presence is the finding): swallowed errors (empty catch clauses), stub
 markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies, a `return`
-inside a finally clause (which discards a pending error or return value).
+inside a finally clause (which discards a pending error or return value), identical
+operands (`x == x`, `a && a`), and a conditional whose branches are all identical
+(`if c then X else X`). An optional rule flags code after an unconditional `return`,
+`break`, or `throw`.
 
 Each metric is a [rule](#custom-rules). The set above is the default; a caller can
 add their own or opt into rules that are off by default.
@@ -167,8 +170,8 @@ end
 Metric names are the active rules' names plus the relational `duplicate` and
 `near_duplicate`: by default `cyclomatic`, `cognitive_complexity`,
 `function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
-`empty_catch`, `stub_marker`,
-`empty_body`, `return_in_finally`, `duplicate`, `near_duplicate`. A custom rule's
+`empty_catch`, `stub_marker`, `empty_body`, `return_in_finally`,
+`identical_operands`, `duplicate_branches`, `duplicate`, `near_duplicate`. A custom rule's
 name is accepted too. An unknown name warns, so a typo does not silently disable a
 check.
 

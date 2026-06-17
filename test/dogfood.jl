@@ -19,7 +19,7 @@
     # Keep our own house clean: no stubs, swallowed errors, duplicated functions
     # (exact or near), or returns that discard errors from a finally clause.
     flags = filter(findings) do f
-        f.metric in (:stub_marker, :empty_catch, :empty_body, :duplicate, :near_duplicate, :return_in_finally)
+        f.metric in (:stub_marker, :empty_catch, :empty_body, :duplicate, :near_duplicate, :return_in_finally, :identical_operands, :duplicate_branches)
     end
     @test isempty(flags)
 end

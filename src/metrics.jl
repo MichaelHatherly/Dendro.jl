@@ -72,6 +72,14 @@ function nesting_depth(node::TreeSitter.Node, profile::LanguageProfile)
     return maxdepth
 end
 
+# True when `n` adds an independent path: a decision-point node, or a short-circuit
+# operator leaf (each `&&`/`||` forks the flow).
+function is_branch_point(n::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, has_ops::Bool)
+    TreeSitter.is_named(n) && TreeSitter.node_type(n) in profile.decision_types && return true
+    return has_ops && TreeSitter.is_leaf(n) &&
+           strip(TreeSitter.slice(source, n)) in profile.short_circuit_ops
+end
+
 """
     cyclomatic(node, profile, source) -> Int
 
@@ -83,15 +91,7 @@ function cyclomatic(node::TreeSitter.Node, profile::LanguageProfile, source::Abs
     count = 1
     has_ops = !isempty(profile.short_circuit_ops)
     traverse_unit(node, profile) do n, enter
-        if enter
-            if TreeSitter.is_named(n) && TreeSitter.node_type(n) in profile.decision_types
-                count += 1
-            elseif has_ops &&
-                   TreeSitter.is_leaf(n) &&
-                   strip(TreeSitter.slice(source, n)) in profile.short_circuit_ops
-                count += 1
-            end
-        end
+        enter && is_branch_point(n, profile, source, has_ops) && (count += 1)
         nothing
     end
     return count

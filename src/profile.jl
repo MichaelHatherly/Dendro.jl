@@ -22,6 +22,11 @@ measures.
   finally clauses.
 - `finally_types`: finally/ensure clauses, checked for returns that discard errors.
 - `call_types`: call-expression nodes, used to spot a function that only delegates.
+- `binary_expr_types`: binary-expression nodes, checked for identical operands.
+- `conditional_types`: branching roots (`if`, `switch`), checked for arms that are
+  all identical.
+- `terminal_types`: statements that end control flow (`return`, `break`, `throw`),
+  after which more code in the same block is unreachable.
 """
 struct LanguageProfile
     name::Symbol
@@ -38,6 +43,9 @@ struct LanguageProfile
     return_types::Set{String}
     finally_types::Set{String}
     call_types::Set{String}
+    binary_expr_types::Set{String}
+    conditional_types::Set{String}
+    terminal_types::Set{String}
 end
 
 # Keyword constructor. Sets that a language does not use default to empty, so
@@ -57,6 +65,9 @@ function LanguageProfile(
     return_types = String[],
     finally_types = String[],
     call_types = String[],
+    binary_expr_types = String[],
+    conditional_types = String[],
+    terminal_types = String[],
 )
     return LanguageProfile(
         name,
@@ -73,5 +84,8 @@ function LanguageProfile(
         Set{String}(return_types),
         Set{String}(finally_types),
         Set{String}(call_types),
+        Set{String}(binary_expr_types),
+        Set{String}(conditional_types),
+        Set{String}(terminal_types),
     )
 end

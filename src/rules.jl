@@ -32,6 +32,8 @@ const BUILTIN_RULES = Rule[
     Rule(:nesting_depth,      :scalar, (4, 6),    (u, p, s) -> nesting_depth(u.node, p)),
     Rule(:parameter_count,    :scalar, (5, 8),    (u, p, s) -> parameter_count(u.node, p)),
     Rule(:boolean_complexity, :scalar, (4, 6),    (u, p, s) -> boolean_complexity(u.node, p, s)),
+    Rule(:identical_operands, :flag,   nothing,   (t, p, s) -> identical_operands(t, p, s)),
+    Rule(:duplicate_branches, :flag,   nothing,   (t, p, s) -> duplicate_branches(t, p, s)),
     Rule(:empty_body,         :flag,   nothing,   (t, p, s) -> empty_bodies(t, p)),
     Rule(:empty_catch,        :flag,   nothing,   (t, p, s) -> empty_catches(t, p)),
     Rule(:stub_marker,        :flag,   nothing,   (t, p, s) -> stub_markers(t, p, s)),
@@ -42,8 +44,9 @@ const BUILTIN_RULES = Rule[
 # per-project band tuning, trivial_wrapper has a higher false-positive rate.
 # Use them with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 const OPTIONAL_RULES = Rule[
-    Rule(:return_count,    :scalar, (4, 8),  (u, p, s) -> return_count(u.node, p)),
-    Rule(:trivial_wrapper, :flag,   nothing, (t, p, s) -> trivial_wrappers(t, p)),
+    Rule(:return_count,           :scalar, (4, 8),  (u, p, s) -> return_count(u.node, p)),
+    Rule(:trivial_wrapper,        :flag,   nothing, (t, p, s) -> trivial_wrappers(t, p)),
+    Rule(:unreachable_after_jump, :flag,   nothing, (t, p, s) -> unreachable_statements(t, p)),
 ]
 
 scalar_rules(rules) = Iterators.filter(r -> r.kind == :scalar, rules)

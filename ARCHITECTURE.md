@@ -77,8 +77,10 @@ Measurement:
   `boolean_complexity`, `return_count`. `severity` classifies a value against a
   `(warn, high)` band.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
-  `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`, plus
-  the helpers for reading a body's real-work count.
+  `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
+  `identical_operands`, `duplicate_branches`, `unreachable_statements`, plus the
+  helpers for reading a body's real-work count, comparing subtrees by normalised
+  text, and collecting the blocks of one conditional chain (`branch_blocks`).
 - `rules.jl` defines `Rule` (a metric name, kind, band, and measuring function),
   `BUILTIN_RULES` (the default set, in report order), `OPTIONAL_RULES` (off by
   default), `scalar_rules`/`flag_rules`, and `metric_names` (the names a directive
