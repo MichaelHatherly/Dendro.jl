@@ -3,7 +3,7 @@ module Dendro
 import TreeSitter
 import JSON
 
-export analyze, analyze_diff, analyze_corpus, build_baseline, save_baseline, load_baseline, report
+export analyze, analyze_diff, analyze_corpus, find_duplicates, build_baseline, save_baseline, load_baseline, report
 export Finding, Location, Baseline, active
 
 include("resolve.jl")

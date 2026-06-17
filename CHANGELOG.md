@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Cross-corpus duplicate detection. `analyze_corpus(paths; min_size, language)`
+- `analyze_corpus(paths; min_size, language, baseline, cut)`, a project-level
+  entrypoint. It analyzes every file against a baseline built from the corpus
+  (unless one is passed), so relative scoring works with no setup, and appends
+  cross-file duplicates.
+- Cross-corpus duplicate detection. `find_duplicates(paths; min_size, language)`
   finds functions duplicated across files, tolerant to identifier renaming and
   literal-value changes (Type-2 clones), by hashing each function's node-type
   sequence. Each cluster of two or more is one `:duplicate` finding whose

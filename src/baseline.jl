@@ -14,6 +14,18 @@ end
 
 Baseline() = Baseline(Dict{Tuple{Symbol,Symbol},Vector{Float64}}())
 
+# Accumulate one tree's scalar-metric values into a baseline, keyed by language.
+function add_samples!(baseline::Baseline, language::Symbol, tree, profile::LanguageProfile, source::AbstractString)
+    for unit in functions(tree, profile)
+        metrics = unit_metrics(unit, profile, source)
+        for metric in SCALAR_METRICS
+            samples = get!(() -> Float64[], baseline.samples, (language, metric))
+            push!(samples, Float64(getfield(metrics, metric)))
+        end
+    end
+    return baseline
+end
+
 """
     build_baseline(paths) -> Baseline
 
@@ -30,14 +42,7 @@ function build_baseline(paths)
         profile = PROFILES[lang]
         parser = get!(() -> parser_for(lang), parsers, lang)
         source = read(path, String)
-        tree = parse(parser, source)
-        for unit in functions(tree, profile)
-            metrics = unit_metrics(unit, profile, source)
-            for metric in SCALAR_METRICS
-                samples = get!(() -> Float64[], baseline.samples, (lang, metric))
-                push!(samples, Float64(getfield(metrics, metric)))
-            end
-        end
+        add_samples!(baseline, lang, parse(parser, source), profile, source)
     end
     for samples in values(baseline.samples)
         sort!(samples)

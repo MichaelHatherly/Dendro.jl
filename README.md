@@ -24,11 +24,17 @@ Pkg.add(["tree_sitter_julia_jll", "tree_sitter_python_jll"])
 ```julia
 using Dendro
 
+# Analyse a whole project. Each function is scored against the corpus's own
+# distribution, and duplicates across files are reported. The baseline is built
+# from the same paths, so relative scoring works with no setup.
+findings = analyze_corpus(readdir("src"; join = true))
+report(findings)
+
 # Analyse one file. Language is inferred from the extension.
 findings = analyze("src/parser.jl")
 report(findings)
 
-# Score against the codebase's own distribution, not just fixed thresholds.
+# Score one file against a corpus distribution.
 baseline = build_baseline(readdir("src"; join = true))
 findings = analyze("src/parser.jl"; baseline = baseline)
 
@@ -38,10 +44,6 @@ baseline = load_baseline("dendro-baseline.json")
 
 # Review mode: report only the functions a change touched.
 findings = analyze_diff(; repo = ".", base = "HEAD", baseline = baseline)
-report(findings)
-
-# Find functions duplicated across the corpus.
-findings = analyze_corpus(readdir("src"; join = true))
 report(findings)
 ```
 
@@ -77,12 +79,13 @@ markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies.
 
 ## Duplicate detection
 
-`analyze_corpus(paths)` finds functions duplicated across the corpus, including
-across different files. It hashes each function by its node-type sequence, type
-not text, so functions that differ only in variable names or literal values still
-match (Type-2 clones). It catches the copy-paste-then-rename that generated code
-produces. Each cluster of two or more comes back as one `:duplicate` finding whose
-`locations` list every member:
+`analyze_corpus` reports duplicates as part of a full analysis. For duplicates
+alone, `find_duplicates(paths)` finds functions duplicated across the corpus,
+including across different files. It hashes each function by its node-type
+sequence, type not text, so functions that differ only in variable names or
+literal values still match (Type-2 clones). It catches the copy-paste-then-rename
+that generated code produces. Each cluster of two or more comes back as one
+`:duplicate` finding whose `locations` list every member:
 
 ```
 src/a.jl:10  parse_header  duplicate 3 (high)

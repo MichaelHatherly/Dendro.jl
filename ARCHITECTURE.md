@@ -25,11 +25,15 @@ source text
 but restricts findings to the touched line ranges. Nothing else branches the
 flow.
 
-`analyze_corpus` is a separate pass that crosses the single-file boundary. It
-walks many files, hashes each function's structure, and emits a `:duplicate`
-`Finding` for every shape shared by two or more functions. It reuses the parse and
-unit machinery but not the per-file scoring path. Still syntactic: it compares
-node-type sequences, no symbol resolution.
+`analyze_corpus` is the project-level entrypoint. It parses every path once, builds
+a baseline from the corpus (unless one is passed), runs the per-file path above
+against it for each file, and appends cross-file duplicates. The baseline-from-the-
+corpus default is what makes relative scoring work with no setup.
+
+Duplicate detection crosses the single-file boundary: it hashes each function's
+structure and emits a `:duplicate` `Finding` for every shape shared by two or more
+functions. `find_duplicates` runs that pass alone. It stays syntactic, comparing
+node-type sequences with no symbol resolution.
 
 ## Layers
 
@@ -57,8 +61,10 @@ Measurement:
   tuple that fixes report order, `DEFAULT_BANDS`, and `severity`.
 - `flags.jl` defines the presence metrics: `empty_body`, `empty_catches`,
   `stub_markers`, plus the helpers for reading a body's real-work count.
-- `baseline.jl` defines `Baseline` over a corpus, percentile scoring, and JSON
-  persistence (`build_baseline`, `save_baseline`, `load_baseline`).
+- `baseline.jl` defines `Baseline` over a corpus, percentile scoring, JSON
+  persistence (`build_baseline`, `save_baseline`, `load_baseline`), and
+  `add_samples!`, the per-tree accumulation `build_baseline` and the corpus pass
+  share.
 - `suppress.jl` defines inline suppression: `Directive`, `METRICS`,
   `DIRECTIVE_RE`, `suppressions`, `is_suppressed`, and `line_of`.
 
@@ -67,9 +73,11 @@ Reporting:
 - `report.jl` defines `Location`, `Finding`, `Scan`, `findings_for_tree`, the
   top-level `analyze`, `report`, and `active`. This is where measurement, scoring,
   and suppression meet.
-- `corpus.jl` defines `structural_digest` and `analyze_corpus`: the cross-corpus
-  duplicate pass, hashing node-type sequences (type not text) for rename-tolerant
-  matching, gated by named-node count.
+- `corpus.jl` defines the project-level pass: `parse_corpus` (parse each path
+  once), `baseline_from`, `structural_digest` and `cluster_duplicates` (the
+  rename-tolerant duplicate detector, hashing node-type sequences gated by
+  named-node count), `find_duplicates` (duplicates alone), and `analyze_corpus`
+  (per-file findings against a corpus baseline plus duplicates).
 - `diff.jl` defines `analyze_diff` and the unified-diff parser
   (`changed_ranges`, `coalesce_lines`) that turns a git diff into per-file line
   ranges.
@@ -140,8 +148,8 @@ findings for gating.
 - Tree-sitter rows are 0-based. `line_of` (in `suppress.jl`) converts to 1-based
   source lines, and `FunctionUnit` stores 1-based lines. Findings are 1-based.
 - Metrics are syntactic, with no symbol resolution. Per-file metrics are scoped to
-  one file's tree; `analyze_corpus` is the one pass that spans files, and it still
-  compares only structure.
+  one file's tree; duplicate detection is the one metric that spans files, and it
+  still compares only structure.
 - Adding a language is data only: a `LanguageProfile` in `profiles.jl` and an
   extension entry in `resolve.jl`. No metric code changes. If a metric needs a
   language special case, the profile is missing a field; add the field.
