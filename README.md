@@ -173,6 +173,27 @@ Suppression marks a finding rather than dropping it. Printing a findings vector
 lists the active findings and a footer counting the suppressed ones, and
 `active(findings)` returns only the unsuppressed findings for gating.
 
+## Ignoring paths
+
+`dendro-ignore-file` mutes one file from inside it. Vendored and generated trees
+you do not own want the opposite: exclusion from the outside, by path, without
+touching the source. The `ignore` keyword takes gitignore-style patterns, matched
+against each path relative to the scanned folder.
+
+```julia
+analyze("."; ignore = ["vendor/", "deps/**", "*.generated.jl"])
+```
+
+A leading `!` re-includes, a trailing `/` matches directories only, `*` and `?`
+stop at a separator, `**` spans them. As in gitignore, a file under an excluded
+directory cannot be re-included.
+
+Ignored files are dropped before parsing, so they are neither flagged nor counted
+in the baseline. This matters even in `base` review mode: an unchanged vendored
+tree never appears in findings, but left in the corpus it would still skew the
+percentile every scanned file feeds. Ignoring it keeps relative scoring honest.
+Patterns apply to folder scans, not a single named file.
+
 ## Custom rules
 
 A rule is a `Rule`: a metric name, its kind (`:scalar` or `:flag`), a `(warn, high)`

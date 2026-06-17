@@ -31,6 +31,12 @@ without touching the pipeline. The baseline-from-the-corpus step is what makes
 relative scoring work with no setup, for a single file as much as a folder: a
 file's own functions are the distribution it is scored against.
 
+The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus at
+collection time, inside `source_files`, before any parsing. Excluded files leave
+both the findings and the baseline, so vendored source neither flags nor skews the
+percentile. This is corpus-shaping, distinct from `base` scoping, which restricts an
+already-built corpus to changed lines.
+
 With `base`, `analyze` scopes to a git diff: it parses the diff of the working tree
 against that ref via `changed_ranges` and restricts each file's findings (and the
 duplicate clusters, exact and near, through the shared `scope_clusters`) to the
@@ -102,8 +108,13 @@ Reporting:
   (the size-banded characteristic-vector prefilter over `NearestNeighbors`,
   confirmed by Dice), and `cluster_near_duplicates` (union-find over confirmed pairs
   into `:near_duplicate` findings). Included before `corpus.jl`, which calls it.
+- `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
+  `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
+  pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
+  Pure path logic, no parsing. Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
-  folder for analysable files), `parse_corpus` (parse each path once),
+  folder for analysable files, pruning ignored paths), `parse_corpus` (parse each
+  path once),
   `baseline_from`, `scope_clusters` (the shared diff filter for both duplicate
   passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
   per-file findings, exact and near duplicates, and optional diff scoping). It is

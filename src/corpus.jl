@@ -52,13 +52,20 @@ end
 
 # Recurse a directory for files Dendro can analyze, pruning dot-directories like
 # `.git` and keeping only files whose extension resolves to a language profile.
-function source_files(dir)
+# `ignore` patterns, matched against each path relative to `dir`, prune directories
+# and drop files before they reach the corpus, so vendored source never feeds the
+# baseline.
+function source_files(dir, ignore = String[])
+    patterns = compile_ignores(ignore)
     files = String[]
     for (root, dirs, names) in walkdir(dir)
-        filter!(d -> !startswith(d, "."), dirs)
+        filter!(dirs) do d
+            !startswith(d, ".") && !is_ignored(patterns, relpath(joinpath(root, d), dir), true)
+        end
         for name in names
             lang = language_for_path(name)
             (lang === nothing || !haskey(PROFILES, lang)) && continue
+            is_ignored(patterns, relpath(joinpath(root, name), dir), false) && continue
             push!(files, joinpath(root, name))
         end
     end
@@ -81,15 +88,23 @@ candidate-search radius to a function's size.
 `rules` is the active rule set, defaulting to [`BUILTIN_RULES`]. Append your own
 [`Rule`](@ref)s to lint for a project's structural conventions:
 `analyze(path; rules = [BUILTIN_RULES; my_rule])`.
+
+`ignore` is a list of gitignore-style patterns, matched against each path relative
+to a scanned folder. Matching files are dropped before parsing, so vendored or
+generated source is neither flagged nor counted in the baseline:
+`analyze(path; ignore = ["vendor/", "*.generated.jl"])`. A leading `!` re-includes,
+a trailing `/` matches directories only. As in gitignore, a file under an excluded
+directory cannot be re-included. Patterns apply to folder scans, not a single named
+file.
 """
 function analyze(path; base = nothing, cut::Real = 0.95,
                  min_size::Integer = DEFAULT_MIN_SIZE,
                  threshold::Real = DEFAULT_THRESHOLD,
                  radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing,
-                 rules = BUILTIN_RULES)
+                 rules = BUILTIN_RULES, ignore = String[])
     ispath(path) || error("Dendro: no such path $path")
     if isdir(path)
-        corpus = source_files(path)
+        corpus = source_files(path, ignore)
     else
         language === nothing && language_for_path(path) === nothing &&
             error("Dendro: cannot infer language for $path; pass `language=`.")
