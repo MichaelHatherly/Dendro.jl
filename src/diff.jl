@@ -34,23 +34,36 @@ function changed_ranges(diff::AbstractString)
     added = Dict{String,Vector{Int}}()
     file = ""
     curnew = 0
+    oldleft = 0
+    newleft = 0
     for ln in eachline(IOBuffer(diff))
-        if startswith(ln, "+++ ")
+        # A body line always carries a `+`/`-`/space prefix, so a line starting
+        # with `@@` is a hunk header wherever it appears. The header's line
+        # counts, not a line's text, then decide where the body ends, so body
+        # content that resembles a `+++` header is read by its column alone.
+        if startswith(ln, "@@")
+            m = match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", ln)
+            curnew = parse(Int, m.captures[2])
+            oldleft = m.captures[1] === nothing ? 1 : parse(Int, m.captures[1])
+            newleft = m.captures[3] === nothing ? 1 : parse(Int, m.captures[3])
+        elseif oldleft > 0 || newleft > 0
+            c = isempty(ln) ? ' ' : ln[1]
+            if c == '+'
+                push!(get!(() -> Int[], added, file), curnew)
+                curnew += 1
+                newleft -= 1
+            elseif c == '-'
+                oldleft -= 1
+            elseif c == '\\'
+                # "\ No newline at end of file": not a content line.
+            else
+                curnew += 1
+                oldleft -= 1
+                newleft -= 1
+            end
+        elseif startswith(ln, "+++ ")
             path = ln[5:end]
             file = startswith(path, "b/") ? path[3:end] : path
-        elseif startswith(ln, "--- ") || startswith(ln, "diff --git") || startswith(ln, "index ")
-            # file headers, no line content
-        elseif startswith(ln, "@@")
-            m = match(r"\+(\d+)", ln)
-            curnew = parse(Int, m.captures[1])
-        elseif startswith(ln, "+")
-            push!(get!(() -> Int[], added, file), curnew)
-            curnew += 1
-        elseif startswith(ln, "-") || startswith(ln, "\\")
-            # deletion or no-newline marker, no new-file advance
-        else
-            # context line
-            curnew += 1
         end
     end
     return Dict(f => coalesce_lines(ls) for (f, ls) in added)
