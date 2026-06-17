@@ -25,6 +25,12 @@ source text
 but restricts findings to the touched line ranges. Nothing else branches the
 flow.
 
+`analyze_corpus` is a separate pass that crosses the single-file boundary. It
+walks many files, hashes each function's structure, and emits a `:duplicate`
+`Finding` for every shape shared by two or more functions. It reuses the parse and
+unit machinery but not the per-file scoring path. Still syntactic: it compares
+node-type sequences, no symbol resolution.
+
 ## Layers
 
 Three layers, low to high. `src/Dendro.jl` includes them in dependency order, and
@@ -58,9 +64,12 @@ Measurement:
 
 Reporting:
 
-- `report.jl` defines `Finding`, `Scan`, `findings_for_tree`, the top-level
-  `analyze`, `report`, and `active`. This is where measurement, scoring, and
-  suppression meet.
+- `report.jl` defines `Location`, `Finding`, `Scan`, `findings_for_tree`, the
+  top-level `analyze`, `report`, and `active`. This is where measurement, scoring,
+  and suppression meet.
+- `corpus.jl` defines `structural_digest` and `analyze_corpus`: the cross-corpus
+  duplicate pass, hashing node-type sequences (type not text) for rename-tolerant
+  matching, gated by named-node count.
 - `diff.jl` defines `analyze_diff` and the unified-diff parser
   (`changed_ranges`, `coalesce_lines`) that turns a git diff into per-file line
   ranges.
@@ -76,10 +85,15 @@ the only place a language's concrete grammar leaks in.
 `FunctionUnit` (`units.jl`). One callable definition: the node and its line span.
 The granularity at which scalar metrics report.
 
-`Finding` (`report.jl`). One reported issue: file, line, unit name, metric, the
-scalar value or `nothing` for a flag, the absolute band, the corpus percentile or
-`nothing`, the kind (`:scalar` or `:flag`), and `suppressed`. Suppressed findings
-are kept in the vector, not dropped, so they can be counted.
+`Location` (`report.jl`). A code site: file, 1-based line, and enclosing unit
+name. A `Finding` carries one or more.
+
+`Finding` (`report.jl`). One reported issue over a set of `Location`s: the metric,
+the locations, the scalar value (the member count for `:duplicate`, `nothing` for
+other flags), the absolute band, the corpus percentile or `nothing`, the kind
+(`:scalar` or `:flag`), and `suppressed`. Per-file metrics fire at one location;
+relational metrics like `:duplicate` span several. Suppressed findings are kept in
+the vector, not dropped, so they can be counted.
 
 `Scan` (`report.jl`). The fixed context for analysing one file: profile, source,
 path, optional baseline, cut percentile, optional diff line ranges, and the parsed
@@ -125,7 +139,9 @@ findings for gating.
 
 - Tree-sitter rows are 0-based. `line_of` (in `suppress.jl`) converts to 1-based
   source lines, and `FunctionUnit` stores 1-based lines. Findings are 1-based.
-- Metrics are syntactic, scoped to one file's tree, with no symbol resolution.
+- Metrics are syntactic, with no symbol resolution. Per-file metrics are scoped to
+  one file's tree; `analyze_corpus` is the one pass that spans files, and it still
+  compares only structure.
 - Adding a language is data only: a `LanguageProfile` in `profiles.jl` and an
   extension entry in `resolve.jl`. No metric code changes. If a metric needs a
   language special case, the profile is missing a field; add the field.

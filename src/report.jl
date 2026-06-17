@@ -1,29 +1,45 @@
-# Findings and reporting. A Finding pairs a metric reading with its location and
-# both scores, absolute (fixed band) and relative (corpus percentile).
+# Findings and reporting. A Finding pairs a metric reading with the locations it
+# covers and both scores, absolute (fixed band) and relative (corpus percentile).
+
+"""
+    Location
+
+A code site: its `file` path, 1-based `line`, and enclosing `unit` name ("" when
+no name node is found).
+"""
+struct Location
+    file::String
+    line::Int
+    unit::String
+end
 
 """
     Finding
 
-One reported issue.
+One reported issue over one or more locations. Per-file metrics fire at a single
+location; relational metrics like `:duplicate` span several.
 
-- `metric`: which metric fired (`:cyclomatic`, `:empty_catch`, ...).
-- `value`: the scalar reading, or `nothing` for flag metrics.
+- `metric`: which metric fired (`:cyclomatic`, `:empty_catch`, `:duplicate`, ...).
+- `locations`: every site the finding covers, at least one.
+- `value`: the scalar reading, the member count for `:duplicate`, or `nothing`.
 - `absolute`: `:ok`/`:warn`/`:high` band, always `:high` for flags.
 - `percentile`: corpus rank in `[0, 1]`, or `nothing` without a baseline.
 - `kind`: `:scalar` or `:flag`.
 - `suppressed`: whether an inline directive accepted this finding.
 """
 struct Finding
-    file::String
-    line::Int
-    unit::String
     metric::Symbol
+    locations::Vector{Location}
     value::Union{Int,Nothing}
     absolute::Symbol
     percentile::Union{Float64,Nothing}
     kind::Symbol
     suppressed::Bool
 end
+
+# Single-location finding, the shape every per-file metric produces.
+Finding(file, line, unit, metric, value, absolute, percentile, kind, suppressed) =
+    Finding(metric, [Location(file, line, unit)], value, absolute, percentile, kind, suppressed)
 
 # Label a function unit by its name, or "" when no name node is found.
 function unit_name(unit::FunctionUnit, profile::LanguageProfile, source::AbstractString)
@@ -143,7 +159,8 @@ active(findings) = filter(f -> !f.suppressed, findings)
 """
     report([io], findings)
 
-Write `findings` as one line each: `file:line  unit  metric value (scores)`.
+Write each finding as `file:line  unit  metric value (scores)`, followed by an
+`also at` line per extra location for findings that span several.
 """
 function report(io::IO, findings)
     suppressed = 0
@@ -152,13 +169,15 @@ function report(io::IO, findings)
             suppressed += 1
             continue
         end
-        loc = string(f.file, ":", f.line)
-        label = isempty(f.unit) ? "" : string("  ", f.unit)
-        if f.kind == :scalar
-            rel = f.percentile === nothing ? "" : string("; p", round(Int, f.percentile * 100))
-            println(io, loc, label, "  ", f.metric, " ", f.value, " (", f.absolute, rel, ")")
-        else
-            println(io, loc, label, "  ", f.metric, " (", f.absolute, ")")
+        anchor = first(f.locations)
+        loc = string(anchor.file, ":", anchor.line)
+        label = isempty(anchor.unit) ? "" : string("  ", anchor.unit)
+        val = f.value === nothing ? "" : string(" ", f.value)
+        rel = f.percentile === nothing ? "" : string("; p", round(Int, f.percentile * 100))
+        println(io, loc, label, "  ", f.metric, val, " (", f.absolute, rel, ")")
+        for extra in Iterators.drop(f.locations, 1)
+            tag = isempty(extra.unit) ? "" : string("  ", extra.unit)
+            println(io, "    also at ", extra.file, ":", extra.line, tag)
         end
     end
     suppressed > 0 && println(io, suppressed, " finding(s) suppressed by directives")

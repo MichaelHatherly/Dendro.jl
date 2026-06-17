@@ -39,6 +39,10 @@ baseline = load_baseline("dendro-baseline.json")
 # Review mode: report only the functions a change touched.
 findings = analyze_diff(; repo = ".", base = "HEAD", baseline = baseline)
 report(findings)
+
+# Find functions duplicated across the corpus.
+findings = analyze_corpus(readdir("src"; join = true))
+report(findings)
 ```
 
 A `Finding` carries the metric, its value, the absolute band (`:ok`/`:warn`/
@@ -71,6 +75,25 @@ parameter count.
 Flag (presence is the finding): swallowed errors (empty catch clauses), stub
 markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies.
 
+## Duplicate detection
+
+`analyze_corpus(paths)` finds functions duplicated across the corpus, including
+across different files. It hashes each function by its node-type sequence, type
+not text, so functions that differ only in variable names or literal values still
+match (Type-2 clones). It catches the copy-paste-then-rename that generated code
+produces. Each cluster of two or more comes back as one `:duplicate` finding whose
+`locations` list every member:
+
+```
+src/a.jl:10  parse_header  duplicate 3 (high)
+    also at src/b.jl:42  read_header
+    also at src/c.jl:7  load_header
+```
+
+`min_size` (default 10 named nodes) gates out trivial functions, so one-line
+getters do not cluster. Pass it lower to widen the net, higher to focus on large
+clones.
+
 ## Suppressing findings
 
 Some flagged code is fine in context. A comment directive accepts a specific
@@ -91,8 +114,8 @@ end
 ```
 
 Metric names are Dendro's own: `cyclomatic`, `function_length`, `nesting_depth`,
-`parameter_count`, `empty_catch`, `stub_marker`, `empty_body`. An unknown name
-warns, so a typo does not silently disable a check.
+`parameter_count`, `empty_catch`, `stub_marker`, `empty_body`, `duplicate`. An
+unknown name warns, so a typo does not silently disable a check.
 
 Suppression marks a finding rather than dropping it. `report` prints the active
 findings and a footer counting the suppressed ones, and `active(findings)`

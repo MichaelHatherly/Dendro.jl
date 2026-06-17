@@ -66,7 +66,7 @@ end
     write(file, "function f(x)\n    x\nend\nfunction g(a, b, c, d, e, f)\n    1\nend\n")
     findings = Dendro.analyze_diff(; repo = repo)
 
-    @test any(x -> x.unit == "g" && x.metric == :parameter_count, findings)
+    @test any(x -> first(x.locations).unit == "g" && x.metric == :parameter_count, findings)
     # f was not in the changed range, so it must not be reported.
-    @test !any(x -> x.unit == "f", findings)
+    @test !any(x -> first(x.locations).unit == "f", findings)
 end

@@ -10,6 +10,7 @@ using Dendro, TreeSitter, Test
     include("report.jl")
     include("suppress.jl")
     include("diff.jl")
+    include("corpus.jl")
     include("python.jl")
     include("languages.jl")
     include("dogfood.jl")

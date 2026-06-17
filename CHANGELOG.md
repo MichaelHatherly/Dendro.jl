@@ -9,12 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Cross-corpus duplicate detection. `analyze_corpus(paths; min_size, language)`
+  finds functions duplicated across files, tolerant to identifier renaming and
+  literal-value changes (Type-2 clones), by hashing each function's node-type
+  sequence. Each cluster of two or more is one `:duplicate` finding whose
+  `locations` list every member. `min_size` (named-node count) gates trivial
+  functions. Suppressed by `dendro-ignore: duplicate` on any member.
 - Inline suppression directives in comments: `dendro-ignore` for the same or next
   line, `dendro-ignore: cyclomatic, parameter_count` for named metrics, and
   `dendro-ignore-file` for a whole file. Works in every supported language. An
   unknown metric name warns. A suppressed finding is marked, not dropped, so
   `report` prints a count of suppressions and `active(findings)` returns the
   unsuppressed findings for gating.
+
+### Changed
+
+- A `Finding` now spans a set of `Location`s rather than a single file/line/unit,
+  so a relational metric like `:duplicate` reports every site it covers. Per-file
+  metrics still fire at one location.
 
 ## [0.1.0]
 

@@ -9,8 +9,8 @@
     @test hit.absolute == :warn
     @test hit.percentile === nothing
     @test hit.kind == :scalar
-    @test hit.unit == "f"
-    @test hit.line == 1
+    @test first(hit.locations).unit == "f"
+    @test first(hit.locations).line == 1
 end
 
 @testset "analyze relative findings" begin
@@ -51,7 +51,7 @@ end
     # A given language resolves the same whether a symbol or string, any case.
     for lang in (:julia, "julia", :Julia, "JULIA")
         findings = Dendro.analyze(path; language = lang)
-        @test any(x -> x.metric == :parameter_count && x.unit == "f", findings)
+        @test any(x -> x.metric == :parameter_count && first(x.locations).unit == "f", findings)
     end
 end
 
