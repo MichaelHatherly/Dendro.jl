@@ -64,6 +64,22 @@ end
     @test only(dirs).metrics == Set{Symbol}()
 end
 
+@testset "suppression directive with a reason" begin
+    p = Dendro.parser_for(:julia)
+    prof = Dendro.PROFILES[:julia]
+
+    # A reason after a `--` delimiter is ignored, with no warning.
+    src = "# dendro-ignore: cyclomatic -- it is a dispatch table\nfunction f()\nend\n"
+    d = only(Dendro.suppressions(parse(p, src), prof, src; file = "x.jl"))
+    @test d.metrics == Set([:cyclomatic])
+
+    # A recognized metric still applies when followed by stray prose, rather
+    # than silently suppressing nothing. The prose words warn.
+    src = "# dendro-ignore: cyclomatic generated\nfunction f()\nend\n"
+    dirs = @test_logs (:warn,) Dendro.suppressions(parse(p, src), prof, src; file = "x.jl")
+    @test :cyclomatic in only(dirs).metrics
+end
+
 @testset "suppression integration (julia)" begin
     dir = mktempdir()
 

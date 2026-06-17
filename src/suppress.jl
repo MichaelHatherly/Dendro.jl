@@ -18,18 +18,20 @@ end
 const METRICS = (SCALAR_METRICS..., :empty_body, :empty_catch, :stub_marker)
 
 # `dendro-ignore` or `dendro-ignore-file`, with an optional `: metric, metric`
-# list. Case-insensitive, matched anywhere in a comment's text.
+# list and an optional ` -- reason` the metric capture stops before. Case-
+# insensitive, matched anywhere in a comment's text.
 const DIRECTIVE_RE = r"\bdendro-ignore(-file)?\b(?:\s*:\s*([\w,\s]+))?"i
 
 # 1-based source line of a node's first character.
 line_of(node) = Int(TreeSitter.start_point(node).row) + 1
 
 # Parse the metric-list capture into a validated set, warning on unknown names.
+# Names separate on commas or whitespace, so a recognized metric still applies
+# when stray words trail it; a `--` reason ends the list before this is reached.
 function parse_metrics(list::AbstractString, file, line)
     metrics = Set{Symbol}()
-    for token in split(list, ',')
+    for token in split(list, r"[,\s]+"; keepempty = false)
         name = strip(token)
-        isempty(name) && continue
         sym = Symbol(name)
         if sym in METRICS
             push!(metrics, sym)
