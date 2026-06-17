@@ -22,6 +22,23 @@ function severity(metric::Symbol, value::Real; bands=DEFAULT_BANDS)
     return value >= high ? :high : value >= warn ? :warn : :ok
 end
 
+# Metric names carried in baselines and findings, in report order.
+const SCALAR_METRICS = (:cyclomatic, :function_length, :nesting_depth, :parameter_count)
+
+"""
+    unit_metrics(unit, profile, source) -> NamedTuple
+
+All scalar metrics for one function unit, keyed by metric name.
+"""
+function unit_metrics(unit::FunctionUnit, profile::LanguageProfile, source::AbstractString)
+    return (
+        cyclomatic = cyclomatic(unit.node, profile, source),
+        function_length = function_length(unit),
+        nesting_depth = nesting_depth(unit.node, profile),
+        parameter_count = parameter_count(unit.node, profile),
+    )
+end
+
 """
     function_length(unit) -> Int
 

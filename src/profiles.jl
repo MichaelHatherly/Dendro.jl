@@ -16,4 +16,8 @@ PROFILES[:julia] = LanguageProfile(
     Set(["&&", "||"]),
     Set(["if_statement", "for_statement", "while_statement", "try_statement"]),
     Set(["argument_list"]),
+    Set(["block"]),
+    Set(["catch_clause"]),
+    Set(["line_comment", "block_comment"]),
+    Set(["identifier"]),
 )

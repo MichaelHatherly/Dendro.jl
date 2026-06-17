@@ -12,6 +12,10 @@ measures.
 - `short_circuit_ops`: operator texts (`"&&"`, `"||"`) that add a branch.
 - `nesting_types`: control constructs that introduce a level of nesting.
 - `parameter_types`: the node that holds a function's parameter list.
+- `body_types`: the block node that holds a function or clause body.
+- `catch_types`: exception-handling clauses, checked for swallowed errors.
+- `comment_types`: comment nodes, scanned for stub markers.
+- `name_types`: identifier node used to label a function in reports.
 """
 struct LanguageProfile
     name::Symbol
@@ -20,4 +24,8 @@ struct LanguageProfile
     short_circuit_ops::Set{String}
     nesting_types::Set{String}
     parameter_types::Set{String}
+    body_types::Set{String}
+    catch_types::Set{String}
+    comment_types::Set{String}
+    name_types::Set{String}
 end
