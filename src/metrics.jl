@@ -96,3 +96,65 @@ function cyclomatic(node::TreeSitter.Node, profile::LanguageProfile, source::Abs
     end
     return count
 end
+
+"""
+    return_count(node, profile) -> Int
+
+Number of return statements (`profile.return_types`) in the unit. A language with
+no return-statement node, or one whose idiomatic return is a bare expression,
+counts only explicit returns.
+"""
+function return_count(node::TreeSitter.Node, profile::LanguageProfile)
+    count = 0
+    traverse_unit(node, profile) do n, enter
+        enter && TreeSitter.node_type(n) in profile.return_types && (count += 1)
+        nothing
+    end
+    return count
+end
+
+# True when `node` has a direct child that is a short-circuit operator leaf, so it
+# is the root of one `&&`/`||` link in a boolean expression.
+function has_op_child(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+    for c in TreeSitter.children(node)
+        TreeSitter.is_leaf(c) || continue
+        strip(TreeSitter.slice(source, c)) in profile.short_circuit_ops && return true
+    end
+    return false
+end
+
+# Number of operator nodes in `node`'s subtree, the size of one connected boolean
+# expression once `node` is its top.
+function count_op_nodes(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+    count = 0
+    traverse_unit(node, profile) do n, enter
+        enter && has_op_child(n, profile, source) && (count += 1)
+        nothing
+    end
+    return count
+end
+
+"""
+    boolean_complexity(node, profile, source) -> Int
+
+The most short-circuit operators (`&&`, `||`) joined into a single boolean
+expression in the unit. `a && b && c` scores 2; two separate two-operator
+conditions score 2, not 4.
+"""
+function boolean_complexity(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+    isempty(profile.short_circuit_ops) && return 0
+    best = 0
+    depth = 0
+    traverse_unit(node, profile) do n, enter
+        if has_op_child(n, profile, source)
+            if enter
+                depth == 0 && (best = max(best, count_op_nodes(n, profile, source)))
+                depth += 1
+            else
+                depth -= 1
+            end
+        end
+        nothing
+    end
+    return best
+end

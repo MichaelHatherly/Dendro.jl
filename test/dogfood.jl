@@ -12,14 +12,14 @@
     # No genuine complexity smell. parameter_count is excluded: the
     # LanguageProfile keyword constructor takes one argument per field by design.
     smells = filter(findings) do f
-        f.absolute == :high && f.metric in (:cyclomatic, :nesting_depth, :function_length)
+        f.absolute == :high && f.metric in (:cyclomatic, :nesting_depth, :function_length, :boolean_complexity)
     end
     @test isempty(smells)
 
-    # Keep our own house clean: no stubs, swallowed errors, or duplicated functions,
-    # exact or near.
+    # Keep our own house clean: no stubs, swallowed errors, duplicated functions
+    # (exact or near), or returns that discard errors from a finally clause.
     flags = filter(findings) do f
-        f.metric in (:stub_marker, :empty_catch, :empty_body, :duplicate, :near_duplicate)
+        f.metric in (:stub_marker, :empty_catch, :empty_body, :duplicate, :near_duplicate, :return_in_finally)
     end
     @test isempty(flags)
 end

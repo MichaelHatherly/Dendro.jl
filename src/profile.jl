@@ -18,6 +18,10 @@ measures.
 - `name_types`: identifier node used to label a function in reports.
 - `trivial_body_types`: statements that count as no real work (e.g. `pass`), so
   a body holding only these reads as empty.
+- `return_types`: return-statement nodes, counted per function and checked inside
+  finally clauses.
+- `finally_types`: finally/ensure clauses, checked for returns that discard errors.
+- `call_types`: call-expression nodes, used to spot a function that only delegates.
 """
 struct LanguageProfile
     name::Symbol
@@ -31,6 +35,9 @@ struct LanguageProfile
     comment_types::Set{String}
     name_types::Set{String}
     trivial_body_types::Set{String}
+    return_types::Set{String}
+    finally_types::Set{String}
+    call_types::Set{String}
 end
 
 # Keyword constructor. Sets that a language does not use default to empty, so
@@ -47,6 +54,9 @@ function LanguageProfile(
     catch_types = String[],
     comment_types = String[],
     trivial_body_types = String[],
+    return_types = String[],
+    finally_types = String[],
+    call_types = String[],
 )
     return LanguageProfile(
         name,
@@ -60,5 +70,8 @@ function LanguageProfile(
         Set{String}(comment_types),
         Set{String}(name_types),
         Set{String}(trivial_body_types),
+        Set{String}(return_types),
+        Set{String}(finally_types),
+        Set{String}(call_types),
     )
 end

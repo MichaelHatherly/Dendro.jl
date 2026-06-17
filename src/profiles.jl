@@ -20,6 +20,9 @@ PROFILES[:julia] = LanguageProfile(
     catch_types = ["catch_clause"],
     comment_types = ["line_comment", "block_comment"],
     name_types = ["identifier"],
+    return_types = ["return_statement"],
+    finally_types = ["finally_clause"],
+    call_types = ["call_expression"],
 )
 
 PROFILES[:python] = LanguageProfile(
@@ -36,6 +39,9 @@ PROFILES[:python] = LanguageProfile(
     comment_types = ["comment"],
     name_types = ["identifier"],
     trivial_body_types = ["pass_statement"],
+    return_types = ["return_statement"],
+    finally_types = ["finally_clause"],
+    call_types = ["call"],
 )
 
 PROFILES[:bash] = LanguageProfile(
@@ -48,6 +54,9 @@ PROFILES[:bash] = LanguageProfile(
     body_types = ["compound_statement"],
     comment_types = ["comment"],
     name_types = ["word"],
+    # Bash has no return-statement node (`return` is a command) and no finally
+    # construct, so those concepts stay empty.
+    call_types = ["command"],
 )
 
 PROFILES[:c] = LanguageProfile(
@@ -62,6 +71,9 @@ PROFILES[:c] = LanguageProfile(
     body_types = ["compound_statement"],
     comment_types = ["comment"],
     name_types = ["identifier"],
+    # C has no finally construct, so that concept stays empty.
+    return_types = ["return_statement"],
+    call_types = ["call_expression"],
 )
 
 PROFILES[:cpp] = LanguageProfile(
@@ -78,6 +90,9 @@ PROFILES[:cpp] = LanguageProfile(
     catch_types = ["catch_clause"],
     comment_types = ["comment"],
     name_types = ["identifier"],
+    # C++ try has no finally clause, so that concept stays empty.
+    return_types = ["return_statement"],
+    call_types = ["call_expression"],
 )
 
 PROFILES[:go] = LanguageProfile(
@@ -92,6 +107,9 @@ PROFILES[:go] = LanguageProfile(
     body_types = ["block"],
     comment_types = ["comment"],
     name_types = ["identifier"],
+    # Go has no finally construct, so that concept stays empty.
+    return_types = ["return_statement"],
+    call_types = ["call_expression"],
 )
 
 PROFILES[:java] = LanguageProfile(
@@ -108,6 +126,9 @@ PROFILES[:java] = LanguageProfile(
     catch_types = ["catch_clause"],
     comment_types = ["line_comment", "block_comment"],
     name_types = ["identifier"],
+    return_types = ["return_statement"],
+    finally_types = ["finally_clause"],
+    call_types = ["method_invocation"],
 )
 
 PROFILES[:javascript] = LanguageProfile(
@@ -124,6 +145,9 @@ PROFILES[:javascript] = LanguageProfile(
     catch_types = ["catch_clause"],
     comment_types = ["comment"],
     name_types = ["identifier"],
+    return_types = ["return_statement"],
+    finally_types = ["finally_clause"],
+    call_types = ["call_expression"],
 )
 
 PROFILES[:php] = LanguageProfile(
@@ -140,6 +164,9 @@ PROFILES[:php] = LanguageProfile(
     catch_types = ["catch_clause"],
     comment_types = ["comment"],
     name_types = ["name"],
+    return_types = ["return_statement"],
+    finally_types = ["finally_clause"],
+    call_types = ["function_call_expression"],
 )
 
 # Ruby's begin/rescue keeps the handler body inline rather than in a block node,
@@ -156,6 +183,9 @@ PROFILES[:ruby] = LanguageProfile(
     body_types = ["body_statement"],
     comment_types = ["comment"],
     name_types = ["identifier"],
+    return_types = ["return"],
+    finally_types = ["ensure"],
+    call_types = ["call"],
 )
 
 PROFILES[:rust] = LanguageProfile(
@@ -170,6 +200,11 @@ PROFILES[:rust] = LanguageProfile(
     body_types = ["block"],
     comment_types = ["line_comment", "block_comment"],
     name_types = ["identifier"],
+    # Rust has no finally construct, so that concept stays empty. A bare trailing
+    # expression is the idiomatic return and has no node, so return_count
+    # undercounts explicit `return` only by design.
+    return_types = ["return_expression"],
+    call_types = ["call_expression"],
 )
 
 PROFILES[:typescript] = LanguageProfile(
@@ -186,4 +221,7 @@ PROFILES[:typescript] = LanguageProfile(
     catch_types = ["catch_clause"],
     comment_types = ["comment"],
     name_types = ["identifier"],
+    return_types = ["return_statement"],
+    finally_types = ["finally_clause"],
+    call_types = ["call_expression"],
 )

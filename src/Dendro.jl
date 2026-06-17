@@ -5,7 +5,7 @@ import TreeSitter
 
 public analyze, active, github_annotations
 public Finding, Findings, Location
-public Rule, BUILTIN_RULES
+public Rule, BUILTIN_RULES, OPTIONAL_RULES
 
 include("resolve.jl")
 include("profile.jl")

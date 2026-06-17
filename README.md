@@ -88,10 +88,15 @@ calls a uniformly-weak codebase fine. Reporting both avoids each trap.
 ## Metrics
 
 Scalar (per function): cyclomatic complexity, length, maximum nesting depth,
-parameter count.
+parameter count, boolean complexity (the most `&&`/`||` operators joined into one
+expression).
 
 Flag (presence is the finding): swallowed errors (empty catch clauses), stub
-markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies.
+markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies, a `return`
+inside a finally clause (which discards a pending error or return value).
+
+Each metric is a [rule](#custom-rules). The set above is the default; a caller can
+add their own or opt into rules that are off by default.
 
 ## Duplicate detection
 
@@ -157,14 +162,50 @@ function build(a, b, c, d, e, f)   # one keyword per field, accepted
 end
 ```
 
-Metric names are Dendro's own: `cyclomatic`, `function_length`, `nesting_depth`,
-`parameter_count`, `empty_catch`, `stub_marker`, `empty_body`, `duplicate`,
-`near_duplicate`. An unknown name warns, so a typo does not silently disable a
+Metric names are the active rules' names plus the relational `duplicate` and
+`near_duplicate`: by default `cyclomatic`, `function_length`, `nesting_depth`,
+`parameter_count`, `boolean_complexity`, `empty_catch`, `stub_marker`,
+`empty_body`, `return_in_finally`, `duplicate`, `near_duplicate`. A custom rule's
+name is accepted too. An unknown name warns, so a typo does not silently disable a
 check.
 
 Suppression marks a finding rather than dropping it. Printing a findings vector
 lists the active findings and a footer counting the suppressed ones, and
 `active(findings)` returns only the unsuppressed findings for gating.
+
+## Custom rules
+
+A rule is a `Rule`: a metric name, its kind (`:scalar` or `:flag`), a `(warn, high)`
+band for scalars, and a function that measures one unit or tree. The defaults live
+in `BUILTIN_RULES`; pass `rules` to `analyze` to extend them.
+
+```julia
+using Dendro: analyze, Rule, BUILTIN_RULES
+
+# A flag rule reports one finding per node it returns from (tree, profile, source).
+# This one flags comments carrying a BUG marker.
+function bug_markers(tree, profile, source)
+    out = TreeSitter.Node[]
+    TreeSitter.traverse(tree) do n, enter
+        if enter && TreeSitter.node_type(n) in profile.comment_types
+            occursin("BUG", TreeSitter.slice(source, n)) && push!(out, n)
+        end
+        nothing
+    end
+    return out
+end
+
+analyze("src"; rules = [BUILTIN_RULES; Rule(:bug_marker, :flag, nothing, bug_markers)])
+```
+
+A scalar rule's function is `(unit, profile, source) -> Int`; its value is scored
+against the band and the corpus percentile like any built-in. A rule reads node
+types through the `LanguageProfile`, so one definition works across languages.
+
+`OPTIONAL_RULES` holds rules that are off by default: `return_count` (return points
+per function, which needs per-project band tuning) and `trivial_wrapper` (a function
+whose body is one delegating call, which has a higher false-positive rate). Opt in
+with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 
 ## Languages
 

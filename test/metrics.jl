@@ -103,6 +103,38 @@ end
     @test Dendro.parameter_count(u.node, prof) == 2
 end
 
+@testset "boolean_complexity (julia)" begin
+    p, prof = fixture(:julia)
+
+    flat = "function f(a)\n    return a\nend\n"
+    u = only(Dendro.functions(parse(p, flat), prof))
+    @test Dendro.boolean_complexity(u.node, prof, flat) == 0
+
+    # Four operands joined by three operators is one expression of size 3.
+    chain = "function f(a, b, c, d)\n    return a && b && c && d\nend\n"
+    u = only(Dendro.functions(parse(p, chain), prof))
+    @test Dendro.boolean_complexity(u.node, prof, chain) == 3
+
+    # Two separate two-operator conditions: the max is 2, not 4.
+    split = "function f(a, b, c, d, e, f)\n    if a && b && c\n        x = 1\n    end\n    if d && e && f\n        y = 2\n    end\nend\n"
+    u = only(Dendro.functions(parse(p, split), prof))
+    @test Dendro.boolean_complexity(u.node, prof, split) == 2
+end
+
+@testset "return_count (julia)" begin
+    p, prof = fixture(:julia)
+
+    src = "function f(x)\n    if x > 0\n        return 1\n    end\n    if x < 0\n        return 2\n    end\n    return 3\nend\n"
+    u = only(Dendro.functions(parse(p, src), prof))
+    @test Dendro.return_count(u.node, prof) == 3
+
+    # A nested function's return belongs to the nested unit, not the enclosing one.
+    nested = "function outer(x)\n    g = function (y)\n        return y\n    end\n    return x\nend\n"
+    units = Dendro.functions(parse(p, nested), prof)
+    outer = units[findfirst(u -> u.firstline == 1, units)]
+    @test Dendro.return_count(outer.node, prof) == 1
+end
+
 @testset "absolute severity bands" begin
     # Classification against a (warn, high) band.
     @test Dendro.severity(10, (11, 21)) == :ok

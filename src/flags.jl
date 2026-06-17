@@ -75,3 +75,52 @@ function stub_markers(tree, profile::LanguageProfile, source::AbstractString)
     end
     return out
 end
+
+"""
+    returns_in_finally(tree, profile) -> Vector{TreeSitter.Node}
+
+Return statements inside a finally/ensure clause (`profile.finally_types`), which
+discard a pending exception or return value. Empty for a language with no finally
+construct.
+"""
+function returns_in_finally(tree, profile::LanguageProfile)
+    out = TreeSitter.Node[]
+    (isempty(profile.finally_types) || isempty(profile.return_types)) && return out
+    TreeSitter.traverse(tree) do n, enter
+        if enter && TreeSitter.node_type(n) in profile.finally_types
+            traverse_unit(n, profile) do m, e
+                e && TreeSitter.node_type(m) in profile.return_types && push!(out, m)
+                nothing
+            end
+        end
+        nothing
+    end
+    return out
+end
+
+# True when a statement is, or directly wraps, a single call: a bare call, or a
+# return/expression statement whose only named child is a call.
+function single_call(stmt::TreeSitter.Node, profile::LanguageProfile)
+    TreeSitter.node_type(stmt) in profile.call_types && return true
+    kids = collect(TreeSitter.named_children(stmt))
+    return length(kids) == 1 && TreeSitter.node_type(only(kids)) in profile.call_types
+end
+
+"""
+    trivial_wrappers(tree, profile) -> Vector{TreeSitter.Node}
+
+Function nodes whose body is one delegating call, an indirection that adds no
+behaviour. Empty for a language with no call-expression concept.
+"""
+function trivial_wrappers(tree, profile::LanguageProfile)
+    out = TreeSitter.Node[]
+    isempty(profile.call_types) && return out
+    for u in functions(tree, profile)
+        body = first_child_of(u.node, profile.body_types)
+        body === nothing && continue
+        stmts = [c for c in TreeSitter.children(body)
+                 if TreeSitter.is_named(c) && !(TreeSitter.node_type(c) in profile.trivial_body_types)]
+        length(stmts) == 1 && single_call(only(stmts), profile) && push!(out, u.node)
+    end
+    return out
+end

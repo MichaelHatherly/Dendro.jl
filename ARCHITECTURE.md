@@ -14,7 +14,7 @@ source text
   -> parse (TreeSitter, parser chosen by language)
   -> tree
   -> functions(tree, profile)        units to measure
-  -> per unit: scalar metrics + flag metrics
+  -> per unit: scalar rules; per tree: flag rules
   -> score each reading (absolute band, optional corpus percentile)
   -> mark suppressed findings from inline directives
   -> Findings (a Vector{Finding} that prints as a report)
@@ -24,7 +24,10 @@ source text
 `analyze` (corpus.jl) is the one entrypoint. It resolves `path` to a corpus (every
 profile-resolvable file under a folder, or one file), parses each once, builds a
 baseline from that corpus, runs the per-file path above against it for each file,
-and appends cross-file duplicates. The baseline-from-the-corpus step is what makes
+and appends cross-file duplicates. The active rule set is a value it carries: the
+`rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
+per-file scoring, and suppression validation, so a caller extends the checks
+without touching the pipeline. The baseline-from-the-corpus step is what makes
 relative scoring work with no setup, for a single file as much as a folder: a
 file's own functions are the distribution it is scored against.
 
@@ -63,15 +66,22 @@ Measurement:
 - `units.jl` defines `FunctionUnit` (a node plus its 1-based first and last line)
   and `functions(tree, profile)`, which collects every node whose type the profile
   marks as a function.
-- `metrics.jl` defines the scalar metrics and their scoring: `cyclomatic`,
-  `function_length`, `nesting_depth`, `parameter_count`, the `SCALAR_METRICS`
-  tuple that fixes report order, `DEFAULT_BANDS`, and `severity`.
-- `flags.jl` defines the presence metrics: `empty_body`, `empty_catches`,
-  `stub_markers`, plus the helpers for reading a body's real-work count.
+- `metrics.jl` defines the scalar metrics and `severity`: `cyclomatic`,
+  `function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
+  `return_count`. `severity` classifies a value against a `(warn, high)` band.
+- `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
+  `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`, plus
+  the helpers for reading a body's real-work count.
+- `rules.jl` defines `Rule` (a metric name, kind, band, and measuring function),
+  `BUILTIN_RULES` (the default set, in report order), `OPTIONAL_RULES` (off by
+  default), `scalar_rules`/`flag_rules`, and `metric_names` (the names a directive
+  may name: the active rules plus the relational clone metrics). The built-in rules
+  wrap the metrics.jl/flags.jl functions; a caller's rule wraps their own.
 - `baseline.jl` defines `Baseline` over a corpus, `percentile` scoring, and
-  `add_samples!`, the per-tree accumulation the corpus baseline pass uses.
-- `suppress.jl` defines inline suppression: `Directive`, `METRICS`,
-  `DIRECTIVE_RE`, `suppressions`, `is_suppressed`, and `line_of`.
+  `add_samples!`, which samples the active rule set's scalar rules per tree.
+- `suppress.jl` defines inline suppression: `Directive`, `DIRECTIVE_RE`,
+  `suppressions`, `parse_metrics` (validating against the active rule set's names),
+  `is_suppressed`, and `line_of`.
 
 Reporting:
 
@@ -105,8 +115,16 @@ Reporting:
 `LanguageProfile` (`profile.jl`). Names the tree-sitter node types a language uses
 for each construct Dendro measures: function definitions, decision points,
 short-circuit operators, nesting constructs, parameter lists, bodies, catch
-clauses, comments, name nodes, and trivial (no-op) statements. Pure data. This is
-the only place a language's concrete grammar leaks in.
+clauses, comments, name nodes, trivial (no-op) statements, return statements,
+finally clauses, and call expressions. Pure data. This is the only place a
+language's concrete grammar leaks in. A concept a language lacks stays an empty
+set, and a rule reading that concept finds nothing there.
+
+`Rule` (`rules.jl`). One lint check as data: a metric `name`, a `kind` (`:scalar`
+or `:flag`), a `(warn, high)` `band` for scalars, and an `fn` that measures one
+unit (scalar) or tree (flag). The active set is a `Vector{Rule}` carried by `Scan`
+and `analyze`, so checks are a value, not module constants. Built-ins wrap the
+metrics.jl/flags.jl functions; a caller's rule wraps their own.
 
 `FunctionUnit` (`units.jl`). One callable definition: the node and its line span.
 The granularity at which scalar metrics report.
@@ -132,10 +150,10 @@ renders the report. The wrapper exists so display lives on a Dendro-owned type
 rather than pirating `show` for `Vector{Finding}`.
 
 `Scan` (`report.jl`). The fixed context for analysing one file: profile, source,
-path, optional baseline, cut percentile, optional diff line ranges, and the parsed
-directives. New per-file analysis state belongs here, passed through the keyword
-constructor, rather than as a new parameter to `unit_findings!` or
-`flag_findings!`. Those signatures stay narrow on purpose, so the functions
+path, the active `rules`, optional baseline, cut percentile, optional diff line
+ranges, and the parsed directives. New per-file analysis state belongs here, passed
+through the keyword constructor, rather than as a new parameter to `unit_findings!`
+or `flag_findings!`. Those signatures stay narrow on purpose, so the functions
 Dendro runs over its own source do not grow a parameter-count smell.
 
 `Baseline` (`baseline.jl`). Per-language, per-metric corpus samples, used to place
@@ -149,8 +167,8 @@ number, or `:file`) and a metric set (or `nothing` for all metrics).
 Every scalar metric carries two independent scores, and a function is flagged when
 either trips.
 
-- Absolute: the value against a fixed band in `DEFAULT_BANDS`, classified `:ok`,
-  `:warn`, or `:high` by `severity`. Fixed targets, not corpus-derived.
+- Absolute: the value against the rule's fixed `(warn, high)` band, classified
+  `:ok`, `:warn`, or `:high` by `severity`. Fixed targets, not corpus-derived.
 - Relative: the value's percentile against the baseline corpus, flagged when it
   lands at or above the cut (default 0.95). `nothing` when the corpus holds no
   sample for that metric to rank against.
@@ -207,7 +225,8 @@ reviewer reads differently.
 `suppressions` walks the same comment nodes as `stub_markers` and matches
 `DIRECTIVE_RE` against each comment's text. A `-file` directive carries `:file`
 scope; others carry the comment's line. Named metrics are validated against
-`METRICS`; an unknown name warns and is dropped.
+`metric_names(rules)`, the active rule set's names plus the relational clone
+metrics; an unknown name warns and is dropped.
 
 `is_suppressed(directives, line, metric)` is true when a directive covers the line
 (file scope, the same line, or the line directly above) and its metric set is
@@ -226,6 +245,11 @@ unsuppressed findings for gating.
 - Adding a language is data only: a `LanguageProfile` in `profiles.jl` and an
   extension entry in `resolve.jl`. No metric code changes. If a metric needs a
   language special case, the profile is missing a field; add the field.
+- A check is a `Rule`: a measuring function plus its metadata. Adding a built-in is
+  a `metrics.jl`/`flags.jl` function and a `BUILTIN_RULES` entry. The rule set is a
+  value, so a caller adds checks through `analyze`'s `rules` without forking. A rule
+  reads node types through the profile, never a raw node-type string, so it stays
+  language-agnostic.
 - Analysis state travels inside `Scan`, not as new positional parameters.
 
 ## Testing
@@ -233,6 +257,7 @@ unsuppressed findings for gating.
 `Pkg.test()` runs under `test/Project.toml`, which carries the language JLLs the
 package environment omits, so parsing only works there. `test/dogfood.jl` runs
 Dendro on its own `src/`, gated on `active(...)`, and must stay clean: no `:high`
-complexity findings, no stub markers, no swallowed errors, no empty bodies, no
+complexity findings (cyclomatic, nesting, length, boolean), no stub markers, no
+swallowed errors, no empty bodies, no returns inside a finally clause, no
 duplicates exact or near. A change that makes Dendro trip its own metrics is a
 signal to fix the code.

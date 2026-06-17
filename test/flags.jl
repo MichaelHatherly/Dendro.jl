@@ -34,3 +34,32 @@ end
     u = only(Dendro.functions(parse(p, "function g()\n    1\nend\n"), prof))
     @test !Dendro.empty_body(u.node, prof)
 end
+
+@testset "returns_in_finally (javascript)" begin
+    p, prof = fixture(:javascript)
+
+    bad = "function f() {\n  try { g(); } finally { return 1; }\n}\n"
+    @test length(Dendro.returns_in_finally(parse(p, bad), prof)) == 1
+
+    ok = "function f() {\n  try { g(); } finally { cleanup(); }\n}\n"
+    @test isempty(Dendro.returns_in_finally(parse(p, ok), prof))
+end
+
+@testset "returns_in_finally no-ops without a finally concept (go)" begin
+    p, prof = fixture(:go)
+    src = "func f() int {\n  return 0\n}\n"
+    @test isempty(Dendro.returns_in_finally(parse(p, src), prof))
+end
+
+@testset "trivial_wrappers (julia)" begin
+    p, prof = fixture(:julia)
+
+    bare = "function f(x)\n    g(x)\nend\n"
+    @test length(Dendro.trivial_wrappers(parse(p, bare), prof)) == 1
+
+    returned = "function f(x)\n    return g(x)\nend\n"
+    @test length(Dendro.trivial_wrappers(parse(p, returned), prof)) == 1
+
+    work = "function f(x)\n    y = g(x)\n    return y + 1\nend\n"
+    @test isempty(Dendro.trivial_wrappers(parse(p, work), prof))
+end
