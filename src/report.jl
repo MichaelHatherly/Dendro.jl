@@ -41,10 +41,10 @@ end
 Finding(file, line, unit, metric, value, absolute, percentile, kind, suppressed) =
     Finding(metric, [Location(file, line, unit)], value, absolute, percentile, kind, suppressed)
 
-# Label a function unit by its name, or "" when no name node is found.
-function unit_name(unit::FunctionUnit, profile::LanguageProfile, source::AbstractString)
+# Label a function node by its name, or "" when no name node is found.
+function unit_name(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
     name = ""
-    TreeSitter.traverse(unit.node) do n, enter
+    TreeSitter.traverse(node) do n, enter
         if enter && isempty(name) && TreeSitter.node_type(n) in profile.name_types
             name = String(strip(TreeSitter.slice(source, n)))
         end
@@ -53,60 +53,62 @@ function unit_name(unit::FunctionUnit, profile::LanguageProfile, source::Abstrac
     return name
 end
 
+unit_name(unit::FunctionUnit, profile::LanguageProfile, source::AbstractString) =
+    unit_name(unit.node, profile, source)
+
 """
     Scan
 
 The fixed context for analysing one file: its `profile`, `source`, and `file`
-path, the optional `baseline` and `cut` percentile for relative scoring, and the
-optional `within` line ranges that restrict findings to a diff, and the
-`directives` parsed from the source that suppress accepted findings.
+path, the active `rules`, the optional `baseline` and `cut` percentile for
+relative scoring, the optional `within` line ranges that restrict findings to a
+diff, and the `directives` parsed from the source that suppress accepted findings.
 """
 struct Scan
     profile::LanguageProfile
     source::String
     file::String
+    rules::Vector{Rule}
     baseline::Union{Baseline,Nothing}
     cut::Float64
     within::Union{Vector{UnitRange{Int}},Nothing}
     directives::Vector{Directive}
 end
 
-Scan(profile, source, file; baseline = nothing, cut = 0.95, within = nothing, directives = Directive[]) =
-    Scan(profile, String(source), String(file), baseline, Float64(cut), within, directives)
+Scan(profile, source, file; rules = BUILTIN_RULES, baseline = nothing, cut = 0.95, within = nothing, directives = Directive[]) =
+    Scan(profile, String(source), String(file), rules, baseline, Float64(cut), within, directives)
 
 # Whether a line span (or single line) is reported, given the scan's diff scope.
 in_scope(scan::Scan, a::Int, b::Int) = scan.within === nothing || intersects(scan.within, a, b)
 in_scope(scan::Scan, line::Int) = scan.within === nothing || inrange(scan.within, line)
 
-# Scalar and empty-body findings for one function unit.
+# Scalar findings for one function unit, one per scalar rule that fires.
 function unit_findings!(out, scan::Scan, unit::FunctionUnit)
     name = unit_name(unit, scan.profile, scan.source)
-    metrics = unit_metrics(unit, scan.profile, scan.source)
-    for metric in SCALAR_METRICS
-        value = getfield(metrics, metric)
-        band = severity(metric, value)
+    for r in scalar_rules(scan.rules)
+        value = r.fn(unit, scan.profile, scan.source)
+        band = severity(value, r.band)
         pct = scan.baseline === nothing ? nothing :
-              percentile(scan.baseline, scan.profile.name, metric, value)
+              percentile(scan.baseline, scan.profile.name, r.name, value)
         outlier = pct !== nothing && pct >= scan.cut
         if band != :ok || outlier
-            sup = is_suppressed(scan.directives, unit.firstline, metric)
-            push!(out, Finding(scan.file, unit.firstline, name, metric, value, band, pct, :scalar, sup))
+            sup = is_suppressed(scan.directives, unit.firstline, r.name)
+            push!(out, Finding(scan.file, unit.firstline, name, r.name, value, band, pct, :scalar, sup))
         end
-    end
-    if empty_body(unit.node, scan.profile)
-        sup = is_suppressed(scan.directives, unit.firstline, :empty_body)
-        push!(out, Finding(scan.file, unit.firstline, name, :empty_body, nothing, :high, nothing, :flag, sup))
     end
     return out
 end
 
-# Flag findings for a set of nodes, all reported with the same metric.
+# Flag findings for a set of nodes, all reported with the same metric. A node
+# that is itself a function unit is labelled with its name; other nodes are not.
 function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
     for node in nodes
         line = line_of(node)
         in_scope(scan, line) || continue
+        name = TreeSitter.node_type(node) in scan.profile.function_types ?
+               unit_name(node, scan.profile, scan.source) : ""
         sup = is_suppressed(scan.directives, line, metric)
-        push!(out, Finding(scan.file, line, "", metric, nothing, :high, nothing, :flag, sup))
+        push!(out, Finding(scan.file, line, name, metric, nothing, :high, nothing, :flag, sup))
     end
     return out
 end
@@ -125,8 +127,9 @@ function findings_for_tree(tree, scan::Scan)
         in_scope(scan, unit.firstline, unit.lastline) || continue
         unit_findings!(out, scan, unit)
     end
-    flag_findings!(out, scan, empty_catches(tree, scan.profile), :empty_catch)
-    flag_findings!(out, scan, stub_markers(tree, scan.profile, scan.source), :stub_marker)
+    for r in flag_rules(scan.rules)
+        flag_findings!(out, scan, r.fn(tree, scan.profile, scan.source), r.name)
+    end
     return out
 end
 

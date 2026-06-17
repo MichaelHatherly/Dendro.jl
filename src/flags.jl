@@ -37,6 +37,14 @@ empty_body(node::TreeSitter.Node, profile::LanguageProfile) =
     empty_block(first_child_of(node, profile.body_types), profile)
 
 """
+    empty_bodies(tree, profile) -> Vector{TreeSitter.Node}
+
+Function nodes with no body, or a body that does no real work.
+"""
+empty_bodies(tree, profile::LanguageProfile) =
+    [u.node for u in functions(tree, profile) if empty_body(u.node, profile)]
+
+"""
     empty_catches(tree, profile) -> Vector{TreeSitter.Node}
 
 Exception-handling clauses with an empty or absent body, which swallow errors.

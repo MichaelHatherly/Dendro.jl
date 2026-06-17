@@ -104,11 +104,15 @@ end
 end
 
 @testset "absolute severity bands" begin
-    @test Dendro.severity(:cyclomatic, 10) == :ok
-    @test Dendro.severity(:cyclomatic, 11) == :warn
-    @test Dendro.severity(:cyclomatic, 21) == :high
-    @test Dendro.severity(:nesting_depth, 3) == :ok
-    @test Dendro.severity(:nesting_depth, 6) == :high
-    @test Dendro.severity(:parameter_count, 5) == :warn
-    @test Dendro.severity(:function_length, 120) == :high
+    # Classification against a (warn, high) band.
+    @test Dendro.severity(10, (11, 21)) == :ok
+    @test Dendro.severity(11, (11, 21)) == :warn
+    @test Dendro.severity(21, (11, 21)) == :high
+
+    # The built-in bands the classification runs against.
+    band(name) = only(r.band for r in Dendro.BUILTIN_RULES if r.name == name)
+    @test band(:cyclomatic) == (11, 21)
+    @test band(:nesting_depth) == (4, 6)
+    @test band(:parameter_count) == (5, 8)
+    @test band(:function_length) == (50, 100)
 end

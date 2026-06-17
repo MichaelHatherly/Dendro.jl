@@ -14,9 +14,6 @@ struct Directive
     metrics::Union{Nothing,Set{Symbol}}
 end
 
-# Metric names a directive may name. Dendro's own, in the syntax authors write.
-const METRICS = (SCALAR_METRICS..., :empty_body, :empty_catch, :stub_marker, :duplicate, :near_duplicate)
-
 # `dendro-ignore` or `dendro-ignore-file`, with an optional `: metric, metric`
 # list and an optional ` -- reason` the metric capture stops before. Case-
 # insensitive, matched anywhere in a comment's text.
@@ -26,14 +23,15 @@ const DIRECTIVE_RE = r"\bdendro-ignore(-file)?\b(?:\s*:\s*([\w,\s]+))?"i
 line_of(node) = Int(TreeSitter.start_point(node).row) + 1
 
 # Parse the metric-list capture into a validated set, warning on unknown names.
-# Names separate on commas or whitespace, so a recognized metric still applies
-# when stray words trail it; a `--` reason ends the list before this is reached.
-function parse_metrics(list::AbstractString, file, line)
+# `valid` is the active rule set's metric names. Names separate on commas or
+# whitespace, so a recognized metric still applies when stray words trail it; a
+# `--` reason ends the list before this is reached.
+function parse_metrics(list::AbstractString, valid, file, line)
     metrics = Set{Symbol}()
     for token in split(list, r"[,\s]+"; keepempty = false)
         name = strip(token)
         sym = Symbol(name)
-        if sym in METRICS
+        if sym in valid
             push!(metrics, sym)
         else
             @warn "Dendro: unknown metric in suppression directive" file line token = name
@@ -47,10 +45,11 @@ end
 
 Scan every comment node for `dendro-ignore` directives and return one
 `Directive` per match. A `-file` directive carries `:file` scope, others carry
-the comment's line. Named metrics are validated against [`METRICS`]; an unknown
-name warns and is dropped.
+the comment's line. Named metrics are validated against the active `rules`; an
+unknown name warns and is dropped.
 """
-function suppressions(tree, profile::LanguageProfile, source::AbstractString; file)
+function suppressions(tree, profile::LanguageProfile, source::AbstractString; file, rules = BUILTIN_RULES)
+    valid = metric_names(rules)
     out = Directive[]
     TreeSitter.traverse(tree) do n, enter
         if enter && TreeSitter.node_type(n) in profile.comment_types
@@ -58,7 +57,7 @@ function suppressions(tree, profile::LanguageProfile, source::AbstractString; fi
             for m in eachmatch(DIRECTIVE_RE, text)
                 scope = m.captures[1] === nothing ? line_of(n) : :file
                 metrics = m.captures[2] === nothing ? nothing :
-                          parse_metrics(m.captures[2], file, line_of(n))
+                          parse_metrics(m.captures[2], valid, file, line_of(n))
                 push!(out, Directive(scope, metrics))
             end
         end

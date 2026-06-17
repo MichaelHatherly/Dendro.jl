@@ -1,29 +1,15 @@
 # Scalar metrics over a function unit's subtree.
 
-# Absolute severity bands per metric, as (warn, high) lower bounds. A value at
-# or above `high` is `:high`, at or above `warn` is `:warn`, else `:ok`. These
-# are fixed targets, so a uniformly-weak codebase has a standard to improve
-# toward rather than only its own median. Drawn from common complexity guidance.
-const DEFAULT_BANDS = Dict{Symbol,Tuple{Int,Int}}(
-    :cyclomatic => (11, 21),
-    :function_length => (50, 100),
-    :nesting_depth => (4, 6),
-    :parameter_count => (5, 8),
-)
-
 """
-    severity(metric, value; bands=DEFAULT_BANDS) -> Symbol
+    severity(value, band) -> Symbol
 
-Classify `value` for `metric` against its absolute band as `:ok`, `:warn`, or
-`:high`.
+Classify `value` against its `(warn, high)` `band`: `:high` at or above `high`,
+`:warn` at or above `warn`, else `:ok`.
 """
-function severity(metric::Symbol, value::Real; bands=DEFAULT_BANDS)
-    warn, high = bands[metric]
+function severity(value::Real, band::Tuple{Int,Int})
+    warn, high = band
     return value >= high ? :high : value >= warn ? :warn : :ok
 end
-
-# Metric names carried in baselines and findings, in report order.
-const SCALAR_METRICS = (:cyclomatic, :function_length, :nesting_depth, :parameter_count)
 
 # Depth-first over `node`'s own subtree, calling `f(n, enter)` on enter and exit
 # like `TreeSitter.traverse`, but never descending into a nested callable: each
@@ -36,20 +22,6 @@ function traverse_unit(f, node::TreeSitter.Node, profile::LanguageProfile)
     end
     f(node, false)
     return nothing
-end
-
-"""
-    unit_metrics(unit, profile, source) -> NamedTuple
-
-All scalar metrics for one function unit, keyed by metric name.
-"""
-function unit_metrics(unit::FunctionUnit, profile::LanguageProfile, source::AbstractString)
-    return (
-        cyclomatic = cyclomatic(unit.node, profile, source),
-        function_length = function_length(unit),
-        nesting_depth = nesting_depth(unit.node, profile),
-        parameter_count = parameter_count(unit.node, profile),
-    )
 end
 
 """

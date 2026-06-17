@@ -8,7 +8,7 @@
 # scoring pass, and duplicate clustering need, so no file is parsed twice. Files
 # whose language has no profile are skipped. `language` forces one language for
 # every path, as `analyze` does.
-function parse_corpus(paths; language = nothing)
+function parse_corpus(paths; language = nothing, rules = BUILTIN_RULES)
     forced = language === nothing ? nothing : Symbol(lowercase(String(language)))
     parsers = Dict{Symbol,TreeSitter.Parser}()
     files = NamedTuple[]
@@ -19,7 +19,7 @@ function parse_corpus(paths; language = nothing)
         parser = get!(() -> parser_for(lang), parsers, lang)
         source = read(path, String)
         tree = parse(parser, source)
-        directives = suppressions(tree, profile, source; file = path)
+        directives = suppressions(tree, profile, source; file = path, rules)
         push!(files, (language = lang, profile = profile, source = source,
                       file = String(path), tree = tree, directives = directives))
     end
@@ -27,10 +27,10 @@ function parse_corpus(paths; language = nothing)
 end
 
 # Baseline over already-parsed corpus records.
-function baseline_from(files)
+function baseline_from(files, rules = BUILTIN_RULES)
     baseline = Baseline()
     for f in files
-        add_samples!(baseline, f.language, f.tree, f.profile, f.source)
+        add_samples!(baseline, f.language, f.tree, f.profile, f.source, rules)
     end
     for samples in values(baseline.samples)
         sort!(samples)
@@ -66,7 +66,7 @@ function source_files(dir)
 end
 
 """
-    analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, threshold=$DEFAULT_THRESHOLD, language=nothing) -> Findings
+    analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, threshold=$DEFAULT_THRESHOLD, language=nothing, rules=BUILTIN_RULES) -> Findings
 
 Analyze the file or folder at `path`. Every function gets scalar and flag metrics;
 functions duplicated across the corpus are reported as `:duplicate` findings, and
@@ -77,11 +77,16 @@ changed against that git ref are reported, scored against the full-corpus baseli
 
 `threshold` is the Dice cutoff for a near-miss, `radius_factor` scales the
 candidate-search radius to a function's size.
+
+`rules` is the active rule set, defaulting to [`BUILTIN_RULES`]. Append your own
+[`Rule`](@ref)s to lint for a project's structural conventions:
+`analyze(path; rules = [BUILTIN_RULES; my_rule])`.
 """
 function analyze(path; base = nothing, cut::Real = 0.95,
                  min_size::Integer = DEFAULT_MIN_SIZE,
                  threshold::Real = DEFAULT_THRESHOLD,
-                 radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing)
+                 radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing,
+                 rules = BUILTIN_RULES)
     ispath(path) || error("Dendro: no such path $path")
     if isdir(path)
         corpus = source_files(path)
@@ -90,8 +95,8 @@ function analyze(path; base = nothing, cut::Real = 0.95,
             error("Dendro: cannot infer language for $path; pass `language=`.")
         corpus = [path]
     end
-    files = parse_corpus(corpus; language)
-    bl = baseline_from(files)
+    files = parse_corpus(corpus; language, rules)
+    bl = baseline_from(files, rules)
 
     scope = nothing
     if base !== nothing
@@ -107,7 +112,7 @@ function analyze(path; base = nothing, cut::Real = 0.95,
             haskey(scope.ranges, rel) || continue
             within = scope.ranges[rel]
         end
-        scan = Scan(f.profile, f.source, f.file; baseline = bl, cut = cut, within = within, directives = f.directives)
+        scan = Scan(f.profile, f.source, f.file; rules, baseline = bl, cut = cut, within = within, directives = f.directives)
         append!(findings, findings_for_tree(f.tree, scan))
     end
 
