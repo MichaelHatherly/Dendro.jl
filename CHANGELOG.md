@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Inline suppression directives in comments: `dendro-ignore` for the same or next
+  line, `dendro-ignore: cyclomatic, parameter_count` for named metrics, and
+  `dendro-ignore-file` for a whole file. Works in every supported language. An
+  unknown metric name warns. A suppressed finding is marked, not dropped, so
+  `report` prints a count of suppressions and `active(findings)` returns the
+  unsuppressed findings for gating.
+
 ## [0.1.0]
 
 ### Added

@@ -8,6 +8,7 @@ using Dendro, TreeSitter, Test
     include("flags.jl")
     include("baseline.jl")
     include("report.jl")
+    include("suppress.jl")
     include("diff.jl")
     include("python.jl")
     include("languages.jl")

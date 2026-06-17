@@ -74,7 +74,8 @@ function analyze_diff(; repo = pwd(), base = "HEAD", baseline = nothing, cut::Re
         profile = PROFILES[lang]
         source = read(full, String)
         tree = parse(parser_for(lang), source)
-        scan = Scan(profile, source, relpath; baseline, cut, within = ranges)
+        dirs = suppressions(tree, profile, source; file = relpath)
+        scan = Scan(profile, source, relpath; baseline, cut, within = ranges, directives = dirs)
         append!(out, findings_for_tree(tree, scan))
     end
     return out

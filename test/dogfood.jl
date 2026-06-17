@@ -8,7 +8,7 @@
 
     findings = Finding[]
     for file in files
-        append!(findings, analyze(file))
+        append!(findings, active(analyze(file)))
     end
 
     # No genuine complexity smell. parameter_count is excluded: the

@@ -11,6 +11,7 @@ One reported issue.
 - `absolute`: `:ok`/`:warn`/`:high` band, always `:high` for flags.
 - `percentile`: corpus rank in `[0, 1]`, or `nothing` without a baseline.
 - `kind`: `:scalar` or `:flag`.
+- `suppressed`: whether an inline directive accepted this finding.
 """
 struct Finding
     file::String
@@ -21,6 +22,7 @@ struct Finding
     absolute::Symbol
     percentile::Union{Float64,Nothing}
     kind::Symbol
+    suppressed::Bool
 end
 
 # Label a function unit by its name, or "" when no name node is found.
@@ -35,14 +37,13 @@ function unit_name(unit::FunctionUnit, profile::LanguageProfile, source::Abstrac
     return name
 end
 
-line_of(node) = Int(TreeSitter.start_point(node).row) + 1
-
 """
     Scan
 
 The fixed context for analysing one file: its `profile`, `source`, and `file`
 path, the optional `baseline` and `cut` percentile for relative scoring, and the
-optional `within` line ranges that restrict findings to a diff.
+optional `within` line ranges that restrict findings to a diff, and the
+`directives` parsed from the source that suppress accepted findings.
 """
 struct Scan
     profile::LanguageProfile
@@ -51,10 +52,11 @@ struct Scan
     baseline::Union{Baseline,Nothing}
     cut::Float64
     within::Union{Vector{UnitRange{Int}},Nothing}
+    directives::Vector{Directive}
 end
 
-Scan(profile, source, file; baseline = nothing, cut = 0.95, within = nothing) =
-    Scan(profile, String(source), String(file), baseline, Float64(cut), within)
+Scan(profile, source, file; baseline = nothing, cut = 0.95, within = nothing, directives = Directive[]) =
+    Scan(profile, String(source), String(file), baseline, Float64(cut), within, directives)
 
 # Whether a line span (or single line) is reported, given the scan's diff scope.
 in_scope(scan::Scan, a::Int, b::Int) = scan.within === nothing || intersects(scan.within, a, b)
@@ -71,11 +73,13 @@ function unit_findings!(out, scan::Scan, unit::FunctionUnit)
               percentile(scan.baseline, scan.profile.name, metric, value)
         outlier = pct !== nothing && pct >= scan.cut
         if band != :ok || outlier
-            push!(out, Finding(scan.file, unit.firstline, name, metric, value, band, pct, :scalar))
+            sup = is_suppressed(scan.directives, unit.firstline, metric)
+            push!(out, Finding(scan.file, unit.firstline, name, metric, value, band, pct, :scalar, sup))
         end
     end
     if empty_body(unit.node, scan.profile)
-        push!(out, Finding(scan.file, unit.firstline, name, :empty_body, nothing, :high, nothing, :flag))
+        sup = is_suppressed(scan.directives, unit.firstline, :empty_body)
+        push!(out, Finding(scan.file, unit.firstline, name, :empty_body, nothing, :high, nothing, :flag, sup))
     end
     return out
 end
@@ -84,7 +88,9 @@ end
 function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
     for node in nodes
         line = line_of(node)
-        in_scope(scan, line) && push!(out, Finding(scan.file, line, "", metric, nothing, :high, nothing, :flag))
+        in_scope(scan, line) || continue
+        sup = is_suppressed(scan.directives, line, metric)
+        push!(out, Finding(scan.file, line, "", metric, nothing, :high, nothing, :flag, sup))
     end
     return out
 end
@@ -122,8 +128,17 @@ function analyze(path::AbstractString; language = nothing, baseline = nothing, c
     profile = PROFILES[lang]
     source = read(path, String)
     tree = parse(parser_for(lang), source)
-    return findings_for_tree(tree, Scan(profile, source, path; baseline = baseline, cut = cut))
+    dirs = suppressions(tree, profile, source; file = path)
+    scan = Scan(profile, source, path; baseline = baseline, cut = cut, directives = dirs)
+    return findings_for_tree(tree, scan)
 end
+
+"""
+    active(findings) -> Vector{Finding}
+
+The findings not suppressed by an inline directive. Use this for gating.
+"""
+active(findings) = filter(f -> !f.suppressed, findings)
 
 """
     report([io], findings)
@@ -131,7 +146,12 @@ end
 Write `findings` as one line each: `file:line  unit  metric value (scores)`.
 """
 function report(io::IO, findings)
+    suppressed = 0
     for f in findings
+        if f.suppressed
+            suppressed += 1
+            continue
+        end
         loc = string(f.file, ":", f.line)
         label = isempty(f.unit) ? "" : string("  ", f.unit)
         if f.kind == :scalar
@@ -141,6 +161,7 @@ function report(io::IO, findings)
             println(io, loc, label, "  ", f.metric, " (", f.absolute, ")")
         end
     end
+    suppressed > 0 && println(io, suppressed, " finding(s) suppressed by directives")
     return nothing
 end
 report(findings) = report(stdout, findings)

@@ -71,6 +71,33 @@ parameter count.
 Flag (presence is the finding): swallowed errors (empty catch clauses), stub
 markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies.
 
+## Suppressing findings
+
+Some flagged code is fine in context. A comment directive accepts a specific
+finding so Dendro skips it without muting the tool or refactoring sound code.
+The mechanism reads comment nodes, so it works in every supported language.
+
+- `dendro-ignore` suppresses every finding on the same line or the line directly
+  below, so a trailing comment or a comment above a declaration both work.
+- `dendro-ignore: cyclomatic, parameter_count` suppresses only the named metrics.
+- `dendro-ignore-file` (or `dendro-ignore-file: cyclomatic`) suppresses the whole
+  file, for generated or vendored code.
+
+```julia
+# dendro-ignore: parameter_count
+function build(a, b, c, d, e, f)   # one keyword per field, accepted
+    ...
+end
+```
+
+Metric names are Dendro's own: `cyclomatic`, `function_length`, `nesting_depth`,
+`parameter_count`, `empty_catch`, `stub_marker`, `empty_body`. An unknown name
+warns, so a typo does not silently disable a check.
+
+Suppression marks a finding rather than dropping it. `report` prints the active
+findings and a footer counting the suppressed ones, and `active(findings)`
+returns only the unsuppressed findings for gating.
+
 ## Languages
 
 bash, c, cpp, go, java, javascript, julia, php, python, ruby, rust, typescript.
