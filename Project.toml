@@ -1,0 +1,25 @@
+name = "Dendro"
+uuid = "1795b8db-9815-49e8-b387-5b722b8875ff"
+authors = ["Michael Hatherly <michaelhatherly@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Artifacts = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+TreeSitter = "f42328cb-ece0-4cf2-995f-9e7abb27d006"
+
+[compat]
+Artifacts = "1"
+JSON = "0.21, 1"
+Pkg = "1"
+TreeSitter = "0.2"
+julia = "1.6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+tree_sitter_julia_jll = "52be201e-a5e9-5cfe-8bf2-2dc4b062171c"
+tree_sitter_python_jll = "88db161d-10c7-51e6-aa56-e32ecf738a46"
+
+[targets]
+test = ["Test", "tree_sitter_julia_jll", "tree_sitter_python_jll"]
