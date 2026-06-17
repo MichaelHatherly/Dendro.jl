@@ -15,7 +15,7 @@ struct Directive
 end
 
 # Metric names a directive may name. Dendro's own, in the syntax authors write.
-const METRICS = (SCALAR_METRICS..., :empty_body, :empty_catch, :stub_marker, :duplicate)
+const METRICS = (SCALAR_METRICS..., :empty_body, :empty_catch, :stub_marker, :duplicate, :near_duplicate)
 
 # `dendro-ignore` or `dendro-ignore-file`, with an optional `: metric, metric`
 # list and an optional ` -- reason` the metric capture stops before. Case-

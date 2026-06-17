@@ -34,10 +34,12 @@ toward rather than only its own median to match. They are opinions, and opinions
 can be retuned, but they are never derived from the corpus. The corpus is what the
 percentile score is for.
 
-Syntactic and shallow, on purpose. Dendro reads one file's tree with no symbol
-resolution. That is what keeps it cheap and language-agnostic. Cross-file concerns
-like dead code, real coupling, and unused exports are out of scope by design.
-Resist requests to make a metric smarter by reaching outside the file.
+Syntactic and shallow, on purpose. Dendro reads tree shape with no symbol
+resolution. That is what keeps it cheap and language-agnostic. Concerns that need
+to know what a name refers to, dead code, real coupling, unused exports, are out of
+scope by design. The line is symbol resolution, not the file boundary: comparing
+structure across files is fine, resolving what a name points at is not. Resist
+requests to make a metric smarter by reaching for meaning instead of shape.
 
 Languages are data. A `LanguageProfile` maps abstract concepts (decision points,
 nesting, comments, catch clauses) to a language's concrete node types. Adding a
@@ -47,6 +49,16 @@ a language inside metric code, the profile is missing a field.
 The diff is the question. Whole-file analysis asks whether code is bad.
 Diff-scoping asks whether an edit made it worse, which is what review actually
 wants to know. That is why `analyze` takes a `base` git ref.
+
+Duplicates are structure, not meaning. Dendro flags functions duplicated across
+the corpus, exact clones and near-misses both. This crosses the single-file
+boundary, but it never resolves a symbol: it compares node-type sequences and tree
+shape, nothing more. Near-miss detection scores subtree overlap with Dice and runs
+a size-banded vector query only to propose candidate pairs. The query is a
+prefilter; Dice is the verdict. Keep that split, and keep clone detection within
+one language. The vector tier earns its dependency by making the prefilter cheap,
+not by deciding anything. The moment clone detection reaches for types or call
+graphs, it has left the bargain.
 
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never

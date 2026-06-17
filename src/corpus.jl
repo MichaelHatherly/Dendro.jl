@@ -90,6 +90,18 @@ function cluster_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE)
     return findings
 end
 
+# Keep only cluster findings touching a changed line, the diff-scoped view shared
+# by exact and near-miss duplicates. Without a scope every cluster passes through.
+function scope_clusters(clusters, scope)
+    scope === nothing && return clusters
+    return filter(clusters) do c
+        any(c.locations) do loc
+            rel = relpath(realpath(loc.file), scope.root)
+            haskey(scope.ranges, rel) && inrange(scope.ranges[rel], loc.line)
+        end
+    end
+end
+
 # Recurse a directory for files Dendro can analyze, pruning dot-directories like
 # `.git` and keeping only files whose extension resolves to a language profile.
 function source_files(dir)
@@ -106,17 +118,22 @@ function source_files(dir)
 end
 
 """
-    analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, language=nothing) -> Findings
+    analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, threshold=$DEFAULT_THRESHOLD, language=nothing) -> Findings
 
 Analyze the file or folder at `path`. Every function gets scalar and flag metrics;
-functions duplicated across the corpus are reported as `:duplicate` findings. A
-baseline is built from the corpus, the folder's files or the single file, so
-relative scoring works against the input's own distribution with no setup. With
-`base`, only functions changed against that git ref are reported, scored against
-the full-corpus baseline.
+functions duplicated across the corpus are reported as `:duplicate` findings, and
+functions that are close but not identical as `:near_duplicate`. A baseline is built
+from the corpus, the folder's files or the single file, so relative scoring works
+against the input's own distribution with no setup. With `base`, only functions
+changed against that git ref are reported, scored against the full-corpus baseline.
+
+`threshold` is the Dice cutoff for a near-miss, `radius_factor` scales the
+candidate-search radius to a function's size.
 """
 function analyze(path; base = nothing, cut::Real = 0.95,
-                 min_size::Integer = DEFAULT_MIN_SIZE, language = nothing)
+                 min_size::Integer = DEFAULT_MIN_SIZE,
+                 threshold::Real = DEFAULT_THRESHOLD,
+                 radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing)
     ispath(path) || error("Dendro: no such path $path")
     if isdir(path)
         corpus = source_files(path)
@@ -146,13 +163,8 @@ function analyze(path; base = nothing, cut::Real = 0.95,
         append!(findings, findings_for_tree(f.tree, scan))
     end
 
-    dups = cluster_duplicates(files; min_size = min_size)
-    if scope !== nothing
-        dups = filter(d -> any(loc -> begin
-            rel = relpath(realpath(loc.file), scope.root)
-            haskey(scope.ranges, rel) && inrange(scope.ranges[rel], loc.line)
-        end, d.locations), dups)
-    end
-    append!(findings, dups)
+    append!(findings, scope_clusters(cluster_duplicates(files; min_size), scope))
+    append!(findings, scope_clusters(
+        cluster_near_duplicates(files; min_size, threshold, radius_factor), scope))
     return Findings(findings)
 end

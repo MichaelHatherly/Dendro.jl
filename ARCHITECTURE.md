@@ -30,12 +30,15 @@ file's own functions are the distribution it is scored against.
 
 With `base`, `analyze` scopes to a git diff: it parses the diff of the working tree
 against that ref via `changed_ranges` and restricts each file's findings (and the
-duplicate clusters) to the touched line ranges. Nothing else branches the flow.
+duplicate clusters, exact and near, through the shared `scope_clusters`) to the
+touched line ranges. Nothing else branches the flow.
 
-Duplicate detection crosses the single-file boundary: it hashes each function's
-structure and emits a `:duplicate` `Finding` for every shape shared by two or more
-functions. It stays syntactic, comparing node-type sequences with no symbol
-resolution.
+Duplicate detection crosses the single-file boundary in two passes, both syntactic,
+both comparing only structure with no symbol resolution. Exact detection
+(`cluster_duplicates`) hashes each function's whole node-type sequence and emits a
+`:duplicate` `Finding` for every shape shared by two or more functions. Near-miss
+detection (`cluster_near_duplicates`, in `clones.jl`) catches functions that are
+close but not identical, the copy-paste-then-edit, and emits `:near_duplicate`.
 
 ## Layers
 
@@ -79,13 +82,20 @@ Reporting:
   annotations. Both share `score_suffix`.
 - `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
   that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
+- `clones.jl` defines near-miss detection: `subtree_hashes` and `node_histogram`
+  (the per-function index), `dice` (multiset similarity), `near_miss_edges!` (the
+  size-banded characteristic-vector prefilter over `NearestNeighbors`, confirmed by
+  Dice), and `cluster_near_duplicates` (union-find over the confirmed pairs into
+  `:near_duplicate` findings). Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
   folder for analysable files), `parse_corpus` (parse each path once),
   `baseline_from`, `structural_digest` and `cluster_duplicates` (the
-  rename-tolerant duplicate detector, hashing node-type sequences gated by
-  named-node count), and `analyze` (the public entrypoint, orchestrating corpus,
-  baseline, per-file findings, duplicates, and optional diff scoping). It is
-  included after `report.jl` and `diff.jl` so everything it calls is defined first.
+  rename-tolerant exact detector, hashing node-type sequences gated by named-node
+  count), `scope_clusters` (the shared diff filter for both duplicate passes), and
+  `analyze` (the public entrypoint, orchestrating corpus, baseline, per-file
+  findings, exact and near duplicates, and optional diff scoping). It is included
+  after `report.jl`, `diff.jl`, and `clones.jl` so everything it calls is defined
+  first.
 
 ## Core types
 
@@ -102,11 +112,12 @@ The granularity at which scalar metrics report.
 name. A `Finding` carries one or more.
 
 `Finding` (`report.jl`). One reported issue over a set of `Location`s: the metric,
-the locations, the scalar value (the member count for `:duplicate`, `nothing` for
-other flags), the absolute band, the corpus percentile or `nothing`, the kind
-(`:scalar` or `:flag`), and `suppressed`. Per-file metrics fire at one location;
-relational metrics like `:duplicate` span several. Suppressed findings are kept in
-the vector, not dropped, so they can be counted.
+the locations, the scalar value (the member count for `:duplicate`, the weakest
+pairwise similarity as a percent for `:near_duplicate`, `nothing` for other flags),
+the absolute band, the corpus percentile or `nothing`, the kind (`:scalar` or
+`:flag`), and `suppressed`. Per-file metrics fire at one location; relational
+metrics like `:duplicate` and `:near_duplicate` span several. Suppressed findings
+are kept in the vector, not dropped, so they can be counted.
 
 `Findings` (`report.jl`). What `analyze` returns: an `AbstractVector{Finding}`, so
 it filters, iterates, and indexes like any vector, with a `show` method that
@@ -140,6 +151,35 @@ either trips.
 Flag metrics have no distribution. Presence is the finding, always reported at
 `:high`.
 
+## Near-miss detection
+
+`cluster_near_duplicates` runs four tiers, cheapest first, all at function
+granularity so the `Finding`/`Location` model is unchanged.
+
+1. Index. `subtree_hashes` folds each named subtree's type with its children's
+   hashes into one structural hash, returning the sorted multiset for a function.
+   Renames and literals drop out; shape stays. `node_histogram` counts named node
+   types, the characteristic vector. Both stop at nested callables, like the exact
+   path.
+2. Exact classes are the existing `cluster_duplicates`, left untouched.
+3. Confirm. `dice` scores two multisets as `2|a∩b| / (|a|+|b|)`. A pair clears the
+   `threshold` (default 0.85) to count as a near-miss.
+4. Prefilter. Comparing every pair is O(n²). `near_miss_edges!` densifies the
+   histograms over a per-language vocabulary and runs a `NearestNeighbors` radius
+   query (L1, `Cityblock`) to propose candidate pairs, which tier 3 confirms. The
+   query is never a verdict.
+
+The radius scales with size, because L1 distance grows with function size. Units
+bin into size bands by `floor(log2(size))`, and each band queries against itself
+and the next band up, so a near-miss whose two functions straddle a power-of-two
+boundary is still proposed. Confirmed pairs feed a union-find into clusters. Pairs
+with equal exact digests are dropped: those are exact clones, already reported by
+tier 2.
+
+Two reasons this is a separate metric, not a smarter `:duplicate`: the exact path
+is O(n) and must stay that way, and an exact match and a 0.85 match are different
+signals a reviewer reads differently.
+
 ## Suppression
 
 `suppressions` walks the same comment nodes as `stub_markers` and matches
@@ -159,7 +199,7 @@ unsuppressed findings for gating.
 - Tree-sitter rows are 0-based. `line_of` (in `suppress.jl`) converts to 1-based
   source lines, and `FunctionUnit` stores 1-based lines. Findings are 1-based.
 - Metrics are syntactic, with no symbol resolution. Per-file metrics are scoped to
-  one file's tree; duplicate detection is the one metric that spans files, and it
+  one file's tree; duplicate detection, exact and near, is what spans files, and it
   still compares only structure.
 - Adding a language is data only: a `LanguageProfile` in `profiles.jl` and an
   extension entry in `resolve.jl`. No metric code changes. If a metric needs a
@@ -171,5 +211,6 @@ unsuppressed findings for gating.
 `Pkg.test()` runs under `test/Project.toml`, which carries the language JLLs the
 package environment omits, so parsing only works there. `test/dogfood.jl` runs
 Dendro on its own `src/`, gated on `active(...)`, and must stay clean: no `:high`
-complexity findings, no stub markers, no swallowed errors, no empty bodies. A
-change that makes Dendro trip its own metrics is a signal to fix the code.
+complexity findings, no stub markers, no swallowed errors, no empty bodies, no
+duplicates exact or near. A change that makes Dendro trip its own metrics is a
+signal to fix the code.

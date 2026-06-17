@@ -16,7 +16,10 @@
     end
     @test isempty(smells)
 
-    # Keep our own house clean: no stubs, swallowed errors, or duplicated functions.
-    flags = filter(f -> f.metric in (:stub_marker, :empty_catch, :empty_body, :duplicate), findings)
+    # Keep our own house clean: no stubs, swallowed errors, or duplicated functions,
+    # exact or near.
+    flags = filter(findings) do f
+        f.metric in (:stub_marker, :empty_catch, :empty_body, :duplicate, :near_duplicate)
+    end
     @test isempty(flags)
 end

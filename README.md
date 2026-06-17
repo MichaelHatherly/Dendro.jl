@@ -112,6 +112,26 @@ src/a.jl:10  parse_header  duplicate 3 (high)
 getters do not cluster. Pass it lower to widen the net, higher to focus on large
 clones.
 
+### Near-misses
+
+Exact clustering misses the copy-paste-then-edit: two functions identical but for
+an added or removed statement hash differently and never meet. `analyze` also
+reports these as `:near_duplicate`. It compares the multiset of each function's
+subtree hashes and scores the overlap with Dice similarity, so functions that are
+close but not identical cluster when they clear the `threshold` (default 0.85). A
+characteristic-vector radius query (DECKARD-style), banded by function size, finds
+candidate pairs without comparing every pair; Dice confirms each one. The
+finding's value is the cluster's weakest pairwise similarity as a percent:
+
+```
+src/parser.jl:40  read_header  near_duplicate 88 (high)
+    also at src/loader.jl:12  load_header
+```
+
+A near-miss stays syntactic and within one language, like exact detection. Pass
+`threshold` higher to demand closer matches, `radius_factor` to widen or narrow the
+candidate search.
+
 ## Suppressing findings
 
 Some flagged code is fine in context. A comment directive accepts a specific
@@ -132,8 +152,9 @@ end
 ```
 
 Metric names are Dendro's own: `cyclomatic`, `function_length`, `nesting_depth`,
-`parameter_count`, `empty_catch`, `stub_marker`, `empty_body`, `duplicate`. An
-unknown name warns, so a typo does not silently disable a check.
+`parameter_count`, `empty_catch`, `stub_marker`, `empty_body`, `duplicate`,
+`near_duplicate`. An unknown name warns, so a typo does not silently disable a
+check.
 
 Suppression marks a finding rather than dropping it. Printing a findings vector
 lists the active findings and a footer counting the suppressed ones, and
