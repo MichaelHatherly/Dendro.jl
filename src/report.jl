@@ -122,7 +122,7 @@ extension unless given as a symbol or string.
 """
 function analyze(path::AbstractString; language = nothing, baseline = nothing, cut::Real = 0.95)
     lang = language === nothing ? language_for_path(path) :
-           language isa Symbol ? language : Symbol(lowercase(String(language)))
+           Symbol(lowercase(String(language)))
     lang === nothing && error("Dendro: cannot infer language for $path; pass `language=`.")
     haskey(PROFILES, lang) || error("Dendro: no profile for language :$lang.")
     profile = PROFILES[lang]

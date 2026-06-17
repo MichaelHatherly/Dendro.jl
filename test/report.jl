@@ -43,6 +43,18 @@ end
     @test any(x -> x.metric == :empty_body, Dendro.analyze(stub))
 end
 
+@testset "analyze language argument forms" begin
+    dir = mktempdir()
+    path = joinpath(dir, "snippet.txt")   # extension is not recognised
+    write(path, "function f(a, b, c, d, e, f)\n    1\nend\n")
+
+    # A given language resolves the same whether a symbol or string, any case.
+    for lang in (:julia, "julia", :Julia, "JULIA")
+        findings = Dendro.analyze(path; language = lang)
+        @test any(x -> x.metric == :parameter_count && x.unit == "f", findings)
+    end
+end
+
 @testset "report formatting" begin
     dir = mktempdir()
     path = joinpath(dir, "c.jl")
