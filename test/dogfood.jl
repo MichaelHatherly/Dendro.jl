@@ -1,6 +1,6 @@
-# Run Dendro on its own source so complexity cannot regress unnoticed. Absolute
-# bands only (no baseline), so the result is deterministic rather than dependent
-# on the corpus distribution.
+# Run Dendro on its own source so complexity cannot regress unnoticed. The
+# assertions check absolute `:high` bands and presence flags only, which do not
+# depend on the corpus distribution, so the result is deterministic.
 @testset "dogfood: Dendro's own source" begin
     srcdir = joinpath(pkgdir(Dendro), "src")
     files = filter(f -> endswith(f, ".jl"), readdir(srcdir; join = true))

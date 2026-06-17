@@ -7,7 +7,8 @@
     hit = only(filter(x -> x.metric == :parameter_count, findings))
     @test hit.value == 6
     @test hit.absolute == :warn
-    @test hit.percentile === nothing
+    # The file's lone function is the whole corpus, so it ranks at the top.
+    @test hit.percentile == 1.0
     @test hit.kind == :scalar
     @test first(hit.locations).unit == "f"
     @test first(hit.locations).line == 1
@@ -18,10 +19,9 @@ end
     path = joinpath(dir, "g.jl")
     write(path, "function g(x)\n    if x > 0\n        1\n    end\nend\n")
 
-    # Corpus where every function has complexity 1; complexity 2 is an outlier
-    # even though it is well within the absolute band.
-    b = Dendro.Baseline(Dict((:julia, :cyclomatic) => fill(1.0, 10)))
-    findings = Dendro.analyze(path; baseline = b, cut = 0.95)
+    # The file auto-builds its own baseline; the lone function ranks at the top
+    # even though its complexity is well within the absolute band.
+    findings = Dendro.analyze(path; cut = 0.95)
     hit = only(filter(x -> x.metric == :cyclomatic, findings))
     @test hit.value == 2
     @test hit.absolute == :ok
@@ -62,7 +62,7 @@ end
     findings = Dendro.analyze(path)
 
     io = IOBuffer()
-    Dendro.report(io, findings)
+    show(io, MIME("text/plain"), findings)
     out = String(take!(io))
     @test occursin("parameter_count", out)
     @test occursin("c.jl:1", out)

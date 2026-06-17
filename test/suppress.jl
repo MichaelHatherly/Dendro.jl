@@ -131,7 +131,7 @@ end
     findings = Dendro.analyze(path)
 
     io = IOBuffer()
-    Dendro.report(io, findings)
+    show(io, MIME("text/plain"), findings)
     out = String(take!(io))
     @test occursin("1 finding", out)
     @test occursin("suppressed", out)

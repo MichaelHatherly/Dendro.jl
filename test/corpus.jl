@@ -22,14 +22,16 @@ end
     @test dp == dn
 end
 
-@testset "find_duplicates clusters across files" begin
+duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :duplicate, findings))
+
+@testset "analyze clusters duplicates across files" begin
     dir = mktempdir()
     a = joinpath(dir, "a.jl")
     b = joinpath(dir, "b.jl")
     write(a, "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
     write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
 
-    hit = only(Dendro.find_duplicates([a, b]; min_size = 1))
+    hit = only(duplicates(analyze(dir; min_size = 1)))
     @test hit.metric == :duplicate
     @test hit.kind == :flag
     @test hit.value == 2
@@ -39,7 +41,7 @@ end
     @test all(loc.line == 1 for loc in hit.locations)
 end
 
-@testset "find_duplicates clusters more than two" begin
+@testset "analyze clusters more than two duplicates" begin
     dir = mktempdir()
     a = joinpath(dir, "a.jl")
     b = joinpath(dir, "b.jl")
@@ -48,78 +50,62 @@ end
     write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
     write(c, "function h(n)\n    m = n + 5\n    return m * 3\nend\n")
 
-    hit = only(Dendro.find_duplicates([a, b, c]; min_size = 1))
+    hit = only(duplicates(analyze(dir; min_size = 1)))
     @test hit.value == 3
     @test length(hit.locations) == 3
     @test sort([loc.file for loc in hit.locations]) == sort([a, b, c])
 end
 
-@testset "find_duplicates size gate" begin
+@testset "analyze size gate" begin
     dir = mktempdir()
-    a = joinpath(dir, "a.jl")
-    b = joinpath(dir, "b.jl")
-    write(a, "function getx()\n    x\nend\n")
-    write(b, "function getx()\n    x\nend\n")
+    write(joinpath(dir, "a.jl"), "function getx()\n    x\nend\n")
+    write(joinpath(dir, "b.jl"), "function getx()\n    x\nend\n")
 
-    @test isempty(Dendro.find_duplicates([a, b]))
-    @test length(Dendro.find_duplicates([a, b]; min_size = 1)) == 1
+    @test isempty(duplicates(analyze(dir)))
+    @test length(duplicates(analyze(dir; min_size = 1))) == 1
 end
 
-@testset "find_duplicates ignores lone functions" begin
+@testset "analyze ignores lone functions" begin
     dir = mktempdir()
-    a = joinpath(dir, "a.jl")
-    b = joinpath(dir, "b.jl")
-    write(a, "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
-    write(b, "function g(p, q)\n    while p > q\n        p -= 1\n    end\n    return p\nend\n")
+    write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
+    write(joinpath(dir, "b.jl"), "function g(p, q)\n    while p > q\n        p -= 1\n    end\n    return p\nend\n")
 
-    @test isempty(Dendro.find_duplicates([a, b]; min_size = 1))
+    @test isempty(duplicates(analyze(dir; min_size = 1)))
 end
 
-@testset "find_duplicates language argument" begin
+@testset "analyze does not cluster across languages" begin
     dir = mktempdir()
-    a = joinpath(dir, "a.txt")
-    b = joinpath(dir, "b.txt")
-    write(a, "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
-    write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
-
-    @test length(Dendro.find_duplicates([a, b]; language = "julia", min_size = 1)) == 1
-end
-
-@testset "find_duplicates empty and profileless corpora" begin
-    @test Dendro.find_duplicates(String[]) == Dendro.Finding[]
-
-    dir = mktempdir()
-    md = joinpath(dir, "readme.md")
-    write(md, "# heading\n")
-    @test Dendro.find_duplicates([md]) == Dendro.Finding[]
-end
-
-@testset "find_duplicates does not cluster across languages" begin
-    dir = mktempdir()
-    jl = joinpath(dir, "a.jl")
-    py = joinpath(dir, "a.py")
-    write(jl, "function f(x)\n    y = x + 1\n    return y * 2\nend\nfunction f2(x)\n    y = x + 1\n    return y * 2\nend\n")
-    write(py, "def f(x):\n    y = x + 1\n    return y * 2\ndef f2(x):\n    y = x + 1\n    return y * 2\n")
+    write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\nfunction f2(x)\n    y = x + 1\n    return y * 2\nend\n")
+    write(joinpath(dir, "a.py"), "def f(x):\n    y = x + 1\n    return y * 2\ndef f2(x):\n    y = x + 1\n    return y * 2\n")
 
     # Each language has its own duplicate pair; the (language, digest) key keeps
     # them from merging into one cross-language cluster.
-    findings = Dendro.find_duplicates([jl, py]; min_size = 1)
+    findings = duplicates(analyze(dir; min_size = 1))
     @test length(findings) == 2
     for f in findings
         @test length(Set(last(splitext(loc.file)) for loc in f.locations)) == 1
     end
 end
 
-@testset "find_duplicates respects dendro-ignore: duplicate" begin
+@testset "analyze detects duplicates within one file" begin
     dir = mktempdir()
-    a = joinpath(dir, "a.jl")
-    b = joinpath(dir, "b.jl")
-    write(a, "# dendro-ignore: duplicate\nfunction f(x)\n    y = x + 1\n    return y * 2\nend\n")
-    write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
+    file = joinpath(dir, "a.jl")
+    write(file, "function f(x)\n    y = x + 1\n    return y * 2\nend\nfunction g(t)\n    z = t + 9\n    return z * 7\nend\n")
 
-    findings = Dendro.find_duplicates([a, b]; min_size = 1)
+    hit = only(duplicates(analyze(file; min_size = 1)))
+    @test hit.value == 2
+    @test all(loc.file == file for loc in hit.locations)
+    @test Set(loc.unit for loc in hit.locations) == Set(["f", "g"])
+end
+
+@testset "analyze respects dendro-ignore: duplicate" begin
+    dir = mktempdir()
+    write(joinpath(dir, "a.jl"), "# dendro-ignore: duplicate\nfunction f(x)\n    y = x + 1\n    return y * 2\nend\n")
+    write(joinpath(dir, "b.jl"), "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
+
+    findings = analyze(dir; min_size = 1)
     @test any(f -> f.metric == :duplicate && f.suppressed, findings)
-    @test isempty(filter(f -> f.metric == :duplicate, Dendro.active(findings)))
+    @test isempty(duplicates(active(findings)))
 end
 
 @testset "report renders a duplicate cluster" begin
@@ -129,9 +115,8 @@ end
     write(a, "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
     write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
 
-    findings = Dendro.find_duplicates([a, b]; min_size = 1)
     io = IOBuffer()
-    Dendro.report(io, findings)
+    show(io, MIME("text/plain"), duplicates(analyze(dir; min_size = 1)))
     out = String(take!(io))
     @test occursin("duplicate", out)
     @test occursin("also at", out)
@@ -139,58 +124,49 @@ end
     @test occursin("b.jl", out)
 end
 
-@testset "analyze_corpus combines metrics and duplicates" begin
+@testset "analyze combines metrics and duplicates" begin
     dir = mktempdir()
-    a = joinpath(dir, "a.jl")
-    b = joinpath(dir, "b.jl")
     # a and b hold a duplicated pair; c is a separately complex function.
-    write(a, "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
-    write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
-    c = joinpath(dir, "c.jl")
-    write(c, "function busy(a, b, c, d, e, f)\n    1\nend\n")
+    write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
+    write(joinpath(dir, "b.jl"), "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
+    write(joinpath(dir, "c.jl"), "function busy(a, b, c, d, e, f)\n    1\nend\n")
 
-    findings = Dendro.analyze_corpus([a, b, c]; min_size = 1)
+    findings = analyze(dir; min_size = 1)
     @test any(f -> f.metric == :duplicate, findings)
     @test any(f -> f.metric == :parameter_count, findings)
 end
 
-@testset "analyze_corpus auto-builds a baseline" begin
+@testset "analyze auto-builds a baseline for a folder" begin
     dir = mktempdir()
     # Nine flat functions and one with a branch: the outlier ranks at the top of
     # the corpus distribution, so relative scoring fires without a passed baseline.
-    paths = String[]
     for i in 1:9
-        p = joinpath(dir, "flat$i.jl")
-        write(p, "function f$i()\n    $i\nend\n")
-        push!(paths, p)
+        write(joinpath(dir, "flat$i.jl"), "function f$i()\n    $i\nend\n")
     end
-    odd = joinpath(dir, "odd.jl")
-    write(odd, "function g(x)\n    if x > 0\n        1\n    end\nend\n")
-    push!(paths, odd)
+    write(joinpath(dir, "odd.jl"), "function g(x)\n    if x > 0\n        1\n    end\nend\n")
 
-    findings = Dendro.analyze_corpus(paths)
+    findings = analyze(dir)
     @test any(f -> f.percentile !== nothing, findings)
 end
 
-@testset "analyze_corpus uses a passed baseline" begin
+@testset "analyze auto-builds a baseline for a single file" begin
     dir = mktempdir()
-    path = joinpath(dir, "g.jl")
-    write(path, "function g(x)\n    if x > 0\n        1\n    end\nend\n")
+    file = joinpath(dir, "g.jl")
+    write(file, "function g(x)\n    if x > 0\n        1\n    end\nend\n")
 
-    # A corpus where every function has complexity 1; complexity 2 is an outlier.
-    b = Dendro.Baseline(Dict((:julia, :cyclomatic) => fill(1.0, 10)))
-    findings = Dendro.analyze_corpus([path]; baseline = b, cut = 0.95)
-    hit = only(filter(x -> x.metric == :cyclomatic, findings))
-    @test hit.value == 2
-    @test hit.percentile == 1.0
+    @test any(f -> f.percentile !== nothing, analyze(file))
 end
 
-@testset "analyze_corpus gates trivial duplicates by default" begin
+@testset "analyze gates trivial duplicates by default" begin
     dir = mktempdir()
-    a = joinpath(dir, "a.jl")
-    b = joinpath(dir, "b.jl")
-    write(a, "function getx()\n    x\nend\n")
-    write(b, "function getx()\n    x\nend\n")
+    write(joinpath(dir, "a.jl"), "function getx()\n    x\nend\n")
+    write(joinpath(dir, "b.jl"), "function getx()\n    x\nend\n")
 
-    @test isempty(filter(f -> f.metric == :duplicate, Dendro.analyze_corpus([a, b])))
+    @test isempty(duplicates(analyze(dir)))
+end
+
+@testset "analyze skips profileless files" begin
+    dir = mktempdir()
+    write(joinpath(dir, "readme.md"), "# heading\n")
+    @test analyze(dir) == Dendro.Finding[]
 end

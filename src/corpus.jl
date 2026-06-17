@@ -90,38 +90,69 @@ function cluster_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE)
     return findings
 end
 
-"""
-    find_duplicates(paths; min_size=$DEFAULT_MIN_SIZE, language=nothing) -> Vector{Finding}
+# Recurse a directory for files Dendro can analyze, pruning dot-directories like
+# `.git` and keeping only files whose extension resolves to a language profile.
+function source_files(dir)
+    files = String[]
+    for (root, dirs, names) in walkdir(dir)
+        filter!(d -> !startswith(d, "."), dirs)
+        for name in names
+            lang = language_for_path(name)
+            (lang === nothing || !haskey(PROFILES, lang)) && continue
+            push!(files, joinpath(root, name))
+        end
+    end
+    return files
+end
 
-Find functions duplicated across `paths`, including across different files,
-tolerant to identifier renaming and literal-value changes (Type-2 clones).
-Returns one `:duplicate` [`Finding`](@ref) per cluster of at least two functions
-whose canonical size is at least `min_size` named nodes, its `locations` listing
-every member. Files whose language has no profile are skipped. Pass `language` to
-force one language for every path.
 """
-find_duplicates(paths; min_size::Integer = DEFAULT_MIN_SIZE, language = nothing) =
-    cluster_duplicates(parse_corpus(paths; language); min_size = min_size)
+    analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, language=nothing) -> Findings
 
+Analyze the file or folder at `path`. Every function gets scalar and flag metrics;
+functions duplicated across the corpus are reported as `:duplicate` findings. A
+baseline is built from the corpus, the folder's files or the single file, so
+relative scoring works against the input's own distribution with no setup. With
+`base`, only functions changed against that git ref are reported, scored against
+the full-corpus baseline.
 """
-    analyze_corpus(paths; min_size=$DEFAULT_MIN_SIZE, language=nothing, baseline=nothing, cut=0.95) -> Vector{Finding}
+function analyze(path; base = nothing, cut::Real = 0.95,
+                 min_size::Integer = DEFAULT_MIN_SIZE, language = nothing)
+    ispath(path) || error("Dendro: no such path $path")
+    if isdir(path)
+        corpus = source_files(path)
+    else
+        language === nothing && language_for_path(path) === nothing &&
+            error("Dendro: cannot infer language for $path; pass `language=`.")
+        corpus = [path]
+    end
+    files = parse_corpus(corpus; language)
+    bl = baseline_from(files)
 
-Analyze every file in `paths`: per-function scalar and flag metrics for each,
-scored against a `baseline`, plus cross-file duplicates (see
-[`find_duplicates`](@ref)). With no `baseline`, one is built from `paths`, so
-relative scoring works against the corpus's own distribution with no setup. Pass a
-`baseline` to score `paths` against a wider corpus. Per-file findings come first in
-path order, duplicates last. Files whose language has no profile are skipped.
-"""
-function analyze_corpus(paths; min_size::Integer = DEFAULT_MIN_SIZE, language = nothing,
-                        baseline = nothing, cut::Real = 0.95)
-    files = parse_corpus(paths; language)
-    bl = baseline === nothing ? baseline_from(files) : baseline
+    scope = nothing
+    if base !== nothing
+        root = strip(read(`git -C $(isdir(path) ? path : dirname(path)) rev-parse --show-toplevel`, String))
+        scope = (root = root, ranges = changed_ranges(read(`git -C $root diff $base`, String)))
+    end
+
     findings = Finding[]
     for f in files
-        scan = Scan(f.profile, f.source, f.file; baseline = bl, cut = cut, directives = f.directives)
+        within = nothing
+        if scope !== nothing
+            rel = relpath(realpath(f.file), scope.root)
+            haskey(scope.ranges, rel) || continue
+            within = scope.ranges[rel]
+        end
+        scan = Scan(f.profile, f.source, f.file; baseline = bl, cut = cut, within = within, directives = f.directives)
         append!(findings, findings_for_tree(f.tree, scan))
     end
-    append!(findings, cluster_duplicates(files; min_size = min_size))
-    return findings
+
+    dups = cluster_duplicates(files; min_size = min_size)
+    if scope !== nothing
+        dups = filter(d -> any(loc -> begin
+            rel = relpath(realpath(loc.file), scope.root)
+            haskey(scope.ranges, rel) && inrange(scope.ranges[rel], loc.line)
+        end, d.locations), dups)
+    end
+    append!(findings, dups)
+    return Findings(findings)
 end

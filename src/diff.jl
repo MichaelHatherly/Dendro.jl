@@ -68,28 +68,3 @@ function changed_ranges(diff::AbstractString)
     end
     return Dict(f => coalesce_lines(ls) for (f, ls) in added)
 end
-
-"""
-    analyze_diff(; repo=pwd(), base="HEAD", baseline=nothing, cut=0.95) -> Vector{Finding}
-
-Report findings only for functions touched by the diff of `repo` against
-`base`. Changed files are read from the working tree and scored within their
-changed line ranges.
-"""
-function analyze_diff(; repo = pwd(), base = "HEAD", baseline = nothing, cut::Real = 0.95)
-    diff = read(`git -C $repo diff $base`, String)
-    out = Finding[]
-    for (relpath, ranges) in changed_ranges(diff)
-        lang = language_for_path(relpath)
-        (lang === nothing || !haskey(PROFILES, lang)) && continue
-        full = joinpath(repo, relpath)
-        isfile(full) || continue
-        profile = PROFILES[lang]
-        source = read(full, String)
-        tree = parse(parser_for(lang), source)
-        dirs = suppressions(tree, profile, source; file = relpath)
-        scan = Scan(profile, source, relpath; baseline, cut, within = ranges, directives = dirs)
-        append!(out, findings_for_tree(tree, scan))
-    end
-    return out
-end

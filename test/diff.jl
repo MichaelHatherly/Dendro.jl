@@ -54,7 +54,7 @@ end
     @test ranges["m.jl"] == [2:2]   # `fresh` lands at new-file line 2
 end
 
-@testset "analyze_diff (julia)" begin
+@testset "analyze with base scopes to changed functions" begin
     repo = mktempdir()
     run(`git -C $repo init -q`)
     file = joinpath(repo, "m.jl")
@@ -64,7 +64,7 @@ end
 
     # Add a new function with too many parameters; leave f untouched.
     write(file, "function f(x)\n    x\nend\nfunction g(a, b, c, d, e, f)\n    1\nend\n")
-    findings = Dendro.analyze_diff(; repo = repo)
+    findings = analyze(repo; base = "HEAD")
 
     @test any(x -> first(x.locations).unit == "g" && x.metric == :parameter_count, findings)
     # f was not in the changed range, so it must not be reported.

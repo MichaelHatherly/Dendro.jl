@@ -1,4 +1,5 @@
 using Dendro, TreeSitter, Test
+using Dendro: analyze, active, Finding, Findings, Location
 
 @testset "Dendro" begin
     include("resolve.jl")

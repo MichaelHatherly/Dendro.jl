@@ -21,34 +21,37 @@ Pkg.add(["tree_sitter_julia_jll", "tree_sitter_python_jll"])
 
 ## Usage
 
+`analyze` is the one entrypoint. Point it at a folder or a file.
+
+Dendro exports nothing; its API is marked `public`. Import what you call, or
+qualify with `Dendro.`.
+
 ```julia
-using Dendro
+using Dendro: analyze, active
 
 # Analyse a whole project. Each function is scored against the corpus's own
 # distribution, and duplicates across files are reported. The baseline is built
-# from the same paths, so relative scoring works with no setup.
-findings = analyze_corpus(readdir("src"; join = true))
-report(findings)
+# from the corpus, so relative scoring works with no setup. The returned vector
+# prints as a report in the REPL.
+analyze("src")
 
-# Analyse one file. Language is inferred from the extension.
-findings = analyze("src/parser.jl")
-report(findings)
+# Review mode: only the functions a change touched, scored against the
+# full-corpus baseline.
+analyze("src"; base = "HEAD")
 
-# Score one file against a corpus distribution.
-baseline = build_baseline(readdir("src"; join = true))
-findings = analyze("src/parser.jl"; baseline = baseline)
+# Analyse one file. Language is inferred from the extension; the file's own
+# functions are the corpus it is scored against.
+analyze("src/parser.jl")
 
-# Persist a baseline and reuse it.
-save_baseline(baseline, "dendro-baseline.json")
-baseline = load_baseline("dendro-baseline.json")
-
-# Review mode: report only the functions a change touched.
-findings = analyze_diff(; repo = ".", base = "HEAD", baseline = baseline)
-report(findings)
+# Capture the findings to filter or gate on.
+findings = analyze("src")
+high = filter(f -> f.absolute == :high, active(findings))
 ```
 
-A `Finding` carries the metric, its value, the absolute band (`:ok`/`:warn`/
-`:high`), and, when a baseline is given, the corpus percentile:
+`analyze` returns `Findings`, a vector of `Finding`s that prints as a report. To
+write that report elsewhere, `show(io, MIME("text/plain"), findings)`. A `Finding`
+carries the metric, its value, the absolute band (`:ok`/`:warn`/`:high`), and the
+corpus percentile:
 
 ```
 src/parser.jl:1070  predicate  cyclomatic 51 (high; p100)
@@ -79,13 +82,12 @@ markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies.
 
 ## Duplicate detection
 
-`analyze_corpus` reports duplicates as part of a full analysis. For duplicates
-alone, `find_duplicates(paths)` finds functions duplicated across the corpus,
-including across different files. It hashes each function by its node-type
-sequence, type not text, so functions that differ only in variable names or
-literal values still match (Type-2 clones). It catches the copy-paste-then-rename
-that generated code produces. Each cluster of two or more comes back as one
-`:duplicate` finding whose `locations` list every member:
+`analyze` reports duplicates as part of a full analysis: functions duplicated
+across the corpus, including across different files. It hashes each function by
+its node-type sequence, type not text, so functions that differ only in variable
+names or literal values still match (Type-2 clones). It catches the
+copy-paste-then-rename that generated code produces. Each cluster of two or more
+comes back as one `:duplicate` finding whose `locations` list every member:
 
 ```
 src/a.jl:10  parse_header  duplicate 3 (high)
@@ -120,9 +122,9 @@ Metric names are Dendro's own: `cyclomatic`, `function_length`, `nesting_depth`,
 `parameter_count`, `empty_catch`, `stub_marker`, `empty_body`, `duplicate`. An
 unknown name warns, so a typo does not silently disable a check.
 
-Suppression marks a finding rather than dropping it. `report` prints the active
-findings and a footer counting the suppressed ones, and `active(findings)`
-returns only the unsuppressed findings for gating.
+Suppression marks a finding rather than dropping it. Printing a findings vector
+lists the active findings and a footer counting the suppressed ones, and
+`active(findings)` returns only the unsuppressed findings for gating.
 
 ## Languages
 

@@ -17,23 +17,25 @@ source text
   -> per unit: scalar metrics + flag metrics
   -> score each reading (absolute band, optional corpus percentile)
   -> mark suppressed findings from inline directives
-  -> Vector{Finding}
-  -> report / active / gate
+  -> Findings (a Vector{Finding} that prints as a report)
+  -> show / active / gate
 ```
 
-`analyze` runs the whole file. `analyze_diff` runs the same path per changed file
-but restricts findings to the touched line ranges. Nothing else branches the
-flow.
+`analyze` (corpus.jl) is the one entrypoint. It resolves `path` to a corpus (every
+profile-resolvable file under a folder, or one file), parses each once, builds a
+baseline from that corpus, runs the per-file path above against it for each file,
+and appends cross-file duplicates. The baseline-from-the-corpus step is what makes
+relative scoring work with no setup, for a single file as much as a folder: a
+file's own functions are the distribution it is scored against.
 
-`analyze_corpus` is the project-level entrypoint. It parses every path once, builds
-a baseline from the corpus (unless one is passed), runs the per-file path above
-against it for each file, and appends cross-file duplicates. The baseline-from-the-
-corpus default is what makes relative scoring work with no setup.
+With `base`, `analyze` scopes to a git diff: it parses the diff of the working tree
+against that ref via `changed_ranges` and restricts each file's findings (and the
+duplicate clusters) to the touched line ranges. Nothing else branches the flow.
 
 Duplicate detection crosses the single-file boundary: it hashes each function's
 structure and emits a `:duplicate` `Finding` for every shape shared by two or more
-functions. `find_duplicates` runs that pass alone. It stays syntactic, comparing
-node-type sequences with no symbol resolution.
+functions. It stays syntactic, comparing node-type sequences with no symbol
+resolution.
 
 ## Layers
 
@@ -61,26 +63,26 @@ Measurement:
   tuple that fixes report order, `DEFAULT_BANDS`, and `severity`.
 - `flags.jl` defines the presence metrics: `empty_body`, `empty_catches`,
   `stub_markers`, plus the helpers for reading a body's real-work count.
-- `baseline.jl` defines `Baseline` over a corpus, percentile scoring, JSON
-  persistence (`build_baseline`, `save_baseline`, `load_baseline`), and
-  `add_samples!`, the per-tree accumulation `build_baseline` and the corpus pass
-  share.
+- `baseline.jl` defines `Baseline` over a corpus, `percentile` scoring, and
+  `add_samples!`, the per-tree accumulation the corpus baseline pass uses.
 - `suppress.jl` defines inline suppression: `Directive`, `METRICS`,
   `DIRECTIVE_RE`, `suppressions`, `is_suppressed`, and `line_of`.
 
 Reporting:
 
-- `report.jl` defines `Location`, `Finding`, `Scan`, `findings_for_tree`, the
-  top-level `analyze`, `report`, and `active`. This is where measurement, scoring,
-  and suppression meet.
-- `corpus.jl` defines the project-level pass: `parse_corpus` (parse each path
-  once), `baseline_from`, `structural_digest` and `cluster_duplicates` (the
+- `report.jl` defines `Location`, `Finding`, `Scan`, `findings_for_tree`,
+  `Findings` (the result wrapper, an `AbstractVector{Finding}` with a `show`
+  method that renders the report), and `active`. This is where measurement,
+  scoring, and suppression meet.
+- `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
+  that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
+- `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
+  folder for analysable files), `parse_corpus` (parse each path once),
+  `baseline_from`, `structural_digest` and `cluster_duplicates` (the
   rename-tolerant duplicate detector, hashing node-type sequences gated by
-  named-node count), `find_duplicates` (duplicates alone), and `analyze_corpus`
-  (per-file findings against a corpus baseline plus duplicates).
-- `diff.jl` defines `analyze_diff` and the unified-diff parser
-  (`changed_ranges`, `coalesce_lines`) that turns a git diff into per-file line
-  ranges.
+  named-node count), and `analyze` (the public entrypoint, orchestrating corpus,
+  baseline, per-file findings, duplicates, and optional diff scoping). It is
+  included after `report.jl` and `diff.jl` so everything it calls is defined first.
 
 ## Core types
 
@@ -103,6 +105,11 @@ other flags), the absolute band, the corpus percentile or `nothing`, the kind
 relational metrics like `:duplicate` span several. Suppressed findings are kept in
 the vector, not dropped, so they can be counted.
 
+`Findings` (`report.jl`). What `analyze` returns: an `AbstractVector{Finding}`, so
+it filters, iterates, and indexes like any vector, with a `show` method that
+renders the report. The wrapper exists so display lives on a Dendro-owned type
+rather than pirating `show` for `Vector{Finding}`.
+
 `Scan` (`report.jl`). The fixed context for analysing one file: profile, source,
 path, optional baseline, cut percentile, optional diff line ranges, and the parsed
 directives. New per-file analysis state belongs here, passed through the keyword
@@ -124,7 +131,8 @@ either trips.
 - Absolute: the value against a fixed band in `DEFAULT_BANDS`, classified `:ok`,
   `:warn`, or `:high` by `severity`. Fixed targets, not corpus-derived.
 - Relative: the value's percentile against the baseline corpus, flagged when it
-  lands at or above the cut (default 0.95). Skipped when no baseline is given.
+  lands at or above the cut (default 0.95). `nothing` when the corpus holds no
+  sample for that metric to rank against.
 
 Flag metrics have no distribution. Presence is the finding, always reported at
 `:high`.
@@ -139,9 +147,9 @@ scope; others carry the comment's line. Named metrics are validated against
 `is_suppressed(directives, line, metric)` is true when a directive covers the line
 (file scope, the same line, or the line directly above) and its metric set is
 `nothing` or contains the metric. `unit_findings!` and `flag_findings!` consult it
-while building each `Finding` and set the `suppressed` flag. `report` hides
-suppressed findings and prints a trailing count. `active` returns the unsuppressed
-findings for gating.
+while building each `Finding` and set the `suppressed` flag. Printing `Findings`
+hides suppressed findings and prints a trailing count. `active` returns the
+unsuppressed findings for gating.
 
 ## Conventions
 

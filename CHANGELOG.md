@@ -9,16 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `analyze_corpus(paths; min_size, language, baseline, cut)`, a project-level
-  entrypoint. It analyzes every file against a baseline built from the corpus
-  (unless one is passed), so relative scoring works with no setup, and appends
-  cross-file duplicates.
-- Cross-corpus duplicate detection. `find_duplicates(paths; min_size, language)`
-  finds functions duplicated across files, tolerant to identifier renaming and
-  literal-value changes (Type-2 clones), by hashing each function's node-type
-  sequence. Each cluster of two or more is one `:duplicate` finding whose
-  `locations` list every member. `min_size` (named-node count) gates trivial
-  functions. Suppressed by `dendro-ignore: duplicate` on any member.
+- `analyze(path; base, cut, min_size, language)` takes a file or folder. A folder
+  recurses for analysable files; either way a baseline is built from the corpus
+  (the folder's files, or the single file's own functions), so relative scoring
+  works against the input's own distribution with no setup. `base` scopes to a git
+  diff, reporting only functions changed against that ref. Every analysis reports
+  per-function metrics and cross-file duplicates, tolerant to identifier renaming
+  and literal-value changes (Type-2 clones), each cluster of two or more functions
+  one `:duplicate` finding whose `locations` list every member. `min_size`
+  (named-node count) gates trivial duplicates, suppressed by
+  `dendro-ignore: duplicate` on any member.
 - Inline suppression directives in comments: `dendro-ignore` for the same or next
   line, `dendro-ignore: cyclomatic, parameter_count` for named metrics, and
   `dendro-ignore-file` for a whole file. Works in every supported language. An
@@ -28,6 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- One public analysis entrypoint, `analyze`. It takes a file or a folder, with
+  optional git-diff scoping (`base`) and a baseline auto-built from the corpus. The
+  separate `analyze_diff` (0.1.0), `analyze_corpus`, and `find_duplicates`
+  entrypoints are removed, folded into `analyze`.
+- `analyze` always builds its own baseline, so the baseline API is no longer
+  public: `build_baseline`, `save_baseline`, `load_baseline` (0.1.0), the
+  `baseline` keyword, and the `Baseline` export are removed, along with the JSON
+  dependency they needed.
+- `analyze` returns `Findings`, an `AbstractVector{Finding}` that prints as a
+  report, so its result renders directly in the REPL. The `report` (0.1.0) function
+  is removed; write the report elsewhere with `show(io, MIME("text/plain"), findings)`.
+- Dendro exports nothing. The API (`analyze`, `active`, `Finding`, `Findings`,
+  `Location`) is marked `public` instead, so `using Dendro` no longer brings names
+  into scope; import what you call or qualify with `Dendro.`. The `public` keyword
+  raises the minimum Julia to 1.11.
 - A `Finding` now spans a set of `Location`s rather than a single file/line/unit,
   so a relational metric like `:duplicate` reports every site it covers. Per-file
   metrics still fire at one location.

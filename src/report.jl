@@ -23,7 +23,7 @@ location; relational metrics like `:duplicate` span several.
 - `locations`: every site the finding covers, at least one.
 - `value`: the scalar reading, the member count for `:duplicate`, or `nothing`.
 - `absolute`: `:ok`/`:warn`/`:high` band, always `:high` for flags.
-- `percentile`: corpus rank in `[0, 1]`, or `nothing` without a baseline.
+- `percentile`: corpus rank in `[0, 1]`, or `nothing` when no corpus sample ranks against it.
 - `kind`: `:scalar` or `:flag`.
 - `suppressed`: whether an inline directive accepted this finding.
 """
@@ -131,39 +131,33 @@ function findings_for_tree(tree, scan::Scan)
 end
 
 """
-    analyze(path; language=nothing, baseline=nothing, cut=0.95) -> Vector{Finding}
+    Findings <: AbstractVector{Finding}
 
-Parse `path` and report its findings. The language is inferred from the file
-extension unless given as a symbol or string.
+The result of [`analyze`](@ref): the findings it produced, printed as a report.
+Behaves as an `AbstractVector{Finding}`, so it iterates, filters, and indexes like
+any vector of [`Finding`](@ref)s.
 """
-function analyze(path::AbstractString; language = nothing, baseline = nothing, cut::Real = 0.95)
-    lang = language === nothing ? language_for_path(path) :
-           Symbol(lowercase(String(language)))
-    lang === nothing && error("Dendro: cannot infer language for $path; pass `language=`.")
-    haskey(PROFILES, lang) || error("Dendro: no profile for language :$lang.")
-    profile = PROFILES[lang]
-    source = read(path, String)
-    tree = parse(parser_for(lang), source)
-    dirs = suppressions(tree, profile, source; file = path)
-    scan = Scan(profile, source, path; baseline = baseline, cut = cut, directives = dirs)
-    return findings_for_tree(tree, scan)
+struct Findings <: AbstractVector{Finding}
+    items::Vector{Finding}
 end
 
+Base.size(fs::Findings) = size(fs.items)
+Base.getindex(fs::Findings, i::Int) = fs.items[i]
+Base.IndexStyle(::Type{Findings}) = IndexLinear()
+
 """
-    active(findings) -> Vector{Finding}
+    active(findings) -> Findings
 
 The findings not suppressed by an inline directive. Use this for gating.
 """
-active(findings) = filter(f -> !f.suppressed, findings)
+active(findings) = Findings(filter(f -> !f.suppressed, findings))
 
-"""
-    report([io], findings)
-
-Write each finding as `file:line  unit  metric value (scores)`, followed by an
-`also at` line per extra location for findings that span several.
-"""
-function report(io::IO, findings)
-    suppressed = 0
+# The REPL display for the `Findings` `analyze` returns. Each finding prints as
+# `file:line  unit  metric value (scores)`, with an `also at` line per extra
+# location, and a trailing count of findings suppressed by directives so
+# suppressions stay visible rather than silently dropped.
+function Base.show(io::IO, ::MIME"text/plain", findings::Findings)
+    suppressed = shown = 0
     for f in findings
         if f.suppressed
             suppressed += 1
@@ -179,8 +173,9 @@ function report(io::IO, findings)
             tag = isempty(extra.unit) ? "" : string("  ", extra.unit)
             println(io, "    also at ", extra.file, ":", extra.line, tag)
         end
+        shown += 1
     end
+    shown == 0 && suppressed == 0 && println(io, "No findings.")
     suppressed > 0 && println(io, suppressed, " finding(s) suppressed by directives")
     return nothing
 end
-report(findings) = report(stdout, findings)

@@ -46,7 +46,7 @@ a language inside metric code, the profile is missing a field.
 
 The diff is the question. Whole-file analysis asks whether code is bad.
 Diff-scoping asks whether an edit made it worse, which is what review actually
-wants to know. That is why `analyze_diff` exists.
+wants to know. That is why `analyze` takes a `base` git ref.
 
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
