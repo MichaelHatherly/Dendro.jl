@@ -11,16 +11,30 @@ function first_child_of(node::TreeSitter.Node, types::Set{String})
     return nothing
 end
 
+# Named children of a body that do real work, ignoring no-op statements like
+# `pass`. A body is effectively empty when this count is zero.
+function nontrivial_count(body::TreeSitter.Node, profile::LanguageProfile)
+    n = 0
+    for c in TreeSitter.children(body)
+        TreeSitter.is_named(c) || continue
+        TreeSitter.node_type(c) in profile.trivial_body_types || (n += 1)
+    end
+    return n
+end
+
+# True when a body node is missing or does no real work.
+function empty_block(body, profile::LanguageProfile)
+    body === nothing && return true
+    return nontrivial_count(body, profile) == 0
+end
+
 """
     empty_body(node, profile) -> Bool
 
-True when the function `node` has no body, or a body with no statements.
+True when the function `node` has no body, or a body that does no real work.
 """
-function empty_body(node::TreeSitter.Node, profile::LanguageProfile)
-    body = first_child_of(node, profile.body_types)
-    body === nothing && return true
-    return TreeSitter.count_named_nodes(body) == 0
-end
+empty_body(node::TreeSitter.Node, profile::LanguageProfile) =
+    empty_block(first_child_of(node, profile.body_types), profile)
 
 """
     empty_catches(tree, profile) -> Vector{TreeSitter.Node}
@@ -31,10 +45,7 @@ function empty_catches(tree, profile::LanguageProfile)
     out = TreeSitter.Node[]
     TreeSitter.traverse(tree) do n, enter
         if enter && TreeSitter.node_type(n) in profile.catch_types
-            body = first_child_of(n, profile.body_types)
-            if body === nothing || TreeSitter.count_named_nodes(body) == 0
-                push!(out, n)
-            end
+            empty_block(first_child_of(n, profile.body_types), profile) && push!(out, n)
         end
         nothing
     end

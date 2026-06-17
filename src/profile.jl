@@ -16,6 +16,8 @@ measures.
 - `catch_types`: exception-handling clauses, checked for swallowed errors.
 - `comment_types`: comment nodes, scanned for stub markers.
 - `name_types`: identifier node used to label a function in reports.
+- `trivial_body_types`: statements that count as no real work (e.g. `pass`), so
+  a body holding only these reads as empty.
 """
 struct LanguageProfile
     name::Symbol
@@ -28,4 +30,5 @@ struct LanguageProfile
     catch_types::Set{String}
     comment_types::Set{String}
     name_types::Set{String}
+    trivial_body_types::Set{String}
 end

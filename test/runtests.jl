@@ -9,4 +9,5 @@ using Dendro, TreeSitter, Test
     include("baseline.jl")
     include("report.jl")
     include("diff.jl")
+    include("python.jl")
 end
