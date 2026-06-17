@@ -11,4 +11,5 @@ using Dendro, TreeSitter, Test
     include("diff.jl")
     include("python.jl")
     include("languages.jl")
+    include("dogfood.jl")
 end
