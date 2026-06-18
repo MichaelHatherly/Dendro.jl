@@ -10,7 +10,7 @@
 # every path, as `analyze` does.
 function parse_corpus(paths; language = nothing, rules = BUILTIN_RULES)
     forced = language === nothing ? nothing : Symbol(lowercase(String(language)))
-    parsers = Dict{Symbol,TreeSitter.Parser}()
+    parsers = Dict{Symbol, TreeSitter.Parser}()
     files = NamedTuple[]
     for path in paths
         lang = forced === nothing ? language_for_path(path) : forced
@@ -20,8 +20,12 @@ function parse_corpus(paths; language = nothing, rules = BUILTIN_RULES)
         source = read(path, String)
         tree = parse(parser, source)
         directives = suppressions(tree, profile, source; file = path, rules)
-        push!(files, (language = lang, profile = profile, source = source,
-                      file = String(path), tree = tree, directives = directives))
+        push!(
+            files, (
+                language = lang, profile = profile, source = source,
+                file = String(path), tree = tree, directives = directives,
+            )
+        )
     end
     return files
 end
@@ -97,11 +101,13 @@ a trailing `/` matches directories only. As in gitignore, a file under an exclud
 directory cannot be re-included. Patterns apply to folder scans, not a single named
 file.
 """
-function analyze(path; base = nothing, cut::Real = 0.95,
-                 min_size::Integer = DEFAULT_MIN_SIZE,
-                 threshold::Real = DEFAULT_THRESHOLD,
-                 radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing,
-                 rules = BUILTIN_RULES, ignore = String[])
+function analyze(
+        path; base = nothing, cut::Real = 0.95,
+        min_size::Integer = DEFAULT_MIN_SIZE,
+        threshold::Real = DEFAULT_THRESHOLD,
+        radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing,
+        rules = BUILTIN_RULES, ignore = String[]
+    )
     ispath(path) || error("Dendro: no such path $path")
     if isdir(path)
         corpus = source_files(path, ignore)
@@ -132,8 +138,11 @@ function analyze(path; base = nothing, cut::Real = 0.95,
     end
 
     append!(findings, scope_clusters(cluster_duplicates(files; min_size), scope))
-    append!(findings, scope_clusters(
-        cluster_near_duplicates(files; min_size, threshold, radius_factor), scope))
+    append!(
+        findings, scope_clusters(
+            cluster_near_duplicates(files; min_size, threshold, radius_factor), scope
+        )
+    )
     append!(findings, scope_clusters(cluster_unnatural(files; cut), scope))
     return Findings(findings)
 end

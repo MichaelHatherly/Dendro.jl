@@ -55,25 +55,25 @@ end
 # Keyword constructor. Sets that a language does not use default to empty, so
 # each profile lists only the node types it actually has.
 function LanguageProfile(
-    name::Symbol;
-    function_types,
-    decision_types,
-    body_types,
-    name_types,
-    continuation_types = String[],
-    short_circuit_ops = String[],
-    nesting_types = String[],
-    parameter_types = String[],
-    catch_types = String[],
-    comment_types = String[],
-    trivial_body_types = String[],
-    return_types = String[],
-    finally_types = String[],
-    call_types = String[],
-    binary_expr_types = String[],
-    conditional_types = String[],
-    terminal_types = String[],
-)
+        name::Symbol;
+        function_types,
+        decision_types,
+        body_types,
+        name_types,
+        continuation_types = String[],
+        short_circuit_ops = String[],
+        nesting_types = String[],
+        parameter_types = String[],
+        catch_types = String[],
+        comment_types = String[],
+        trivial_body_types = String[],
+        return_types = String[],
+        finally_types = String[],
+        call_types = String[],
+        binary_expr_types = String[],
+        conditional_types = String[],
+        terminal_types = String[],
+    )
     return LanguageProfile(
         name,
         Set{String}(function_types),

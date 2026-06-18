@@ -61,8 +61,8 @@ function identical_operands(tree, profile::LanguageProfile, source::AbstractStri
         if enter && TreeSitter.node_type(n) in profile.binary_expr_types
             kids = collect(TreeSitter.named_children(n))
             if length(kids) >= 2 &&
-               normalized_text(first(kids), source) == normalized_text(last(kids), source) &&
-               !any(c -> normalized_text(c, source) in IDEMPOTENT_OPS, TreeSitter.children(n))
+                    normalized_text(first(kids), source) == normalized_text(last(kids), source) &&
+                    !any(c -> normalized_text(c, source) in IDEMPOTENT_OPS, TreeSitter.children(n))
                 push!(out, n)
             end
         end
@@ -229,8 +229,10 @@ function trivial_wrappers(tree, profile::LanguageProfile)
     for u in functions(tree, profile)
         body = first_child_of(u.node, profile.body_types)
         body === nothing && continue
-        stmts = [c for c in TreeSitter.children(body)
-                 if TreeSitter.is_named(c) && !(TreeSitter.node_type(c) in profile.trivial_body_types)]
+        stmts = [
+            c for c in TreeSitter.children(body)
+                if TreeSitter.is_named(c) && !(TreeSitter.node_type(c) in profile.trivial_body_types)
+        ]
         length(stmts) == 1 && single_call(only(stmts), profile) && push!(out, u.node)
     end
     return out

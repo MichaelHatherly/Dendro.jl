@@ -1,7 +1,7 @@
 # Language identification and lazy parser resolution.
 
 # File extension to language name. Languages match TreeSitter.jl's supported set.
-const EXTENSIONS = Dict{String,Symbol}(
+const EXTENSIONS = Dict{String, Symbol}(
     "jl" => :julia,
     "py" => :python,
     "sh" => :bash,
@@ -52,7 +52,7 @@ function language_module(name::Symbol)
     id = Base.identify_package(pkgname)
     id === nothing && error(
         "Dendro: no parser for language :$name. Add it with " *
-        "`import Pkg; Pkg.add(\"$pkgname\")`.",
+            "`import Pkg; Pkg.add(\"$pkgname\")`.",
     )
     return Base.require(id)
 end

@@ -30,9 +30,9 @@ location; relational metrics like `:duplicate` span several.
 struct Finding
     metric::Symbol
     locations::Vector{Location}
-    value::Union{Int,Nothing}
+    value::Union{Int, Nothing}
     absolute::Symbol
-    percentile::Union{Float64,Nothing}
+    percentile::Union{Float64, Nothing}
     kind::Symbol
     suppressed::Bool
 end
@@ -69,9 +69,9 @@ struct Scan
     source::String
     file::String
     rules::Vector{Rule}
-    baseline::Union{Baseline,Nothing}
+    baseline::Union{Baseline, Nothing}
     cut::Float64
-    within::Union{Vector{UnitRange{Int}},Nothing}
+    within::Union{Vector{UnitRange{Int}}, Nothing}
     directives::Vector{Directive}
 end
 
@@ -89,7 +89,7 @@ function unit_findings!(out, scan::Scan, unit::FunctionUnit)
         value = r.fn(unit, scan.profile, scan.source)
         band = severity(value, r.band)
         pct = scan.baseline === nothing ? nothing :
-              percentile(scan.baseline, scan.profile.name, r.name, value)
+            percentile(scan.baseline, scan.profile.name, r.name, value)
         outlier = pct !== nothing && pct >= scan.cut
         if band != :ok || outlier
             sup = is_suppressed(scan.directives, unit.firstline, r.name)
@@ -106,7 +106,7 @@ function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
         line = line_of(node)
         in_scope(scan, line) || continue
         name = TreeSitter.node_type(node) in scan.profile.function_types ?
-               unit_name(node, scan.profile, scan.source) : ""
+            unit_name(node, scan.profile, scan.source) : ""
         sup = is_suppressed(scan.directives, line, metric)
         push!(out, Finding(scan.file, line, name, metric, nothing, :high, nothing, :flag, sup))
     end
@@ -224,9 +224,11 @@ function github_annotations(io::IO, findings::Findings)
         anchor = first(f.locations)
         level = f.absolute === :high ? "error" : "warning"
         title = string("Dendro: ", f.metric)
-        println(io, "::", level, " file=", escape_prop(anchor.file),
-                ",line=", anchor.line, ",title=", escape_prop(title),
-                "::", escape_data(annotation_message(f)))
+        println(
+            io, "::", level, " file=", escape_prop(anchor.file),
+            ",line=", anchor.line, ",title=", escape_prop(title),
+            "::", escape_data(annotation_message(f))
+        )
     end
     return nothing
 end

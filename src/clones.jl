@@ -50,7 +50,7 @@ end
 
 # Count of each named node type in a subtree set, the DECKARD characteristic vector.
 function histogram_of(st::Vector{Subtree})
-    hist = Dict{String,Int}()
+    hist = Dict{String, Int}()
     for s in st
         t = TreeSitter.node_type(s.node)
         hist[t] = get(hist, t, 0) + 1
@@ -116,8 +116,8 @@ a `dendro-ignore: duplicate` directive.
 """
 function cluster_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE)
     entries = NamedTuple[]
-    buckets = Dict{Tuple{Symbol,UInt64},Vector{Int}}()
-    anchor_at = Dict{Tuple{String,Int,Int},Int}()
+    buckets = Dict{Tuple{Symbol, UInt64}, Vector{Int}}()
+    anchor_at = Dict{Tuple{String, Int, Int}, Int}()
     for f in files
         for unit in functions(f.tree, f.profile)
             name = unit_name(unit, f.profile, f.source)
@@ -126,8 +126,12 @@ function cluster_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE)
                 (floor === nothing || s.size < floor) && continue
                 line = Int(TreeSitter.start_point(s.node).row) + 1
                 sup = is_suppressed(f.directives, line, :duplicate)
-                push!(entries, (language = f.language, hash = s.hash, node = s.node,
-                                file = f.file, line = line, unit = name, suppressed = sup))
+                push!(
+                    entries, (
+                        language = f.language, hash = s.hash, node = s.node,
+                        file = f.file, line = line, unit = name, suppressed = sup,
+                    )
+                )
                 idx = length(entries)
                 push!(get!(() -> Int[], buckets, (f.language, s.hash)), idx)
                 anchor_at[(f.file, TreeSitter.byte_range(s.node)...)] = idx
@@ -184,7 +188,7 @@ struct CloneUnit
     location::Location
     suppressed::Bool
     hashes::Vector{UInt64}
-    histogram::Dict{String,Int}
+    histogram::Dict{String, Int}
     digest::UInt64
     size::Int
 end
@@ -199,7 +203,7 @@ function uf_find(parent::Vector{Int}, x::Int)
 end
 
 # Dense L1 vector for one unit over a shared per-language vocabulary.
-function clone_vector(unit::CloneUnit, vocab::Dict{String,Int})
+function clone_vector(unit::CloneUnit, vocab::Dict{String, Int})
     v = zeros(Float64, length(vocab))
     for (t, c) in unit.histogram
         v[vocab[t]] = c
@@ -213,26 +217,30 @@ end
 # straddling a band boundary is still seen. Each surviving pair becomes an edge
 # weighted by its Dice score. Exact clones (equal digest) are left to the exact
 # path, never re-reported here.
-function near_miss_edges!(edges, units::Vector{CloneUnit}, idxs::Vector{Int},
-                          threshold::Real, radius_factor::Real)
+function near_miss_edges!(
+        edges, units::Vector{CloneUnit}, idxs::Vector{Int},
+        threshold::Real, radius_factor::Real
+    )
     length(idxs) < 2 && return edges
 
-    vocab = Dict{String,Int}()
+    vocab = Dict{String, Int}()
     for i in idxs, t in keys(units[i].histogram)
         get!(vocab, t, length(vocab) + 1)
     end
 
-    bands = Dict{Int,Vector{Int}}()
+    bands = Dict{Int, Vector{Int}}()
     for i in idxs
         push!(get!(() -> Int[], bands, floor(Int, log2(units[i].size))), i)
     end
 
-    seen = Set{Tuple{Int,Int}}()
+    seen = Set{Tuple{Int, Int}}()
     for b in sort!(collect(keys(bands)))
         query = bands[b]
         search = vcat(query, get(bands, b + 1, Int[]))
-        tree = NearestNeighbors.BallTree(stack(clone_vector(units[i], vocab) for i in search),
-                                         NearestNeighbors.Cityblock())
+        tree = NearestNeighbors.BallTree(
+            stack(clone_vector(units[i], vocab) for i in search),
+            NearestNeighbors.Cityblock()
+        )
         radius = radius_factor * 2.0^(b + 1)
         hits = NearestNeighbors.inrange(tree, stack(clone_vector(units[i], vocab) for i in query), radius)
         for (qi, neighbours) in enumerate(hits)
@@ -256,9 +264,11 @@ end
 # never cross grammars. Returns one `:near_duplicate` finding per cluster, its
 # `value` the weakest pairwise Dice in the cluster as a percent, suppressed when any
 # member carries a `dendro-ignore: near_duplicate` directive.
-function cluster_near_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE,
-                                 threshold::Real = DEFAULT_THRESHOLD,
-                                 radius_factor::Real = DEFAULT_RADIUS_FACTOR)
+function cluster_near_duplicates(
+        files; min_size::Integer = DEFAULT_MIN_SIZE,
+        threshold::Real = DEFAULT_THRESHOLD,
+        radius_factor::Real = DEFAULT_RADIUS_FACTOR
+    )
     units = CloneUnit[]
     for f in files
         for unit in functions(f.tree, f.profile)
@@ -272,11 +282,11 @@ function cluster_near_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE,
         end
     end
 
-    bylang = Dict{Symbol,Vector{Int}}()
+    bylang = Dict{Symbol, Vector{Int}}()
     for (i, u) in enumerate(units)
         push!(get!(() -> Int[], bylang, u.language), i)
     end
-    edges = Tuple{Int,Int,Float64}[]
+    edges = Tuple{Int, Int, Float64}[]
     for idxs in values(bylang)
         near_miss_edges!(edges, units, idxs, threshold, radius_factor)
     end
@@ -285,8 +295,8 @@ function cluster_near_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE,
     for (a, b, _) in edges
         parent[uf_find(parent, a)] = uf_find(parent, b)
     end
-    members = Dict{Int,Set{Int}}()
-    weakest = Dict{Int,Float64}()
+    members = Dict{Int, Set{Int}}()
+    weakest = Dict{Int, Float64}()
     for (a, b, score) in edges
         r = uf_find(parent, a)
         group = get!(() -> Set{Int}(), members, r)
@@ -299,8 +309,12 @@ function cluster_near_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE,
         idxs = sort!(collect(group); by = i -> (units[i].location.file, units[i].location.line))
         locations = [units[i].location for i in idxs]
         suppressed = any(units[i].suppressed for i in idxs)
-        push!(findings, Finding(:near_duplicate, locations, round(Int, 100 * weakest[r]),
-                                :high, nothing, :flag, suppressed))
+        push!(
+            findings, Finding(
+                :near_duplicate, locations, round(Int, 100 * weakest[r]),
+                :high, nothing, :flag, suppressed
+            )
+        )
     end
     sort!(findings; by = f -> (-length(f.locations), first(f.locations).file, first(f.locations).line))
     return findings

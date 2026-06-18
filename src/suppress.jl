@@ -10,8 +10,8 @@ whole-file directive. `metrics` is the set of metric names it covers, or
 `nothing` for all metrics.
 """
 struct Directive
-    scope::Union{Int,Symbol}
-    metrics::Union{Nothing,Set{Symbol}}
+    scope::Union{Int, Symbol}
+    metrics::Union{Nothing, Set{Symbol}}
 end
 
 # `dendro-ignore` or `dendro-ignore-file`, with an optional `: metric, metric`
@@ -57,7 +57,7 @@ function suppressions(tree, profile::LanguageProfile, source::AbstractString; fi
             for m in eachmatch(DIRECTIVE_RE, text)
                 scope = m.captures[1] === nothing ? line_of(n) : :file
                 metrics = m.captures[2] === nothing ? nothing :
-                          parse_metrics(m.captures[2], valid, file, line_of(n))
+                    parse_metrics(m.captures[2], valid, file, line_of(n))
                 push!(out, Directive(scope, metrics))
             end
         end

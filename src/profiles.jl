@@ -6,13 +6,15 @@
 # where default shares the case node (C, C++, Java) it adds one. This is a
 # documented variance, not a per-language workaround.
 
-const PROFILES = Dict{Symbol,LanguageProfile}()
+const PROFILES = Dict{Symbol, LanguageProfile}()
 
 PROFILES[:julia] = LanguageProfile(
     :julia;
     function_types = ["function_definition"],
-    decision_types = ["if_statement", "elseif_clause", "for_statement", "while_statement",
-        "ternary_expression", "catch_clause"],
+    decision_types = [
+        "if_statement", "elseif_clause", "for_statement", "while_statement",
+        "ternary_expression", "catch_clause",
+    ],
     continuation_types = ["elseif_clause"],
     short_circuit_ops = ["&&", "||"],
     nesting_types = ["if_statement", "for_statement", "while_statement", "try_statement"],
@@ -32,12 +34,16 @@ PROFILES[:julia] = LanguageProfile(
 PROFILES[:python] = LanguageProfile(
     :python;
     function_types = ["function_definition"],
-    decision_types = ["if_statement", "elif_clause", "for_statement", "while_statement",
-        "except_clause", "conditional_expression"],
+    decision_types = [
+        "if_statement", "elif_clause", "for_statement", "while_statement",
+        "except_clause", "conditional_expression",
+    ],
     continuation_types = ["elif_clause"],
     short_circuit_ops = ["and", "or"],
-    nesting_types = ["if_statement", "for_statement", "while_statement", "try_statement",
-        "with_statement"],
+    nesting_types = [
+        "if_statement", "for_statement", "while_statement", "try_statement",
+        "with_statement",
+    ],
     parameter_types = ["parameters"],
     body_types = ["block"],
     catch_types = ["except_clause"],
@@ -55,8 +61,10 @@ PROFILES[:python] = LanguageProfile(
 PROFILES[:bash] = LanguageProfile(
     :bash;
     function_types = ["function_definition"],
-    decision_types = ["if_statement", "elif_clause", "for_statement", "while_statement",
-        "case_item"],
+    decision_types = [
+        "if_statement", "elif_clause", "for_statement", "while_statement",
+        "case_item",
+    ],
     continuation_types = ["elif_clause"],
     short_circuit_ops = ["&&", "||"],
     nesting_types = ["if_statement", "for_statement", "while_statement", "case_statement"],
@@ -72,11 +80,15 @@ PROFILES[:bash] = LanguageProfile(
 PROFILES[:c] = LanguageProfile(
     :c;
     function_types = ["function_definition"],
-    decision_types = ["if_statement", "for_statement", "while_statement", "do_statement",
-        "case_statement", "conditional_expression"],
+    decision_types = [
+        "if_statement", "for_statement", "while_statement", "do_statement",
+        "case_statement", "conditional_expression",
+    ],
     short_circuit_ops = ["&&", "||"],
-    nesting_types = ["if_statement", "for_statement", "while_statement", "do_statement",
-        "switch_statement"],
+    nesting_types = [
+        "if_statement", "for_statement", "while_statement", "do_statement",
+        "switch_statement",
+    ],
     parameter_types = ["parameter_list"],
     body_types = ["compound_statement"],
     comment_types = ["comment"],
@@ -92,12 +104,16 @@ PROFILES[:c] = LanguageProfile(
 PROFILES[:cpp] = LanguageProfile(
     :cpp;
     function_types = ["function_definition"],
-    decision_types = ["if_statement", "for_statement", "for_range_loop",
+    decision_types = [
+        "if_statement", "for_statement", "for_range_loop",
         "while_statement", "do_statement", "case_statement", "conditional_expression",
-        "catch_clause"],
+        "catch_clause",
+    ],
     short_circuit_ops = ["&&", "||"],
-    nesting_types = ["if_statement", "for_statement", "for_range_loop",
-        "while_statement", "do_statement", "switch_statement", "try_statement"],
+    nesting_types = [
+        "if_statement", "for_statement", "for_range_loop",
+        "while_statement", "do_statement", "switch_statement", "try_statement",
+    ],
     parameter_types = ["parameter_list"],
     body_types = ["compound_statement"],
     catch_types = ["catch_clause"],
@@ -114,11 +130,15 @@ PROFILES[:cpp] = LanguageProfile(
 PROFILES[:go] = LanguageProfile(
     :go;
     function_types = ["function_declaration", "method_declaration"],
-    decision_types = ["if_statement", "for_statement", "expression_case", "type_case",
-        "communication_case"],
+    decision_types = [
+        "if_statement", "for_statement", "expression_case", "type_case",
+        "communication_case",
+    ],
     short_circuit_ops = ["&&", "||"],
-    nesting_types = ["if_statement", "for_statement", "expression_switch_statement",
-        "type_switch_statement", "select_statement"],
+    nesting_types = [
+        "if_statement", "for_statement", "expression_switch_statement",
+        "type_switch_statement", "select_statement",
+    ],
     parameter_types = ["parameter_list"],
     body_types = ["block"],
     comment_types = ["comment"],
@@ -134,12 +154,16 @@ PROFILES[:go] = LanguageProfile(
 PROFILES[:java] = LanguageProfile(
     :java;
     function_types = ["method_declaration", "constructor_declaration"],
-    decision_types = ["if_statement", "for_statement", "enhanced_for_statement",
+    decision_types = [
+        "if_statement", "for_statement", "enhanced_for_statement",
         "while_statement", "do_statement", "switch_label", "ternary_expression",
-        "catch_clause"],
+        "catch_clause",
+    ],
     short_circuit_ops = ["&&", "||"],
-    nesting_types = ["if_statement", "for_statement", "enhanced_for_statement",
-        "while_statement", "do_statement", "switch_expression", "try_statement"],
+    nesting_types = [
+        "if_statement", "for_statement", "enhanced_for_statement",
+        "while_statement", "do_statement", "switch_expression", "try_statement",
+    ],
     parameter_types = ["formal_parameters"],
     body_types = ["block"],
     catch_types = ["catch_clause"],
@@ -155,13 +179,19 @@ PROFILES[:java] = LanguageProfile(
 
 PROFILES[:javascript] = LanguageProfile(
     :javascript;
-    function_types = ["function_declaration", "function_expression", "arrow_function",
-        "method_definition", "generator_function_declaration"],
-    decision_types = ["if_statement", "for_statement", "for_in_statement", "while_statement",
-        "do_statement", "switch_case", "ternary_expression", "catch_clause"],
+    function_types = [
+        "function_declaration", "function_expression", "arrow_function",
+        "method_definition", "generator_function_declaration",
+    ],
+    decision_types = [
+        "if_statement", "for_statement", "for_in_statement", "while_statement",
+        "do_statement", "switch_case", "ternary_expression", "catch_clause",
+    ],
     short_circuit_ops = ["&&", "||"],
-    nesting_types = ["if_statement", "for_statement", "for_in_statement", "while_statement",
-        "do_statement", "switch_statement", "try_statement"],
+    nesting_types = [
+        "if_statement", "for_statement", "for_in_statement", "while_statement",
+        "do_statement", "switch_statement", "try_statement",
+    ],
     parameter_types = ["formal_parameters"],
     body_types = ["statement_block"],
     catch_types = ["catch_clause"],
@@ -178,13 +208,17 @@ PROFILES[:javascript] = LanguageProfile(
 PROFILES[:php] = LanguageProfile(
     :php;
     function_types = ["function_definition", "method_declaration"],
-    decision_types = ["if_statement", "else_if_clause", "for_statement", "foreach_statement",
+    decision_types = [
+        "if_statement", "else_if_clause", "for_statement", "foreach_statement",
         "while_statement", "do_statement", "case_statement", "conditional_expression",
-        "catch_clause"],
+        "catch_clause",
+    ],
     continuation_types = ["else_if_clause"],
     short_circuit_ops = ["&&", "||", "and", "or"],
-    nesting_types = ["if_statement", "for_statement", "foreach_statement", "while_statement",
-        "do_statement", "switch_statement", "try_statement"],
+    nesting_types = [
+        "if_statement", "for_statement", "foreach_statement", "while_statement",
+        "do_statement", "switch_statement", "try_statement",
+    ],
     parameter_types = ["formal_parameters"],
     body_types = ["compound_statement"],
     catch_types = ["catch_clause"],
@@ -204,8 +238,10 @@ PROFILES[:php] = LanguageProfile(
 PROFILES[:ruby] = LanguageProfile(
     :ruby;
     function_types = ["method", "singleton_method"],
-    decision_types = ["if", "elsif", "unless", "while", "until", "for", "when", "rescue",
-        "conditional"],
+    decision_types = [
+        "if", "elsif", "unless", "while", "until", "for", "when", "rescue",
+        "conditional",
+    ],
     continuation_types = ["elsif"],
     short_circuit_ops = ["&&", "||", "and", "or"],
     nesting_types = ["if", "unless", "while", "until", "for", "case", "begin"],
@@ -224,11 +260,15 @@ PROFILES[:ruby] = LanguageProfile(
 PROFILES[:rust] = LanguageProfile(
     :rust;
     function_types = ["function_item"],
-    decision_types = ["if_expression", "while_expression",
-        "for_expression", "loop_expression", "match_arm"],
+    decision_types = [
+        "if_expression", "while_expression",
+        "for_expression", "loop_expression", "match_arm",
+    ],
     short_circuit_ops = ["&&", "||"],
-    nesting_types = ["if_expression", "while_expression", "for_expression", "loop_expression",
-        "match_expression"],
+    nesting_types = [
+        "if_expression", "while_expression", "for_expression", "loop_expression",
+        "match_expression",
+    ],
     parameter_types = ["parameters"],
     body_types = ["block"],
     comment_types = ["line_comment", "block_comment"],
@@ -245,13 +285,19 @@ PROFILES[:rust] = LanguageProfile(
 
 PROFILES[:typescript] = LanguageProfile(
     :typescript;
-    function_types = ["function_declaration", "function_expression", "arrow_function",
-        "method_definition", "generator_function_declaration"],
-    decision_types = ["if_statement", "for_statement", "for_in_statement", "while_statement",
-        "do_statement", "switch_case", "ternary_expression", "catch_clause"],
+    function_types = [
+        "function_declaration", "function_expression", "arrow_function",
+        "method_definition", "generator_function_declaration",
+    ],
+    decision_types = [
+        "if_statement", "for_statement", "for_in_statement", "while_statement",
+        "do_statement", "switch_case", "ternary_expression", "catch_clause",
+    ],
     short_circuit_ops = ["&&", "||"],
-    nesting_types = ["if_statement", "for_statement", "for_in_statement", "while_statement",
-        "do_statement", "switch_statement", "try_statement"],
+    nesting_types = [
+        "if_statement", "for_statement", "for_in_statement", "while_statement",
+        "do_statement", "switch_statement", "try_statement",
+    ],
     parameter_types = ["formal_parameters"],
     body_types = ["statement_block"],
     catch_types = ["catch_clause"],

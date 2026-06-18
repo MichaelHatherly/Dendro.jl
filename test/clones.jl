@@ -55,13 +55,17 @@ near_duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :near_duplic
 # A Julia function whose body is `n` chained assignments. Two such with different
 # names are renamed clones; with different `n` they are near-misses. Each statement
 # adds 7 named nodes, so `n` controls the size band.
-chain(name, n) = string("function $name($(name)0)\n",
-                        join("    $name$i = $name$(i - 1) + $i\n" for i in 1:n),
-                        "    return $name$n\nend\n")
+chain(name, n) = string(
+    "function $name($(name)0)\n",
+    join("    $name$i = $name$(i - 1) + $i\n" for i in 1:n),
+    "    return $name$n\nend\n"
+)
 
-pychain(name, n) = string("def $name($(name)0):\n",
-                          join("    $name$i = $name$(i - 1) + $i\n" for i in 1:n),
-                          "    return $name$n\n")
+pychain(name, n) = string(
+    "def $name($(name)0):\n",
+    join("    $name$i = $name$(i - 1) + $i\n" for i in 1:n),
+    "    return $name$n\n"
+)
 
 @testset "analyze clusters near-misses across files" begin
     mktempdir() do dir
@@ -95,8 +99,10 @@ end
 @testset "analyze does not cluster dissimilar functions" begin
     mktempdir() do dir
         write(joinpath(dir, "a.jl"), chain("f", 5))
-        write(joinpath(dir, "b.jl"),
-              "function g(x)\n    while x > 0\n        x -= 1\n        x *= 2\n        x += 3\n    end\n    return x\nend\n")
+        write(
+            joinpath(dir, "b.jl"),
+            "function g(x)\n    while x > 0\n        x -= 1\n        x *= 2\n        x += 3\n    end\n    return x\nend\n"
+        )
 
         @test isempty(near_duplicates(analyze(dir)))
     end

@@ -6,7 +6,7 @@
 Classify `value` against its `(warn, high)` `band`: `:high` at or above `high`,
 `:warn` at or above `warn`, else `:ok`.
 """
-function severity(value::Real, band::Tuple{Int,Int})
+function severity(value::Real, band::Tuple{Int, Int})
     warn, high = band
     return value >= high ? :high : value >= warn ? :warn : :ok
 end
@@ -77,7 +77,7 @@ end
 function is_branch_point(n::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, has_ops::Bool)
     TreeSitter.is_named(n) && TreeSitter.node_type(n) in profile.decision_types && return true
     return has_ops && TreeSitter.is_leaf(n) &&
-           strip(TreeSitter.slice(source, n)) in profile.short_circuit_ops
+        strip(TreeSitter.slice(source, n)) in profile.short_circuit_ops
 end
 
 """

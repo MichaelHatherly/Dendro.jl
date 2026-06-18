@@ -41,7 +41,7 @@ Parse a unified diff into the new-file line ranges that each file added or
 changed, keyed by the new path.
 """
 function changed_ranges(diff::AbstractString)
-    added = Dict{String,Vector{Int}}()
+    added = Dict{String, Vector{Int}}()
     file = ""
     curnew = 0
     oldleft = 0

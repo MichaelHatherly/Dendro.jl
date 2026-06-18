@@ -67,8 +67,8 @@ end
 # Trigram counts over a corpus: each (w1, w2, w3) and its (w1, w2) context, plus the
 # vocabulary size the smoothing spreads probability across.
 struct NGramModel
-    trigrams::Dict{Tuple{String,String,String},Int}
-    contexts::Dict{Tuple{String,String},Int}
+    trigrams::Dict{Tuple{String, String, String}, Int}
+    contexts::Dict{Tuple{String, String}, Int}
     vocabulary::Int
 end
 
@@ -93,8 +93,8 @@ end
 A trigram model over every token stream in one language's corpus.
 """
 function build_model(streams)
-    trigrams = Dict{Tuple{String,String,String},Int}()
-    contexts = Dict{Tuple{String,String},Int}()
+    trigrams = Dict{Tuple{String, String, String}, Int}()
+    contexts = Dict{Tuple{String, String}, Int}()
     vocabulary = Set{String}()
     for tokens in streams
         count_sequence!(trigrams, contexts, vocabulary, tokens)
@@ -133,7 +133,7 @@ end
 # Collect every function in the corpus as a NaturalnessUnit, grouped by language so a
 # model never mixes grammars.
 function naturalness_units(files)
-    bylang = Dict{Symbol,Vector{NaturalnessUnit}}()
+    bylang = Dict{Symbol, Vector{NaturalnessUnit}}()
     for f in files
         for unit in functions(f.tree, f.profile)
             tokens = token_stream(unit, f.profile, f.source)
@@ -171,8 +171,10 @@ reported as `:unnatural`. Each carries both scores: the absolute cross-entropy `
 in centibits, and the corpus percentile, fired when either trips. A language with
 fewer than `min_tokens` tokens is skipped, its model too sparse to rank against.
 """
-function cluster_unnatural(files; band = UNNATURAL_BAND, cut::Real = 0.95,
-                           min_tokens::Integer = MIN_CORPUS_TOKENS)
+function cluster_unnatural(
+        files; band = UNNATURAL_BAND, cut::Real = 0.95,
+        min_tokens::Integer = MIN_CORPUS_TOKENS
+    )
     findings = Finding[]
     for units in values(naturalness_units(files))
         unnatural_in_language!(findings, units, band, cut, min_tokens)

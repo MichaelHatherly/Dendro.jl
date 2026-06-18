@@ -9,10 +9,10 @@ Per `(language, metric)` sorted samples of scalar-metric values drawn from a
 corpus.
 """
 struct Baseline
-    samples::Dict{Tuple{Symbol,Symbol},Vector{Float64}}
+    samples::Dict{Tuple{Symbol, Symbol}, Vector{Float64}}
 end
 
-Baseline() = Baseline(Dict{Tuple{Symbol,Symbol},Vector{Float64}}())
+Baseline() = Baseline(Dict{Tuple{Symbol, Symbol}, Vector{Float64}}())
 
 # Accumulate one tree's scalar-metric values into a baseline, keyed by language.
 function add_samples!(baseline::Baseline, language::Symbol, tree, profile::LanguageProfile, source::AbstractString, rules = BUILTIN_RULES)
