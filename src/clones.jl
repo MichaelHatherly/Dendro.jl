@@ -131,7 +131,11 @@ a `dendro-ignore: duplicate` directive.
 function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE)
     entries = AnchorEntry[]
     buckets = Dict{Tuple{Symbol, UInt64}, Vector{Int}}()
-    anchor_at = Dict{Tuple{String, Int, Int}, Int}()
+    # Locate an anchor by its file and node identity. A node's identity is its byte
+    # span plus grammar symbol (the `NodeId` convention), not the span alone: two
+    # distinct anchors can share a span, and `subsumed` must resolve a parent to the
+    # right one.
+    anchor_at = Dict{Tuple{String, Int, Int, UInt16}, Int}()
     for f in files
         for unit in functions(f.index)
             name = unit_name(unit, f.index)
@@ -148,7 +152,7 @@ function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer
                 )
                 idx = length(entries)
                 push!(get!(() -> Int[], buckets, (f.language, s.hash)), idx)
-                anchor_at[(f.file, TreeSitter.byte_range(s.node)...)] = idx
+                anchor_at[(f.file, nodeid(s.node)...)] = idx
             end
         end
     end
@@ -172,13 +176,13 @@ end
 function subsumed(
         i::Int, entries::Vector{AnchorEntry},
         buckets::Dict{Tuple{Symbol, UInt64}, Vector{Int}},
-        anchor_at::Dict{Tuple{String, Int, Int}, Int}
+        anchor_at::Dict{Tuple{String, Int, Int, UInt16}, Int}
     )
     e = entries[i]
     k = length(buckets[(e.language, e.hash)])
     p = TreeSitter.parent(e.node)
     while !TreeSitter.is_null(p)
-        j = get(anchor_at, (e.file, TreeSitter.byte_range(p)...), 0)
+        j = get(anchor_at, (e.file, nodeid(p)...), 0)
         if j != 0
             a = entries[j]
             return length(buckets[(a.language, a.hash)]) >= k
