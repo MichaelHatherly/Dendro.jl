@@ -81,6 +81,9 @@ not the test.
 - Run the suite: `julia --project=. -e 'using Pkg; Pkg.test()'`. Language parsers
   live in `test/Project.toml`, so parsing only works under `Pkg.test()`, not a
   bare package-env REPL. Redirect test output to a file and read it on failure.
+  The suite ends with [JET](https://github.com/aviatesk/JET.jl) static analysis
+  (`test/jet.jl`): Dendro must report zero possible errors, so a type-level
+  regression fails the run.
 - Format with [Runic](https://github.com/fredrikekre/Runic.jl). CI checks it.
 
   ```bash

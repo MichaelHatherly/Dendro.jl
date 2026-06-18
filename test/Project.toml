@@ -1,4 +1,5 @@
 [deps]
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TreeSitter = "f42328cb-ece0-4cf2-995f-9e7abb27d006"
 tree_sitter_bash_jll = "7332bcdc-bd2a-5999-b4fe-680b85f40771"
@@ -13,3 +14,6 @@ tree_sitter_python_jll = "88db161d-10c7-51e6-aa56-e32ecf738a46"
 tree_sitter_ruby_jll = "64e8d737-0d98-5a82-81e1-7af1483a77cc"
 tree_sitter_rust_jll = "b2197e8e-fe20-5781-846b-d7979e3cddf2"
 tree_sitter_typescript_jll = "dfa7e5a0-2128-5201-bc87-2ee6cd674210"
+
+[compat]
+JET = "0.9, 0.10"

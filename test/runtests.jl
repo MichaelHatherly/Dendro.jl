@@ -22,4 +22,5 @@ fixture(lang) = (Dendro.parser_for(lang), Dendro.PROFILES[lang])
     include("python.jl")
     include("languages.jl")
     include("dogfood.jl")
+    include("jet.jl")
 end
