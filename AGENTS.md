@@ -81,3 +81,9 @@ not the test.
 - Run the suite: `julia --project=. -e 'using Pkg; Pkg.test()'`. Language parsers
   live in `test/Project.toml`, so parsing only works under `Pkg.test()`, not a
   bare package-env REPL. Redirect test output to a file and read it on failure.
+- Format with [Runic](https://github.com/fredrikekre/Runic.jl). CI checks it.
+
+  ```bash
+  just fmt        # format in-place with Runic
+  just fmt-check  # check formatting without modifying (CI)
+  ```
