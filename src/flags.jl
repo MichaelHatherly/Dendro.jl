@@ -78,14 +78,22 @@ end
 True when `node` is a binary expression whose two operands are textually identical,
 like `x == x` or `a && a`. The duplication is almost always a mistake: a comparison
 that is always true or false, a redundant boolean. Operators where equal operands
-are ordinary (`+`, `*`, shifts, `!=` for a NaN check) are left alone. The
-`:identical_operands` rule reports one finding per match.
+are ordinary (`+`, `*`, shifts, `!=` for a NaN check) are left alone. A chained
+comparison (`a == b == c`) is one n-ary node, not a binary pair, so it never matches.
+The `:identical_operands` rule reports one finding per match.
 """
 function is_identical_operands(node::TreeSitter.Node, index::QueryIndex)
     source = index.source
-    kids = collect(TreeSitter.named_children(node))
-    return length(kids) >= 2 &&
-        normalized_text(first(kids), source) == normalized_text(last(kids), source) &&
+    # Julia carries the operator as a named child of the expression; every other
+    # grammar leaves it anonymous. Excluding tagged operators leaves the operands, so
+    # a true binary has exactly two and an n-ary chain has three or more. A plain loop
+    # rather than a comprehension keeps `index` out of a capturing closure.
+    operands = TreeSitter.Node[]
+    for c in TreeSitter.named_children(node)
+        c in index.operator || push!(operands, c)
+    end
+    return length(operands) == 2 &&
+        normalized_text(first(operands), source) == normalized_text(last(operands), source) &&
         !any(c -> normalized_text(c, source) in IDEMPOTENT_OPS, TreeSitter.children(node))
 end
 

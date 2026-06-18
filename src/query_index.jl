@@ -51,7 +51,7 @@ end
 const CONCEPT_NAMES = (
     :short_function, :decision, :continuation, :nesting, :short_circuit,
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
-    :finally, :call, :binary_expr, :conditional, :terminal,
+    :finally, :call, :binary_expr, :conditional, :terminal, :operator,
 )
 
 """
@@ -87,12 +87,13 @@ struct QueryIndex
     binary_expr::Concept
     conditional::Concept
     terminal::Concept
+    operator::Concept
 
     QueryIndex(language::Symbol, source::String) = new(
         language, source, FunctionUnit[], Set{NodeId}(),
         Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
         Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
-        Concept(), Concept(), Concept(), Concept(), Concept(),
+        Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
     )
 end
 
@@ -135,6 +136,8 @@ function dispatch!(idx::QueryIndex, name::AbstractString, n::TreeSitter.Node)
         record!(idx.conditional, n)
     elseif name == "terminal"
         record!(idx.terminal, n)
+    elseif name == "operator"
+        record!(idx.operator, n)
     else
         throw(ArgumentError("unknown capture name :$name"))
     end

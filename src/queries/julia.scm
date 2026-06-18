@@ -39,6 +39,10 @@
 
 (binary_expression) @binary_expr
 
+; Julia spells a binary operator as a named child of the expression, unlike the
+; other grammars where it is anonymous. Tag it so operand-counting can exclude it.
+(binary_expression (operator) @operator)
+
 (if_statement) @conditional
 
 [(return_statement) (break_statement) (continue_statement)] @terminal

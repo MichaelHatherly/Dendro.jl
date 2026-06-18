@@ -162,7 +162,8 @@ in its query, not here.
 and `function_ids` (the no-descend boundary), plus one `Concept` per measured
 construct (decision points, short-circuit operators, nesting, parameters, bodies,
 catches, comments, names, trivial statements, returns, finally clauses, calls,
-binary expressions, conditionals, terminals, short-form definitions). A `Concept`
+binary expressions, binary operators, conditionals, terminals, short-form
+definitions). A `Concept`
 holds the tagged nodes in source order and a `Set{NodeId}` for membership. Built
 once per file by `build_index`: the constructor starts every concept empty, then
 `dispatch!` files each capture by name and throws on a name outside `CONCEPT_NAMES`.

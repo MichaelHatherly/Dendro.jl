@@ -66,6 +66,11 @@ end
     @test operands(:javascript, "y = x === x") == 1
     @test operands(:ruby, "y = a && a") == 1
 
+    # A chained comparison is one n-ary node, not a binary pair. Comparing its outer
+    # two operands would flag `lo <= x <= lo`, which decides nothing trivially.
+    @test operands(:python, "x = a == b == a") == 0
+    @test operands(:python, "x = lo <= x <= lo") == 0
+
     # duplicate_branches reads each grammar's conditional node, with the bodies that
     # belong to one chain.
     @test branches(:python, "if c:\n    a()\nelse:\n    a()\n") == 1
