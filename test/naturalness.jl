@@ -20,6 +20,20 @@ end
     @test Dendro.cross_entropy(common, model) < Dendro.cross_entropy(novel, model)
 end
 
+@testset "the cache lowers entropy for a file-local idiom" begin
+    idiom_a = ["identifier", "=", "identifier", "+", "integer_literal"]
+    idiom_b = ["while", "identifier", "<", "identifier", "break"]
+    # The corpus is almost all idiom A, so idiom B is globally surprising.
+    global_model = Dendro.build_model([copy(idiom_a) for _ in 1:50])
+    # A file that consistently uses idiom B: the cache learns it as local idiom.
+    cache = Dendro.build_model([copy(idiom_b) for _ in 1:10])
+
+    global_only = Dendro.cross_entropy(idiom_b, global_model)
+    with_cache = Dendro.interpolated_cross_entropy(idiom_b, global_model, cache, 0.5)
+    # Read against its own file's idiom, the function is less surprising.
+    @test with_cache < global_only
+end
+
 @testset "cluster_unnatural guards a thin corpus" begin
     src = "function f()\n    1\nend\n"
     files = [parsedfile(:julia, src; file = "f.jl")]

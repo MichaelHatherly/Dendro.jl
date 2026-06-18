@@ -136,10 +136,13 @@ Reporting:
 - `naturalness.jl` defines cross-entropy scoring, the other corpus-relational pass.
   `token_stream` reduces a function to leaf tokens (identifier and literal text
   abstracted, the grammar's anonymous tokens kept); `build_model` counts a per-language
-  trigram model with add-one smoothing; `cross_entropy` scores a function's surprise
-  under that model in bits per token; `cluster_unnatural` emits an `:unnatural` finding
-  per function, carrying both an absolute cross-entropy band and the corpus percentile,
-  skipping a language whose corpus is below `MIN_CORPUS_TOKENS`. A surprising function
+  trigram model with add-one smoothing; `interpolated_cross_entropy` scores a
+  function's surprise under `λ·P_global + (1-λ)·P_cache`, the corpus model blended
+  with a per-file cache (`file_caches`) so a function is read against its own file's
+  idiom (Tu et al.), with `cross_entropy` the global-only case at `λ = 1`;
+  `cluster_unnatural` emits an `:unnatural` finding per function, carrying both an
+  absolute cross-entropy band and the corpus percentile, skipping a language whose
+  corpus is below `MIN_CORPUS_TOKENS`. A surprising function
   reads as unidiomatic, which correlates with bugs. Structure only, no symbol
   resolution; within one language. Included before `corpus.jl`, which calls it.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:

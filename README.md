@@ -105,10 +105,13 @@ add their own or opt into rules that are off by default.
 
 Relational (computed across the corpus, not per function): duplicates (below), and
 naturalness. Naturalness scores each function's token sequence against a per-language
-trigram model of the rest of the corpus, in bits per token. A surprising,
-unidiomatic function scores high, and surprise correlates with bugs. Reported as
-`:unnatural` with both scores, the absolute cross-entropy band and the corpus
-percentile. A language with too few tokens to model is skipped.
+trigram model of the rest of the corpus, in bits per token. The corpus model is
+interpolated with a per-file cache model (after Tu et al., "On the Localness of
+Software"), so a function is read against its own file's idiom, not just the
+corpus's, which sharpens genuine outliers and quiets file-consistent patterns. A
+surprising, unidiomatic function scores high, and surprise correlates with bugs.
+Reported as `:unnatural` with both scores, the absolute cross-entropy band and the
+corpus percentile. A language with too few tokens to model is skipped.
 
 ## Duplicate detection
 

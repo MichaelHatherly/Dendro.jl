@@ -15,6 +15,13 @@ const LAPLACE_ALPHA = 1.0
 # file falls below it and reports nothing, as percentile scoring does on a thin corpus.
 const MIN_CORPUS_TOKENS = 1000
 
+# Interpolation weight on the global model against the per-file cache, `P = λ·P_global
+# + (1-λ)·P_cache`. Code is locally repetitive (Tu et al., "On the Localness of
+# Software"), so a function read against its own file's idiom stands out only when it
+# breaks that idiom, not merely the corpus's. A fixed 0.5 is the Jelinek-Mercer weight
+# Hellendoorn & Devanbu found best for code, and the fewest parameters.
+const CACHE_LAMBDA = 0.5
+
 # Absolute band on cross-entropy, in centibits (bits * 100), so it fits the integer
 # `severity` band like every other scalar. Cross-entropy has no external standard the
 # way cyclomatic does, so this floor is empirical: set well above an idiomatic
@@ -106,25 +113,40 @@ function build_model(streams::AbstractVector{Vector{String}})
     return NGramModel(trigrams, contexts, length(vocabulary))
 end
 
-"""
-    cross_entropy(tokens, model) -> Float64
+# Smoothed conditional probability of `t` following context `(c1, c2)` under `model`,
+# add-one over the model's vocabulary.
+smoothed_prob(model::NGramModel, c1::String, c2::String, t::String) =
+    (get(model.trigrams, (c1, c2, t), 0) + LAPLACE_ALPHA) /
+    (get(model.contexts, (c1, c2), 0) + LAPLACE_ALPHA * model.vocabulary)
 
-Mean bits per token to encode `tokens` under `model`: the smoothed surprise of each
-token given its two predecessors, averaged. A higher value is a more surprising,
-less idiomatic function.
 """
-function cross_entropy(tokens::Vector{String}, model::NGramModel)
+    interpolated_cross_entropy(tokens, global_model, cache, λ) -> Float64
+
+Mean bits per token to encode `tokens` under the linear interpolation `λ·P_global +
+(1-λ)·P_cache` of the corpus model and a local cache model (Tu et al.): the smoothed
+surprise of each token given its two predecessors, averaged. A higher value is a more
+surprising, less idiomatic function.
+"""
+function interpolated_cross_entropy(tokens::Vector{String}, global_model::NGramModel, cache::NGramModel, λ::Float64)
     isempty(tokens) && return 0.0
     seq = [SEQ_START; SEQ_START; tokens]
     total = 0.0
     for i in NGRAM_ORDER:length(seq)
-        context = (seq[i - 2], seq[i - 1])
-        numerator = get(model.trigrams, (context[1], context[2], seq[i]), 0) + LAPLACE_ALPHA
-        denominator = get(model.contexts, context, 0) + LAPLACE_ALPHA * model.vocabulary
-        total -= log2(numerator / denominator)
+        c1, c2, t = seq[i - 2], seq[i - 1], seq[i]
+        p = λ * smoothed_prob(global_model, c1, c2, t) + (1 - λ) * smoothed_prob(cache, c1, c2, t)
+        total -= log2(p)
     end
     return total / length(tokens)
 end
+
+"""
+    cross_entropy(tokens, model) -> Float64
+
+Mean bits per token to encode `tokens` under `model` alone, the global-only case of
+[`interpolated_cross_entropy`](@ref) at `λ = 1`.
+"""
+cross_entropy(tokens::Vector{String}, model::NGramModel) =
+    interpolated_cross_entropy(tokens, model, model, 1.0)
 
 # One function carried through naturalness scoring: its token stream, where it is, and
 # whether an author accepted the finding.
@@ -149,15 +171,41 @@ function naturalness_units(files::AbstractVector{ParsedFile})
     return bylang
 end
 
-# Naturalness findings for one language's units, scored against a model built from
-# them. Skipped when the corpus is too thin to rank against.
+# Per-file cache models: a trigram model over the token streams in each file, the
+# local idiom each of its functions is read against. No capturing closure, so the
+# accumulators stay concretely typed.
+function file_caches(units::Vector{NaturalnessUnit})
+    byfile = Dict{String, Vector{Vector{String}}}()
+    for u in units
+        streams = get(byfile, u.location.file, nothing)
+        if streams === nothing
+            streams = Vector{String}[]
+            byfile[u.location.file] = streams
+        end
+        push!(streams, u.tokens)
+    end
+    caches = Dict{String, NGramModel}()
+    for (file, streams) in byfile
+        caches[file] = build_model(streams)
+    end
+    return caches
+end
+
+# Naturalness findings for one language's units, scored against a global model
+# interpolated with each unit's file cache. Skipped when the corpus is too thin to
+# rank against.
 function unnatural_in_language!(
         findings::Vector{Finding}, units::Vector{NaturalnessUnit},
         band::Tuple{Int, Int}, cut::Real, min_tokens::Integer
     )
     sum(length(u.tokens) for u in units; init = 0) < min_tokens && return findings
-    model = build_model([u.tokens for u in units])
-    entropies = [cross_entropy(u.tokens, model) for u in units]
+    global_model = build_model([u.tokens for u in units])
+    caches = file_caches(units)
+    # A plain loop, not a comprehension, so the captured models stay concretely typed.
+    entropies = Vector{Float64}(undef, length(units))
+    for (i, u) in enumerate(units)
+        entropies[i] = interpolated_cross_entropy(u.tokens, global_model, caches[u.location.file], CACHE_LAMBDA)
+    end
     sorted = sort(entropies)
     for (u, h) in zip(units, entropies)
         isempty(u.tokens) && continue
