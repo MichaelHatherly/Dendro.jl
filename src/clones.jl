@@ -60,7 +60,8 @@ function histogram_of(st::Vector{Subtree})
     return hist
 end
 
-# Sorted multiset of a function's subtree hashes, the input to Dice.
+# Sorted multiset of a function's subtree hashes: the order-blind structural view, a
+# renaming-tolerant fingerprint the ordered sequence in `clone_features` refines for the verdict.
 subtree_hashes(unit::FunctionUnit, index::QueryIndex) =
     sort!([s.hash for s in subtrees(unit, index)])
 
@@ -68,29 +69,55 @@ node_histogram(unit::FunctionUnit, index::QueryIndex) =
     histogram_of(subtrees(unit, index))
 
 """
-    dice(a, b) -> Float64
+    clone_features(unit, index) -> (sequence, histogram, digest, size)
 
-Dice similarity in `[0, 1]` over two sorted multisets of subtree hashes:
-`2|a ∩ b| / (|a| + |b|)`, counting multiplicity. `1.0` means identical structure,
-`0.0` no shared subtree. Empty inputs return `0.0`.
+A function's near-miss features from a single subtree walk: its pre-order subtree-hash
+`sequence` (the same Type-2 hashes `subtree_hashes` sorts into a multiset, kept in
+source order for the order-aware LCS), its node-type `histogram` (the characteristic
+vector), its exact `digest`, and its `size`.
 """
-function dice(a::Vector{UInt64}, b::Vector{UInt64})
-    total = length(a) + length(b)
-    total == 0 && return 0.0
-    i = j = 1
-    inter = 0
-    while i <= length(a) && j <= length(b)
-        if a[i] == b[j]
-            inter += 1
-            i += 1
-            j += 1
-        elseif a[i] < b[j]
-            i += 1
-        else
-            j += 1
+function clone_features(unit::FunctionUnit, index::QueryIndex)
+    st = subtrees(unit, index)
+    root = st[end]
+    sequence = [s.hash for s in sort(st; by = s -> preorder_key(s.node))]
+    return sequence, histogram_of(st), root.hash, root.size
+end
+
+# Cap on the sequence length an LCS compares, bounding its O(n*m) cost. Beyond it the
+# comparison reads only the first `LCS_CAP` nodes, so a clone among very large
+# functions is judged on that prefix.
+const LCS_CAP = 400
+
+# Length of the longest common subsequence of two hash sequences, order-preserving,
+# over a single rolling row. Reads at most `LCS_CAP` elements of each.
+function lcs_length(a::Vector{UInt64}, b::Vector{UInt64})
+    m = min(length(a), LCS_CAP)
+    n = min(length(b), LCS_CAP)
+    (m == 0 || n == 0) && return 0
+    prev = zeros(Int, n + 1)
+    curr = zeros(Int, n + 1)
+    for i in 1:m
+        for j in 1:n
+            curr[j + 1] = a[i] == b[j] ? prev[j] + 1 : max(prev[j + 1], curr[j])
         end
+        prev, curr = curr, prev
     end
-    return 2 * inter / total
+    return prev[n + 1]
+end
+
+"""
+    clone_similarity(a, b) -> Float64
+
+NiCad's order-aware similarity of two subtree-hash sequences: `|LCS| / max(|a|, |b|)`
+in `[0, 1]`, lengths capped at `LCS_CAP`. The `max` is asymmetric on purpose, so a
+short fragment matching inside a long one scores low and a reordered match scores
+below its multiset overlap. `1.0` means one sequence is a subsequence of the other,
+`0.0` no shared order. Empty inputs return `0.0`.
+"""
+function clone_similarity(a::Vector{UInt64}, b::Vector{UInt64})
+    denom = max(min(length(a), LCS_CAP), min(length(b), LCS_CAP))
+    denom == 0 && return 0.0
+    return lcs_length(a, b) / denom
 end
 
 # The size floor for a subtree to anchor a clone, or `nothing` if it is neither a
@@ -192,24 +219,26 @@ function subsumed(
     return false
 end
 
-# Default Dice cutoff for a near-miss. Stricter than the GumTree container-match
-# default (~0.5) because a review gate must stay quiet on incidental overlap.
+# Default similarity cutoff for a near-miss, the LCS fraction `|LCS| / max(|a|, |b|)`
+# two functions must reach. A review gate must stay quiet on incidental overlap, so
+# the bar is high.
 const DEFAULT_THRESHOLD = 0.85
 
 # Scales the neighbour-search radius to a function's size band. The radius is a
 # count of node-histogram differences (L1), which grows with function size, so a
 # fixed radius would relate small and large functions. `radius_factor` times the
-# band's upper size bound keeps the prefilter generous, Dice then confirms.
+# band's upper size bound keeps the prefilter generous, the LCS similarity then confirms.
 const DEFAULT_RADIUS_FACTOR = 0.5
 
 # One function carried through near-miss detection: where it is, whether an author
-# accepted it, its subtree-hash multiset (for Dice), its node-type histogram (the
-# characteristic vector), its exact digest (to skip exact clones), and its size.
+# accepted it, its pre-order node-type sequence (for the LCS verdict), its node-type
+# histogram (the characteristic vector), its exact digest (to skip exact clones), and
+# its size.
 struct CloneUnit
     language::Symbol
     location::Location
     suppressed::Bool
-    hashes::Vector{UInt64}
+    sequence::Vector{UInt64}
     histogram::Dict{String, Int}
     digest::UInt64
     size::Int
@@ -233,15 +262,29 @@ function clone_vector(unit::CloneUnit, vocab::Dict{String, Int})
     return v
 end
 
-# Candidate pairs within one language, confirmed by Dice. A characteristic-vector
-# radius query (DECKARD) proposes pairs cheaply; size banding keeps the radius
+# The near-miss similarity of two clone units, or zero when the size ratio alone rules
+# a clone out, cheaper than the LCS. Concrete-typed, so the per-pair work stays static
+# while the caller reaches it through a single dynamically-typed call.
+function pair_similarity(units::Vector{CloneUnit}, i::Int, j::Int, threshold::Float64)
+    a = units[i].sequence
+    b = units[j].sequence
+    la = min(length(a), LCS_CAP)
+    lb = min(length(b), LCS_CAP)
+    # Similarity is `|LCS| / max` and `|LCS|` is at most the shorter length, so a pair
+    # whose size ratio is already under the threshold can never clear it.
+    min(la, lb) < threshold * max(la, lb) && return 0.0
+    return clone_similarity(a, b)
+end
+
+# Candidate pairs within one language, confirmed by LCS similarity. A characteristic-
+# vector radius query (DECKARD) proposes pairs cheaply; size banding keeps the radius
 # meaningful, querying each band against itself and the next size up so a pair
-# straddling a band boundary is still seen. Each surviving pair becomes an edge
-# weighted by its Dice score. Exact clones (equal digest) are left to the exact
-# path, never re-reported here.
+# straddling a band boundary is still seen. A size-ratio prefilter drops mismatched
+# pairs before the LCS, and each surviving pair becomes an edge weighted by its
+# similarity. Exact clones (equal digest) are left to the exact path, never re-reported.
 function near_miss_edges!(
         edges::Vector{Tuple{Int, Int, Float64}}, units::Vector{CloneUnit}, idxs::Vector{Int},
-        threshold::Real, radius_factor::Real
+        threshold::Float64, radius_factor::Float64
     )
     length(idxs) < 2 && return edges
 
@@ -274,7 +317,7 @@ function near_miss_edges!(
                 pair in seen && continue
                 push!(seen, pair)
                 units[pair[1]].digest == units[pair[2]].digest && continue
-                score = dice(units[pair[1]].hashes, units[pair[2]].hashes)
+                score = pair_similarity(units, pair[1], pair[2], threshold)
                 score >= threshold && push!(edges, (pair[1], pair[2], score))
             end
         end
@@ -284,8 +327,8 @@ end
 
 # Cluster the corpus's functions into near-miss groups, keyed by language so shapes
 # never cross grammars. Returns one `:near_duplicate` finding per cluster, its
-# `value` the weakest pairwise Dice in the cluster as a percent, suppressed when any
-# member carries a `dendro-ignore: near_duplicate` directive.
+# `value` the weakest pairwise similarity in the cluster as a percent, suppressed when
+# any member carries a `dendro-ignore: near_duplicate` directive.
 function cluster_near_duplicates(
         files::AbstractVector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE,
         threshold::Real = DEFAULT_THRESHOLD,
@@ -294,13 +337,11 @@ function cluster_near_duplicates(
     units = CloneUnit[]
     for f in files
         for unit in functions(f.index)
-            st = subtrees(unit, f.index)
-            root = st[end]
-            root.size < min_size && continue
+            sequence, histogram, digest, size = clone_features(unit, f.index)
+            size < min_size && continue
             loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
             sup = is_suppressed(f.directives, unit.firstline, :near_duplicate)
-            hashes = sort!([s.hash for s in st])
-            push!(units, CloneUnit(f.language, loc, sup, hashes, histogram_of(st), root.hash, root.size))
+            push!(units, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
         end
     end
 
@@ -309,8 +350,10 @@ function cluster_near_duplicates(
         push!(get!(() -> Int[], bylang, u.language), i)
     end
     edges = Tuple{Int, Int, Float64}[]
+    thr = Float64(threshold)
+    rf = Float64(radius_factor)
     for idxs in values(bylang)
-        near_miss_edges!(edges, units, idxs, threshold, radius_factor)
+        near_miss_edges!(edges, units, idxs, thr, rf)
     end
 
     parent = collect(1:length(units))

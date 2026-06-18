@@ -127,10 +127,12 @@ Reporting:
   hashes every named subtree of a function bottom-up; `subtree_hashes` and
   `node_histogram` derive from it. Exact: `anchor_floor` and `cluster_duplicates`
   bucket function- and block-shaped subtrees by hash, with `subsumed` as the
-  maximality filter. Near-miss: `dice` (multiset similarity), `near_miss_edges!`
-  (the size-banded characteristic-vector prefilter over `NearestNeighbors`,
-  confirmed by Dice), and `cluster_near_duplicates` (union-find over confirmed pairs
-  into `:near_duplicate` findings). Included before `corpus.jl`, which calls it.
+  maximality filter. Near-miss: `clone_features` (a unit's pre-order hash sequence,
+  histogram, digest, and size from one walk), `lcs_length`/`clone_similarity` (the
+  order-aware LCS verdict), `near_miss_edges!` (the size-banded characteristic-vector
+  prefilter over `NearestNeighbors`, confirmed by `pair_similarity`), and
+  `cluster_near_duplicates` (union-find over confirmed pairs into `:near_duplicate`
+  findings). Included before `corpus.jl`, which calls it.
 - `naturalness.jl` defines cross-entropy scoring, the other corpus-relational pass.
   `token_stream` reduces a function to leaf tokens (identifier and literal text
   abstracted, the grammar's anonymous tokens kept); `build_model` counts a per-language
@@ -272,11 +274,15 @@ Near-miss (`cluster_near_duplicates`) compares whole functions and runs four tie
 cheapest first, at function granularity so the `Finding`/`Location` model is
 unchanged.
 
-1. Index. The sorted multiset of a function's subtree hashes, plus `node_histogram`,
-   the characteristic vector. Both come from the shared `subtrees` walk.
+1. Index. `clone_features` takes one `subtrees` walk per function and returns its
+   pre-order subtree-hash sequence (for the verdict), its `node_histogram`
+   characteristic vector (for the prefilter), its exact digest, and its size.
 2. Exact classes are `cluster_duplicates` above.
-3. Confirm. `dice` scores two multisets as `2|a∩b| / (|a|+|b|)`. A pair clears the
-   `threshold` (default 0.85) to count as a near-miss.
+3. Confirm. `clone_similarity` scores two sequences by longest common subsequence as
+   `|LCS| / max(|a|, |b|)`, after NiCad. A pair clears the `threshold` (default 0.85)
+   to count as a near-miss. The LCS is order-aware: a reordering of the same subtrees,
+   or a short fragment inside a long function, scores low where a multiset overlap
+   would not. A size-ratio prefilter skips the O(n*m) LCS on mismatched lengths.
 4. Prefilter. Comparing every pair is O(n²). `near_miss_edges!` densifies the
    histograms over a per-language vocabulary and runs a `NearestNeighbors` radius
    query (L1, `Cityblock`) to propose candidate pairs, which tier 3 confirms. The

@@ -1,12 +1,16 @@
-@testset "dice over sorted multisets" begin
-    @test Dendro.dice(UInt64[1, 2, 3], UInt64[1, 2, 3]) == 1.0
-    @test Dendro.dice(UInt64[1, 2, 3], UInt64[4, 5, 6]) == 0.0
-    # Four shared elements of eight total.
-    @test Dendro.dice(UInt64[1, 2, 3, 4], UInt64[3, 4, 5, 6]) == 0.5
-    # Multiplicity counts: one shared 1 and one shared 2 of six total.
-    @test Dendro.dice(UInt64[1, 1, 2], UInt64[1, 2, 2]) == 2 * 2 / 6
+@testset "clone_similarity is order-aware and asymmetric" begin
+    @test Dendro.clone_similarity(UInt64[1, 2, 3, 4], UInt64[1, 2, 3, 4]) == 1.0
+    @test Dendro.clone_similarity(UInt64[1, 2], UInt64[7, 8]) == 0.0
     # Empty inputs never arise above the size gate; guard against a NaN anyway.
-    @test Dendro.dice(UInt64[], UInt64[]) == 0.0
+    @test Dendro.clone_similarity(UInt64[], UInt64[]) == 0.0
+    # A gap (one inserted node) costs proportionally: LCS 4 of the longer length 5.
+    @test Dendro.clone_similarity(UInt64[1, 2, 3, 4], UInt64[1, 2, 9, 3, 4]) == 0.8
+    # Order matters: a reversal shares only one element in sequence, where an
+    # order-blind multiset overlap would score these identical.
+    @test Dendro.clone_similarity(UInt64[1, 2, 3], UInt64[3, 2, 1]) == 1 / 3
+    # A short fragment inside a long one scores low against the longer length, so the
+    # verdict rejects it where a multiset overlap would not.
+    @test Dendro.clone_similarity(UInt64[1, 2], UInt64[1, 2, 9, 9, 9, 9, 9, 9, 9, 9]) == 0.2
 end
 
 @testset "subtree_hashes tolerates renames and literals" begin
@@ -17,9 +21,9 @@ end
     ha = Dendro.subtree_hashes(only(Dendro.functions(ia)), ia)
     hb = Dendro.subtree_hashes(only(Dendro.functions(ib)), ib)
     hc = Dendro.subtree_hashes(only(Dendro.functions(ic)), ic)
+    # Renamed identifiers and changed literals leave the structural hashes identical.
     @test ha == hb
-    @test Dendro.dice(ha, hb) == 1.0
-    @test Dendro.dice(ha, hc) < 1.0
+    @test ha != hc
 end
 
 @testset "subtree_hashes excludes nested functions" begin
@@ -31,14 +35,14 @@ end
     @test hp == hn
 end
 
-@testset "subtree_hashes scores near-misses below identity" begin
+@testset "clone_similarity scores near-misses below identity" begin
     base = "function f(x)\n    y = x + 1\n    z = y * 2\n    return z\nend\n"
     near = "function g(t)\n    a = t + 9\n    b = a * 7\n    c = b - 1\n    return c\nend\n"
     ib, inr = idx(:julia, base), idx(:julia, near)
-    hf = Dendro.subtree_hashes(only(Dendro.functions(ib)), ib)
-    hg = Dendro.subtree_hashes(only(Dendro.functions(inr)), inr)
-    d = Dendro.dice(hf, hg)
-    @test 0.5 < d < 1.0
+    sf = first(Dendro.clone_features(only(Dendro.functions(ib)), ib))
+    sg = first(Dendro.clone_features(only(Dendro.functions(inr)), inr))
+    # `near` adds one statement, so its sequence extends `base`'s: similar, not identical.
+    @test 0.5 < Dendro.clone_similarity(sf, sg) < 1.0
 end
 
 @testset "node_histogram counts named node types" begin
@@ -71,8 +75,8 @@ pychain(name, n) = string(
     mktempdir() do dir
         a = joinpath(dir, "a.jl")
         b = joinpath(dir, "b.jl")
-        write(a, chain("f", 5))
-        write(b, chain("g", 6))
+        write(a, chain("f", 11))
+        write(b, chain("g", 12))
 
         hit = only(near_duplicates(analyze(dir)))
         @test hit.metric == :near_duplicate
@@ -122,7 +126,7 @@ end
 @testset "analyze detects near-misses within one file" begin
     mktempdir() do dir
         file = joinpath(dir, "a.jl")
-        write(file, string(chain("f", 5), chain("g", 6)))
+        write(file, string(chain("f", 11), chain("g", 12)))
 
         hit = only(near_duplicates(analyze(file)))
         @test all(loc.file == file for loc in hit.locations)
@@ -132,8 +136,8 @@ end
 
 @testset "analyze does not cluster near-misses across languages" begin
     mktempdir() do dir
-        write(joinpath(dir, "a.jl"), string(chain("f", 5), chain("g", 6)))
-        write(joinpath(dir, "a.py"), string(pychain("f", 5), pychain("g", 6)))
+        write(joinpath(dir, "a.jl"), string(chain("f", 11), chain("g", 12)))
+        write(joinpath(dir, "a.py"), string(pychain("f", 11), pychain("g", 12)))
 
         findings = near_duplicates(analyze(dir))
         @test length(findings) == 2
@@ -145,8 +149,8 @@ end
 
 @testset "threshold gates near-misses" begin
     mktempdir() do dir
-        write(joinpath(dir, "a.jl"), chain("f", 5))
-        write(joinpath(dir, "b.jl"), chain("g", 6))
+        write(joinpath(dir, "a.jl"), chain("f", 11))
+        write(joinpath(dir, "b.jl"), chain("g", 12))
 
         @test length(near_duplicates(analyze(dir))) == 1
         @test isempty(near_duplicates(analyze(dir; threshold = 0.95)))
@@ -155,8 +159,8 @@ end
 
 @testset "analyze respects dendro-ignore: near_duplicate" begin
     mktempdir() do dir
-        write(joinpath(dir, "a.jl"), string("# dendro-ignore: near_duplicate\n", chain("f", 5)))
-        write(joinpath(dir, "b.jl"), chain("g", 6))
+        write(joinpath(dir, "a.jl"), string("# dendro-ignore: near_duplicate\n", chain("f", 11)))
+        write(joinpath(dir, "b.jl"), chain("g", 12))
 
         findings = analyze(dir)
         @test any(f -> f.metric == :near_duplicate && f.suppressed, findings)

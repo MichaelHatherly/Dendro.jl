@@ -57,12 +57,13 @@ corpus, exact clones and near-misses both, a whole function or one block copied
 between functions. This crosses the single-file boundary, but it never resolves a
 symbol: it compares subtree hashes and tree shape, nothing more. Exact detection
 indexes every subtree and keeps only the maximal clone, so a duplicated function is
-not also reported as each block inside it. Near-miss detection scores subtree
-overlap with Dice and runs a size-banded vector query only to propose candidate
-pairs. The query is a prefilter; Dice is the verdict. Keep that split, keep clone
-detection within one language, and keep the block size floor above the function
-floor: small blocks of boilerplate coincide and turn into noise. The moment clone
-detection reaches for types or call graphs, it has left the bargain.
+not also reported as each block inside it. Near-miss detection compares the pre-order
+subtree-hash sequences by longest common subsequence (after NiCad) and runs a
+size-banded vector query only to propose candidate pairs. The query is a prefilter;
+the LCS similarity is the verdict, order-aware where a multiset overlap is not. Keep
+that split, keep clone detection within one language, and keep the block size floor
+above the function floor: small blocks of boilerplate coincide and turn into noise.
+The moment clone detection reaches for types or call graphs, it has left the bargain.
 
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never

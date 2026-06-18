@@ -139,12 +139,15 @@ clones.
 
 Exact clustering misses the copy-paste-then-edit: two functions identical but for
 an added or removed statement hash differently and never meet. `analyze` also
-reports these as `:near_duplicate`. It compares the multiset of each function's
-subtree hashes and scores the overlap with Dice similarity, so functions that are
-close but not identical cluster when they clear the `threshold` (default 0.85). A
-characteristic-vector radius query (DECKARD-style), banded by function size, finds
-candidate pairs without comparing every pair; Dice confirms each one. The
-finding's value is the cluster's weakest pairwise similarity as a percent:
+reports these as `:near_duplicate`. It compares each function's pre-order sequence
+of subtree hashes by longest common subsequence, after NiCad, scoring similarity as
+`|LCS| / max(|a|, |b|)`, so functions that are close but not identical cluster when
+they clear the `threshold` (default 0.85). The LCS is order-aware where a multiset
+overlap is not: a reordering of the same statements, or a small fragment matching
+inside a large function, scores low and is rejected. A characteristic-vector radius
+query (DECKARD-style), banded by function size, finds candidate pairs without
+comparing every pair; the LCS similarity confirms each one. The finding's value is
+the cluster's weakest pairwise similarity as a percent:
 
 ```
 src/parser.jl:40  read_header  near_duplicate 88 (high)
