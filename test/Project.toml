@@ -16,4 +16,4 @@ tree_sitter_rust_jll = "b2197e8e-fe20-5781-846b-d7979e3cddf2"
 tree_sitter_typescript_jll = "dfa7e5a0-2128-5201-bc87-2ee6cd674210"
 
 [compat]
-JET = "0.9, 0.10"
+JET = "0.10"

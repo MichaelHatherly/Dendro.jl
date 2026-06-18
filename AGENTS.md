@@ -82,8 +82,12 @@ not the test.
   live in `test/Project.toml`, so parsing only works under `Pkg.test()`, not a
   bare package-env REPL. Redirect test output to a file and read it on failure.
   The suite ends with [JET](https://github.com/aviatesk/JET.jl) static analysis
-  (`test/jet.jl`): Dendro must report zero possible errors, so a type-level
-  regression fails the run.
+  (`test/jet.jl`): basic mode is a zero-tolerance gate on every Julia version, so a
+  type-level regression fails the run. Sound mode and the optimization analyzer are
+  ratcheted instead: their report counts are capped at the current value and may only
+  fall. Lower a limit (`SOUND_LIMIT`, `OPT_LIMIT`) when reports are trimmed; the suite
+  prints the new value when a count drops. The ratchet is pinned to one Julia version,
+  since JET counts shift across versions.
 - Format with [Runic](https://github.com/fredrikekre/Runic.jl). CI checks it.
 
   ```bash
