@@ -72,9 +72,11 @@ Resolution and configuration:
   `analyze` gates a file's extension on.
 - `query_index.jl` defines `NodeId`/`nodeid`, `Concept` (the nodes a query tagged
   for one measured construct, plus their ids for O(1) membership), `FunctionUnit`,
-  `QueryIndex`, and `build_index`, which runs a language's query over a tree once
-  and files every capture under its concept. Identification lives here: metric code
-  asks whether a node was tagged, never matches a node-type string.
+  `QueryIndex`, `CONCEPT_NAMES` (the capture names a query may use), and
+  `build_index`, which runs a language's query over a tree once and files every
+  capture under its concept. Identification lives here: metric code asks whether a
+  node was tagged, never matches a node-type string. An unhandled capture name
+  throws rather than dropping silently.
 
 Measurement:
 
@@ -162,10 +164,11 @@ construct (decision points, short-circuit operators, nesting, parameters, bodies
 catches, comments, names, trivial statements, returns, finally clauses, calls,
 binary expressions, conditionals, terminals, short-form definitions). A `Concept`
 holds the tagged nodes in source order and a `Set{NodeId}` for membership. Built
-once per file by `build_index`, which runs the language query and dispatches each
-capture by name. This is the only place a language's concrete grammar leaks in: a
-construct a language lacks has no pattern, so its concept is empty and a rule
-reading it finds nothing.
+once per file by `build_index`: the constructor starts every concept empty, then
+`dispatch!` files each capture by name and throws on a name outside `CONCEPT_NAMES`.
+The suite checks every query's capture names against that set. This is the only
+place a language's concrete grammar leaks in: a construct a language lacks has no
+pattern, so its concept is empty and a rule reading it finds nothing.
 
 `Rule` (`rules.jl`). One lint check as data: a metric `name`, a `kind` (`:scalar`
 or `:flag`), a `(warn, high)` `band` for scalars, and an `fn` that measures one

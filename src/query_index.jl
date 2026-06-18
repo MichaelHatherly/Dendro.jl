@@ -44,13 +44,26 @@ function record!(c::Concept, n::TreeSitter.Node)
     return c
 end
 
+# The capture names a query may use, the contract between a `.scm` and this index.
+# A capture outside this set has no field to record into; `dispatch!` throws on one,
+# and the suite guards every query's captures against this set. The reserved-word
+# concepts (`catch`, `return`, `finally`) map to the `_clause`/`_stmt` fields below.
+const CONCEPT_NAMES = (
+    :short_function, :decision, :continuation, :nesting, :short_circuit,
+    :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
+    :finally, :call, :binary_expr, :conditional, :terminal,
+)
+
 """
-    QueryIndex
+    QueryIndex(language, source)
 
 One tree's identified nodes. `functions` are the callable units and `function_ids`
 their identities (the no-descend boundary for unit-scoped metrics); every other
 field is the [`Concept`](@ref) for one measured construct. `source` is the file
-text, carried so scoring can slice node text without a separate argument.
+text, carried so scoring can slice node text without a separate argument. The
+constructor builds an empty index; `build_index` fills the concepts by name through
+[`dispatch!`](@ref) as it walks the query's captures, so initialisation lives beside
+the field declarations rather than at the call site.
 """
 struct QueryIndex
     language::Symbol
@@ -74,10 +87,19 @@ struct QueryIndex
     binary_expr::Concept
     conditional::Concept
     terminal::Concept
+
+    QueryIndex(language::Symbol, source::String) = new(
+        language, source, FunctionUnit[], Set{NodeId}(),
+        Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
+        Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
+        Concept(), Concept(), Concept(), Concept(), Concept(),
+    )
 end
 
 # Route one capture to its concept. A plain if/elseif so the dispatch stays
-# concretely typed: every branch pushes into a `Concept` field.
+# concretely typed: every branch pushes into a `Concept` field. A name with no
+# branch is a query bug, not a silent drop: the `else` throws, and the suite guards
+# every query's captures against `CONCEPT_NAMES`.
 function dispatch!(idx::QueryIndex, name::AbstractString, n::TreeSitter.Node)
     if name == "short_function"
         record!(idx.short_function, n)
@@ -113,6 +135,8 @@ function dispatch!(idx::QueryIndex, name::AbstractString, n::TreeSitter.Node)
         record!(idx.conditional, n)
     elseif name == "terminal"
         record!(idx.terminal, n)
+    else
+        throw(ArgumentError("unknown capture name :$name"))
     end
     return nothing
 end
@@ -133,12 +157,7 @@ Run `query` over `tree` once and collect every capture into a [`QueryIndex`](@re
 under its concept.
 """
 function build_index(tree::TreeSitter.Tree, language::Symbol, source::AbstractString, query::TreeSitter.Query)
-    idx = QueryIndex(
-        language, String(source), FunctionUnit[], Set{NodeId}(),
-        Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
-        Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
-        Concept(), Concept(), Concept(), Concept(), Concept(),
-    )
+    idx = QueryIndex(language, String(source))
     funcs = TreeSitter.Node[]
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)

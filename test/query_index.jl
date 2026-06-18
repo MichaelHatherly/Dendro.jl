@@ -24,3 +24,22 @@ end
     @test length(i.short_circuit.nodes) == 2
     @test Set(strip(TreeSitter.slice(i.source, n)) for n in i.short_circuit.nodes) == Set(["and", "or"])
 end
+
+# Capture names declared by a compiled query, enumerated through the C API by id.
+function capture_names(q::TreeSitter.Query)
+    return [
+        unsafe_string(TreeSitter.API.ts_query_capture_name_for_id(q.ptr, UInt32(i), Ref{UInt32}()))
+            for i in 0:(TreeSitter.capture_count(q) - 1)
+    ]
+end
+
+@testset "every query uses only known capture names" begin
+    # A capture outside CONCEPT_NAMES (or @function) has no field in QueryIndex and
+    # would throw in dispatch!. Catch a typo'd capture here, including one that never
+    # matches a node, before it reaches a parse.
+    valid = Set{String}(string.(Dendro.CONCEPT_NAMES))
+    push!(valid, "function")
+    @testset "$lang" for lang in sort!(collect(keys(Dendro.PROFILES)))
+        @test setdiff(Set(capture_names(Dendro.query_for(lang))), valid) == Set{String}()
+    end
+end

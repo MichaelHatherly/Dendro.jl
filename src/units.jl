@@ -22,11 +22,3 @@ detection.
 # typed signatures collide structurally with nothing to extract.
 # dendro-ignore: near_duplicate
 is_function(node::TreeSitter.Node, index::QueryIndex) = hasid(index.function_ids, node)
-
-# First named child of `node`, or `nothing`.
-function first_named_child(node::TreeSitter.Node)
-    for c in TreeSitter.children(node)
-        TreeSitter.is_named(c) && return c
-    end
-    return nothing
-end
