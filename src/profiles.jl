@@ -92,11 +92,11 @@ PROFILES[:c] = LanguageProfile(
 PROFILES[:cpp] = LanguageProfile(
     :cpp;
     function_types = ["function_definition"],
-    decision_types = ["if_statement", "for_statement", "range_based_for_statement",
+    decision_types = ["if_statement", "for_statement", "for_range_loop",
         "while_statement", "do_statement", "case_statement", "conditional_expression",
         "catch_clause"],
     short_circuit_ops = ["&&", "||"],
-    nesting_types = ["if_statement", "for_statement", "range_based_for_statement",
+    nesting_types = ["if_statement", "for_statement", "for_range_loop",
         "while_statement", "do_statement", "switch_statement", "try_statement"],
     parameter_types = ["parameter_list"],
     body_types = ["compound_statement"],
@@ -224,7 +224,7 @@ PROFILES[:ruby] = LanguageProfile(
 PROFILES[:rust] = LanguageProfile(
     :rust;
     function_types = ["function_item"],
-    decision_types = ["if_expression", "while_expression", "while_let_expression",
+    decision_types = ["if_expression", "while_expression",
         "for_expression", "loop_expression", "match_arm"],
     short_circuit_ops = ["&&", "||"],
     nesting_types = ["if_expression", "while_expression", "for_expression", "loop_expression",
