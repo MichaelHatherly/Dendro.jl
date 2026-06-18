@@ -8,10 +8,10 @@
 # scoring pass, and duplicate clustering need, so no file is parsed twice. Files
 # whose language has no profile are skipped. `language` forces one language for
 # every path, as `analyze` does.
-function parse_corpus(paths; language = nothing, rules = BUILTIN_RULES)
+function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothing, rules = BUILTIN_RULES)
     forced = language === nothing ? nothing : Symbol(lowercase(String(language)))
     parsers = Dict{Symbol, TreeSitter.Parser}()
-    files = NamedTuple[]
+    files = ParsedFile[]
     for path in paths
         lang = forced === nothing ? language_for_path(path) : forced
         (lang === nothing || !haskey(PROFILES, lang)) && continue
@@ -20,18 +20,13 @@ function parse_corpus(paths; language = nothing, rules = BUILTIN_RULES)
         source = read(path, String)
         tree = parse(parser, source)
         directives = suppressions(tree, profile, source; file = path, rules)
-        push!(
-            files, (
-                language = lang, profile = profile, source = source,
-                file = String(path), tree = tree, directives = directives,
-            )
-        )
+        push!(files, ParsedFile(lang, profile, source, String(path), tree, directives))
     end
     return files
 end
 
 # Baseline over already-parsed corpus records.
-function baseline_from(files, rules = BUILTIN_RULES)
+function baseline_from(files::AbstractVector{ParsedFile}, rules = BUILTIN_RULES)
     baseline = Baseline()
     for f in files
         add_samples!(baseline, f.language, f.tree, f.profile, f.source, rules)
@@ -42,9 +37,16 @@ function baseline_from(files, rules = BUILTIN_RULES)
     return baseline
 end
 
+# A diff scope: the git toplevel and the changed line ranges per file, relative to
+# that root. Mirrors the per-file shape `changed_ranges` returns.
+struct Scope
+    root::String
+    ranges::Dict{String, Vector{UnitRange{Int}}}
+end
+
 # Keep only cluster findings touching a changed line, the diff-scoped view shared
 # by exact and near-miss duplicates. Without a scope every cluster passes through.
-function scope_clusters(clusters, scope)
+function scope_clusters(clusters::Vector{Finding}, scope::Union{Scope, Nothing})
     scope === nothing && return clusters
     return filter(clusters) do c
         any(c.locations) do loc
@@ -59,7 +61,7 @@ end
 # `ignore` patterns, matched against each path relative to `dir`, prune directories
 # and drop files before they reach the corpus, so vendored source never feeds the
 # baseline.
-function source_files(dir, ignore = String[])
+function source_files(dir::AbstractString, ignore = String[])
     patterns = compile_ignores(ignore)
     files = String[]
     for (root, dirs, names) in walkdir(dir)
@@ -102,7 +104,7 @@ directory cannot be re-included. Patterns apply to folder scans, not a single na
 file.
 """
 function analyze(
-        path; base = nothing, cut::Real = 0.95,
+        path::AbstractString; base = nothing, cut::Real = 0.95,
         min_size::Integer = DEFAULT_MIN_SIZE,
         threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing,
@@ -119,10 +121,10 @@ function analyze(
     files = parse_corpus(corpus; language, rules)
     bl = baseline_from(files, rules)
 
-    scope = nothing
+    scope::Union{Scope, Nothing} = nothing
     if base !== nothing
-        root = strip(read(`git -C $(isdir(path) ? path : dirname(path)) rev-parse --show-toplevel`, String))
-        scope = (root = root, ranges = changed_ranges(read(`git -C $root diff $base`, String)))
+        root = String(strip(read(`git -C $(isdir(path) ? path : dirname(path)) rev-parse --show-toplevel`, String)))
+        scope = Scope(root, changed_ranges(read(`git -C $root diff $base`, String)))
     end
 
     findings = Finding[]

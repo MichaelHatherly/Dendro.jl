@@ -11,17 +11,52 @@ function severity(value::Real, band::Tuple{Int, Int})
     return value >= high ? :high : value >= warn ? :warn : :ok
 end
 
-# Depth-first over `node`'s own subtree, calling `f(n, enter)` on enter and exit
-# like `TreeSitter.traverse`, but never descending into a nested callable: each
-# is reported as its own unit, so its complexity stays out of the enclosing one.
-function traverse_unit(f, node::TreeSitter.Node, profile::LanguageProfile)
-    f(node, true)
+# Every node (pre-order, full descent) for which `match` holds. `match` is a plain
+# function, never a capturing closure, so profile and source stay concretely typed
+# for both inference and JET.
+function collect_tree(match::M, tree::TreeSitter.Tree, profile::LanguageProfile, source::AbstractString) where {M}
+    out = TreeSitter.Node[]
+    collect_tree!(out, match, TreeSitter.root(tree), profile, source)
+    return out
+end
+
+function collect_tree!(out::Vector{TreeSitter.Node}, match::M, node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString) where {M}
+    match(node, profile, source) && push!(out, node)
     for c in TreeSitter.children(node)
-        TreeSitter.node_type(c) in profile.function_types && continue
-        traverse_unit(f, c, profile)
+        collect_tree!(out, match, c, profile, source)
     end
-    f(node, false)
-    return nothing
+    return out
+end
+
+# Every node (pre-order, full descent) whose type is in `types`. A type-membership
+# walk, factored out so a metric that only needs "all nodes of these types" does not
+# repeat a one-line predicate, which short-form recognition would read as a clone.
+function collect_typed(tree::TreeSitter.Tree, profile::LanguageProfile, types::Set{String})
+    out = TreeSitter.Node[]
+    collect_typed!(out, TreeSitter.root(tree), types)
+    return out
+end
+
+function collect_typed!(out::Vector{TreeSitter.Node}, node::TreeSitter.Node, types::Set{String})
+    TreeSitter.node_type(node) in types && push!(out, node)
+    for c in TreeSitter.children(node)
+        collect_typed!(out, c, types)
+    end
+    return out
+end
+
+# Fold a metric over a unit's subtree without descending into nested callables.
+# `step(node, profile, source, ctx)` returns this node's value and the context handed
+# to its children; child results merge into the parent's with `combine` (`+` or `max`).
+# `step` is a plain function, never a capturing closure, so the accumulator and the
+# profile stay concretely typed for both inference and JET.
+function fold_unit(step::S, combine::C, node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, ctx) where {S, C}
+    value, child_ctx = step(node, profile, source, ctx)
+    for c in TreeSitter.children(node)
+        is_function(c, profile) && continue
+        value = combine(value, fold_unit(step, combine, c, profile, source, child_ctx))
+    end
+    return value
 end
 
 """
@@ -37,14 +72,19 @@ function_length(unit::FunctionUnit) = unit.lastline - unit.firstline + 1
 Number of parameters in the function's signature, taken as the named children
 of the first parameter-list node (`profile.parameter_types`).
 """
-function parameter_count(node::TreeSitter.Node, profile::LanguageProfile)
-    container = nothing
-    TreeSitter.traverse(node) do n, enter
-        if enter && container === nothing && TreeSitter.node_type(n) in profile.parameter_types
-            container = n
-        end
-        nothing
+# First parameter-list node in pre-order, or `nothing`. Descends the whole tree,
+# so the outer function's signature is found before any nested callable's.
+function first_parameter_list(node::TreeSitter.Node, profile::LanguageProfile)
+    TreeSitter.node_type(node) in profile.parameter_types && return node
+    for c in TreeSitter.children(node)
+        found = first_parameter_list(c, profile)
+        found === nothing || return found
     end
+    return nothing
+end
+
+function parameter_count(node::TreeSitter.Node, profile::LanguageProfile)
+    container = first_parameter_list(node, profile)
     container === nothing && return 0
     return TreeSitter.count_named_nodes(container)
 end
@@ -55,21 +95,15 @@ end
 Maximum depth of nested control constructs (`profile.nesting_types`) within
 `node`'s subtree. A function body with no control flow has depth 0.
 """
-function nesting_depth(node::TreeSitter.Node, profile::LanguageProfile)
-    maxdepth = 0
-    depth = 0
-    traverse_unit(node, profile) do n, enter
-        if TreeSitter.is_named(n) && TreeSitter.node_type(n) in profile.nesting_types
-            if enter
-                depth += 1
-                depth > maxdepth && (maxdepth = depth)
-            else
-                depth -= 1
-            end
-        end
-        nothing
-    end
-    return maxdepth
+nesting_depth(node::TreeSitter.Node, profile::LanguageProfile) =
+    fold_unit(nesting_step, max, node, profile, "", 0)
+
+# Depth at `node` is the enclosing depth plus one for a nesting construct; children
+# inherit it, and `max` keeps the deepest.
+function nesting_step(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, depth::Int)
+    here = TreeSitter.is_named(node) && TreeSitter.node_type(node) in profile.nesting_types ?
+        depth + 1 : depth
+    return here, here
 end
 
 # True when `n` adds an independent path: a decision-point node, or a short-circuit
@@ -87,15 +121,12 @@ McCabe cyclomatic complexity: one plus the number of branch points in `node`'s
 subtree. Branch points are the profile's `decision_types` plus short-circuit
 operators (`&&`, `||`), which each add an independent path.
 """
-function cyclomatic(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
-    count = 1
-    has_ops = !isempty(profile.short_circuit_ops)
-    traverse_unit(node, profile) do n, enter
-        enter && is_branch_point(n, profile, source, has_ops) && (count += 1)
-        nothing
-    end
-    return count
-end
+cyclomatic(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString) =
+    1 + fold_unit(branch_step, +, node, profile, source, !isempty(profile.short_circuit_ops))
+
+# The context is `has_ops`, constant through the walk.
+branch_step(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, has_ops::Bool) =
+    (is_branch_point(node, profile, source, has_ops) ? 1 : 0), has_ops
 
 """
     return_count(node, profile) -> Int
@@ -104,14 +135,11 @@ Number of return statements (`profile.return_types`) in the unit. A language wit
 no return-statement node, or one whose idiomatic return is a bare expression,
 counts only explicit returns.
 """
-function return_count(node::TreeSitter.Node, profile::LanguageProfile)
-    count = 0
-    traverse_unit(node, profile) do n, enter
-        enter && TreeSitter.node_type(n) in profile.return_types && (count += 1)
-        nothing
-    end
-    return count
-end
+return_count(node::TreeSitter.Node, profile::LanguageProfile) =
+    fold_unit(return_step, +, node, profile, "", nothing)
+
+return_step(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, ctx) =
+    (TreeSitter.node_type(node) in profile.return_types ? 1 : 0), ctx
 
 # The short-circuit operator joining `node`'s direct children, or `nothing`. A
 # boolean expression node carries its operator as a leaf child; this returns its text.
@@ -131,14 +159,11 @@ has_op_child(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractSt
 
 # Number of operator nodes in `node`'s subtree, the size of one connected boolean
 # expression once `node` is its top.
-function count_op_nodes(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
-    count = 0
-    traverse_unit(node, profile) do n, enter
-        enter && has_op_child(n, profile, source) && (count += 1)
-        nothing
-    end
-    return count
-end
+count_op_nodes(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString) =
+    fold_unit(op_count_step, +, node, profile, source, nothing)
+
+op_count_step(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, ctx) =
+    (has_op_child(node, profile, source) ? 1 : 0), ctx
 
 """
     boolean_complexity(node, profile, source) -> Int
@@ -149,41 +174,28 @@ conditions score 2, not 4.
 """
 function boolean_complexity(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
     isempty(profile.short_circuit_ops) && return 0
-    best = 0
-    depth = 0
-    traverse_unit(node, profile) do n, enter
-        if has_op_child(n, profile, source)
-            if enter
-                depth == 0 && (best = max(best, count_op_nodes(n, profile, source)))
-                depth += 1
-            else
-                depth -= 1
-            end
-        end
-        nothing
-    end
-    return best
+    return fold_unit(op_chain_step, max, node, profile, source, nothing)
 end
+
+# The top of an expression owns its whole subtree's operators; a nested operator node
+# counts a strict subset, so `max` selects the outermost. Separate expressions compete.
+op_chain_step(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, ctx) =
+    (has_op_child(node, profile, source) ? count_op_nodes(node, profile, source) : 0), ctx
 
 # Number of maximal same-operator runs of short-circuit operators in the unit. A run
 # is an unbroken chain of one operator; `a && b && c` is one run, `a && b || c` two.
 function boolean_runs(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
     isempty(profile.short_circuit_ops) && return 0
-    runs = 0
-    stack = String[]
-    traverse_unit(node, profile) do n, enter
-        op = op_child_text(n, profile, source)
-        if op !== nothing
-            if enter
-                (isempty(stack) || stack[end] != op) && (runs += 1)
-                push!(stack, op)
-            else
-                pop!(stack)
-            end
-        end
-        nothing
-    end
-    return runs
+    return fold_unit(op_run_step, +, node, profile, source, "")
+end
+
+# The context is the operator of the nearest enclosing operator node (`""` for none);
+# a node starts a new run when its own operator differs, and becomes that context for
+# its children.
+function op_run_step(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, parent_op::String)
+    op = op_child_text(node, profile, source)
+    op === nothing && return 0, parent_op
+    return (op == parent_op ? 0 : 1), op
 end
 
 """
@@ -197,23 +209,16 @@ costs more than a flat one of the same cyclomatic count. An else-if continuation
 level as the `if` it extends. Each maximal run of one short-circuit operator adds
 one; an operator change starts a new run.
 """
-function cognitive_complexity(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
-    score = 0
-    nesting = 0
-    traverse_unit(node, profile) do n, enter
-        TreeSitter.is_named(n) || return nothing
-        t = TreeSitter.node_type(n)
-        if enter
-            if t in profile.continuation_types
-                score += 1
-            elseif t in profile.decision_types
-                score += 1 + nesting
-            end
-            t in profile.nesting_types && (nesting += 1)
-        else
-            t in profile.nesting_types && (nesting -= 1)
-        end
-        nothing
-    end
-    return score + boolean_runs(node, profile, source)
+cognitive_complexity(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString) =
+    fold_unit(cognitive_step, +, node, profile, "", 0) + boolean_runs(node, profile, source)
+
+# A decision adds one plus its enclosing nesting; an else-if continuation adds a flat
+# one; a nesting construct deepens the context for its children. Only named nodes count.
+function cognitive_step(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString, nesting::Int)
+    TreeSitter.is_named(node) || return 0, nesting
+    t = TreeSitter.node_type(node)
+    score = t in profile.continuation_types ? 1 :
+        t in profile.decision_types ? 1 + nesting : 0
+    child_nesting = t in profile.nesting_types ? nesting + 1 : nesting
+    return score, child_nesting
 end

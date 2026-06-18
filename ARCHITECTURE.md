@@ -70,21 +70,28 @@ Resolution and configuration:
 
 Measurement:
 
-- `units.jl` defines `FunctionUnit` (a node plus its 1-based first and last line)
-  and `functions(tree, profile)`, which collects every node whose type the profile
-  marks as a function.
+- `units.jl` defines `FunctionUnit` (a node plus its 1-based first and last line),
+  `functions(tree, profile)`, which collects every callable definition, and
+  `is_function`, the predicate behind it. `is_function` recognises both a
+  `function_types` node (`function ... end`) and a short-form `f(x) = expr`, an
+  `assignment` whose left side unwraps (through `signature_wrapper_types`) to a call
+  signature (`signature_types`). Every "is this a callable" check routes through it,
+  so a nested short-form def is its own unit and is excluded from its enclosing unit's
+  metrics, clones, and tokens.
 - `metrics.jl` defines the scalar metrics and `severity`: `cyclomatic`,
   `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
   `boolean_complexity`, `return_count`. `severity` classifies a value against a
   `(warn, high)` band.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
-  `identical_operands`, `duplicate_branches`, `unreachable_statements`, plus the
-  helpers for reading a body's real-work count, comparing subtrees by normalised
+  `unreachable_statements`, and the predicates `is_identical_operands`/
+  `is_duplicate_branches` that `flagged_nodes` collects for the matching rules. Plus
+  the helpers: `function_body` (a block child or a short-form's right-hand
+  expression), reading a body's real-work count, comparing subtrees by normalised
   text, and collecting the blocks of one conditional chain (`branch_blocks`).
 - `rules.jl` defines `Rule` (a metric name, kind, band, and measuring function),
   `BUILTIN_RULES` (the default set, in report order), `OPTIONAL_RULES` (off by
-  default), `scalar_rules`/`flag_rules`, and `metric_names` (the names a directive
+  default), `rules_of_kind` (the active rules of one kind), and `metric_names` (the names a directive
   may name: the active rules plus the relational clone metrics). The built-in rules
   wrap the metrics.jl/flags.jl functions; a caller's rule wraps their own.
 - `baseline.jl` defines `Baseline` over a corpus, `percentile` scoring, and
@@ -127,7 +134,7 @@ Reporting:
   Pure path logic, no parsing. Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
   folder for analysable files, pruning ignored paths), `parse_corpus` (parse each
-  path once),
+  path once into a `Vector{ParsedFile}`),
   `baseline_from`, `scope_clusters` (the shared diff filter for the relational
   passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
   per-file findings, exact and near duplicates, naturalness, and optional diff
@@ -137,10 +144,11 @@ Reporting:
 ## Core types
 
 `LanguageProfile` (`profile.jl`). Names the tree-sitter node types a language uses
-for each construct Dendro measures: function definitions, decision points,
-short-circuit operators, nesting constructs, parameter lists, bodies, catch
-clauses, comments, name nodes, trivial (no-op) statements, return statements,
-finally clauses, and call expressions. Pure data. This is the only place a
+for each construct Dendro measures: function definitions, short-form definitions
+(the assignment node plus the signature wrappers and call-signature node that confirm
+one), decision points, short-circuit operators, nesting constructs, parameter lists,
+bodies, catch clauses, comments, name nodes, trivial (no-op) statements, return
+statements, finally clauses, and call expressions. Pure data. This is the only place a
 language's concrete grammar leaks in. A concept a language lacks stays an empty
 set, and a rule reading that concept finds nothing there.
 
@@ -150,12 +158,30 @@ unit (scalar) or tree (flag). The active set is a `Vector{Rule}` carried by `Sca
 and `analyze`, so checks are a value, not module constants. Built-ins wrap the
 metrics.jl/flags.jl functions; a caller's rule wraps their own.
 
+`ParsedFile` (`parsed_file.jl`). One parsed corpus file: language, profile, source,
+path, tree-sitter tree, and inline suppression directives. `parse_corpus` builds a
+`Vector{ParsedFile}`, and the baseline, per-file scoring, and clustering passes all
+read from it, so no file is parsed twice. Concrete in every field, so the relational
+passes dispatch statically over it rather than through `getproperty(::Any)`.
+
 `FunctionUnit` (`units.jl`). One callable definition: the node and its line span.
 The granularity at which scalar metrics report.
 
 `Subtree` (`clones.jl`). One named subtree of a function: its structural hash, the
 node, and its named-node count. The unit of duplicate detection, which works below
 the function as well as at it.
+
+`AnchorEntry` (`clones.jl`). One indexed anchor in exact-clone detection: a
+function- or block-shaped subtree large enough to count, with its language,
+structural hash, node, location, and suppression flag. `cluster_duplicates` builds a
+vector of these and `subsumed` reads it, a concrete record so the maximality filter
+stays type-stable.
+
+`Scope` (`corpus.jl`). The diff-scoped view's data: the git toplevel `root` and the
+changed line ranges per file relative to it (`Dict{String, Vector{UnitRange{Int}}}`).
+`analyze` builds one from `base`'s diff, and `scope_clusters` filters cluster findings
+to it. A concrete record, so the diff-scoping passes dispatch statically rather than
+over an ad-hoc NamedTuple.
 
 `Location` (`report.jl`). A code site: file, 1-based line, and enclosing unit
 name. A `Finding` carries one or more.

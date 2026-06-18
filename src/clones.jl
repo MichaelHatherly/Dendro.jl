@@ -38,7 +38,7 @@ function collect_subtrees!(acc::Vector{Subtree}, node::TreeSitter.Node, profile:
     h = hash(TreeSitter.node_type(node))
     size = 1
     for c in TreeSitter.named_children(node)
-        TreeSitter.node_type(c) in profile.function_types && continue
+        is_function(c, profile) && continue
         child = collect_subtrees!(acc, c, profile)
         h = hash(child.hash, h)
         size += child.size
@@ -98,9 +98,22 @@ end
 # never anchor, so a recurring call shape is not a finding.
 function anchor_floor(node::TreeSitter.Node, profile::LanguageProfile, min_size::Integer)
     t = TreeSitter.node_type(node)
-    t in profile.function_types && return min_size
+    is_function(node, profile) && return min_size
     t in profile.body_types && return 2 * min_size
     return nothing
+end
+
+# One indexed anchor in exact-clone detection: a function- or block-shaped subtree
+# large enough to count, with the structural hash it buckets on and the location it
+# reports. A concrete record so JET sees concrete field accesses through `subsumed`.
+struct AnchorEntry
+    language::Symbol
+    hash::UInt64
+    node::TreeSitter.Node
+    file::String
+    line::Int
+    unit::String
+    suppressed::Bool
 end
 
 """
@@ -114,8 +127,8 @@ maximality filter keeps only the largest clone, so a duplicated function is repo
 once, not again for every block nested inside it. Suppressed when any member carries
 a `dendro-ignore: duplicate` directive.
 """
-function cluster_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE)
-    entries = NamedTuple[]
+function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE)
+    entries = AnchorEntry[]
     buckets = Dict{Tuple{Symbol, UInt64}, Vector{Int}}()
     anchor_at = Dict{Tuple{String, Int, Int}, Int}()
     for f in files
@@ -127,9 +140,9 @@ function cluster_duplicates(files; min_size::Integer = DEFAULT_MIN_SIZE)
                 line = Int(TreeSitter.start_point(s.node).row) + 1
                 sup = is_suppressed(f.directives, line, :duplicate)
                 push!(
-                    entries, (
-                        language = f.language, hash = s.hash, node = s.node,
-                        file = f.file, line = line, unit = name, suppressed = sup,
+                    entries, AnchorEntry(
+                        f.language, s.hash, s.node,
+                        f.file, line, name, sup,
                     )
                 )
                 idx = length(entries)
@@ -155,7 +168,11 @@ end
 # An anchor is subsumed when its nearest enclosing anchor is a clone of at least the
 # same multiplicity: the larger clone already covers it. Multiplicity never rises
 # going up the tree, so the nearest anchor ancestor is the one to check.
-function subsumed(i::Int, entries, buckets, anchor_at)
+function subsumed(
+        i::Int, entries::Vector{AnchorEntry},
+        buckets::Dict{Tuple{Symbol, UInt64}, Vector{Int}},
+        anchor_at::Dict{Tuple{String, Int, Int}, Int}
+    )
     e = entries[i]
     k = length(buckets[(e.language, e.hash)])
     p = TreeSitter.parent(e.node)
@@ -218,7 +235,7 @@ end
 # weighted by its Dice score. Exact clones (equal digest) are left to the exact
 # path, never re-reported here.
 function near_miss_edges!(
-        edges, units::Vector{CloneUnit}, idxs::Vector{Int},
+        edges::Vector{Tuple{Int, Int, Float64}}, units::Vector{CloneUnit}, idxs::Vector{Int},
         threshold::Real, radius_factor::Real
     )
     length(idxs) < 2 && return edges
@@ -238,11 +255,11 @@ function near_miss_edges!(
         query = bands[b]
         search = vcat(query, get(bands, b + 1, Int[]))
         tree = NearestNeighbors.BallTree(
-            stack(clone_vector(units[i], vocab) for i in search),
+            stack([clone_vector(units[i], vocab) for i in search]),
             NearestNeighbors.Cityblock()
         )
         radius = radius_factor * 2.0^(b + 1)
-        hits = NearestNeighbors.inrange(tree, stack(clone_vector(units[i], vocab) for i in query), radius)
+        hits = NearestNeighbors.inrange(tree, stack([clone_vector(units[i], vocab) for i in query]), radius)
         for (qi, neighbours) in enumerate(hits)
             i = query[qi]
             for pos in neighbours
@@ -265,7 +282,7 @@ end
 # `value` the weakest pairwise Dice in the cluster as a percent, suppressed when any
 # member carries a `dendro-ignore: near_duplicate` directive.
 function cluster_near_duplicates(
-        files; min_size::Integer = DEFAULT_MIN_SIZE,
+        files::AbstractVector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE,
         threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR
     )

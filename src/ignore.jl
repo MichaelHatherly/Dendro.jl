@@ -15,14 +15,15 @@ end
 # the final character, anchors the pattern to the root; otherwise it matches at any
 # depth. `*` and `?` stop at a separator, `**` spans them.
 function glob_to_regex(pat::AbstractString)
+    s = String(pat)::String
     anchored = false
-    if startswith(pat, '/')
+    if startswith(s, '/')
         anchored = true
-        pat = pat[nextind(pat, firstindex(pat)):end]
-    elseif occursin('/', pat)
+        s = s[nextind(s, firstindex(s)):end]
+    elseif occursin('/', s)
         anchored = true
     end
-    chars = collect(pat)
+    chars = collect(s)
     out = IOBuffer()
     i = 1
     n = length(chars)
@@ -83,7 +84,7 @@ Whether `path` (relative to the scanned root, `/`-separated) is ignored by the
 compiled `patterns`. The last matching pattern decides, so a later negation
 re-includes an earlier match. Directory-only patterns match only when `isdir`.
 """
-function is_ignored(patterns, path::AbstractString, isdir::Bool)
+function is_ignored(patterns::Vector{IgnorePattern}, path::AbstractString, isdir::Bool)
     path = replace(path, '\\' => '/')
     ignored = false
     for p in patterns

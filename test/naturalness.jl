@@ -23,12 +23,7 @@ end
 @testset "cluster_unnatural guards a thin corpus" begin
     p, prof = fixture(:julia)
     src = "function f()\n    1\nend\n"
-    files = [
-        (
-            language = :julia, profile = prof, source = src, file = "f.jl",
-            tree = parse(p, src), directives = Dendro.Directive[],
-        ),
-    ]
+    files = [Dendro.ParsedFile(:julia, prof, src, "f.jl", parse(p, src), Dendro.Directive[])]
     @test isempty(Dendro.cluster_unnatural(files))
 end
 
@@ -38,12 +33,7 @@ end
     common = join(["g$i(x) = x + $i" for i in 1:12], "\n")
     odd = "function odd(xs)\n    while true\n        try\n            break\n        catch\n        end\n    end\nend\n"
     src = string(common, "\n", odd, "\n")
-    files = [
-        (
-            language = :julia, profile = prof, source = src, file = "c.jl",
-            tree = parse(p, src), directives = Dendro.Directive[],
-        ),
-    ]
+    files = [Dendro.ParsedFile(:julia, prof, src, "c.jl", parse(p, src), Dendro.Directive[])]
 
     findings = Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9)
     @test !isempty(findings)
@@ -58,12 +48,7 @@ end
     odd = "# dendro-ignore: unnatural\nfunction odd(xs)\n    while true\n        try\n            break\n        catch\n        end\n    end\nend\n"
     src = string(common, "\n", odd, "\n")
     directives = Dendro.suppressions(parse(p, src), prof, src; file = "c.jl")
-    files = [
-        (
-            language = :julia, profile = prof, source = src, file = "c.jl",
-            tree = parse(p, src), directives = directives,
-        ),
-    ]
+    files = [Dendro.ParsedFile(:julia, prof, src, "c.jl", parse(p, src), directives)]
 
     findings = Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9)
     odd = only(f for f in findings if f.locations[1].unit == "odd")

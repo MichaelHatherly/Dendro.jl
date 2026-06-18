@@ -26,7 +26,7 @@ line_of(node) = Int(TreeSitter.start_point(node).row) + 1
 # `valid` is the active rule set's metric names. Names separate on commas or
 # whitespace, so a recognized metric still applies when stray words trail it; a
 # `--` reason ends the list before this is reached.
-function parse_metrics(list::AbstractString, valid, file, line)
+function parse_metrics(list::AbstractString, valid::Vector{Symbol}, file, line)
     metrics = Set{Symbol}()
     for token in split(list, r"[,\s]+"; keepempty = false)
         name = strip(token)
@@ -48,21 +48,18 @@ Scan every comment node for `dendro-ignore` directives and return one
 the comment's line. Named metrics are validated against the active `rules`; an
 unknown name warns and is dropped.
 """
-function suppressions(tree, profile::LanguageProfile, source::AbstractString; file, rules = BUILTIN_RULES)
+function suppressions(tree::TreeSitter.Tree, profile::LanguageProfile, source::AbstractString; file, rules = BUILTIN_RULES)
     valid = metric_names(rules)
     out = Directive[]
-    TreeSitter.traverse(tree) do n, enter
-        if enter && TreeSitter.node_type(n) in profile.comment_types
-            text = TreeSitter.slice(source, n)
-            for m in eachmatch(DIRECTIVE_RE, text)
-                scope = m.captures[1] === nothing ? line_of(n) : :file
-                names = m.captures[2]
-                metrics = names === nothing ? nothing :
-                    parse_metrics(names, valid, file, line_of(n))
-                push!(out, Directive(scope, metrics))
-            end
+    for n in collect_typed(tree, profile, profile.comment_types)
+        text = TreeSitter.slice(source, n)
+        for m in eachmatch(DIRECTIVE_RE, text)
+            scope = m.captures[1] === nothing ? line_of(n) : :file
+            names = m.captures[2]
+            metrics = names === nothing ? nothing :
+                parse_metrics(names, valid, file, line_of(n))
+            push!(out, Directive(scope, metrics))
         end
-        nothing
     end
     return out
 end
@@ -74,7 +71,7 @@ True when a directive accepts `metric` at `line`: file scope, the same line, or
 the line directly above, with a metric set that is `nothing` or contains
 `metric`.
 """
-function is_suppressed(directives, line::Int, metric::Symbol)
+function is_suppressed(directives::Vector{Directive}, line::Int, metric::Symbol)
     for d in directives
         covers = d.scope === :file || d.scope == line || d.scope == line - 1
         covers || continue

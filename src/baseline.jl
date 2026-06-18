@@ -15,11 +15,11 @@ end
 Baseline() = Baseline(Dict{Tuple{Symbol, Symbol}, Vector{Float64}}())
 
 # Accumulate one tree's scalar-metric values into a baseline, keyed by language.
-function add_samples!(baseline::Baseline, language::Symbol, tree, profile::LanguageProfile, source::AbstractString, rules = BUILTIN_RULES)
+function add_samples!(baseline::Baseline, language::Symbol, tree::TreeSitter.Tree, profile::LanguageProfile, source::AbstractString, rules = BUILTIN_RULES)
     for unit in functions(tree, profile)
-        for r in scalar_rules(rules)
+        for r in rules_of_kind(rules, :scalar)
             samples = get!(() -> Float64[], baseline.samples, (language, r.name))
-            push!(samples, Float64(r.fn(unit, profile, source)))
+            push!(samples, Float64(r.fn(unit, profile, source)::Int))
         end
     end
     return baseline

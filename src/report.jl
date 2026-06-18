@@ -43,14 +43,14 @@ Finding(file, line, unit, metric, value, absolute, percentile, kind, suppressed)
 
 # Label a function node by its name, or "" when no name node is found.
 function unit_name(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
-    name = ""
+    name = Ref("")
     TreeSitter.traverse(node) do n, enter
-        if enter && isempty(name) && TreeSitter.node_type(n) in profile.name_types
-            name = String(strip(TreeSitter.slice(source, n)))
+        if enter && isempty(name[]) && TreeSitter.node_type(n) in profile.name_types
+            name[] = String(strip(TreeSitter.slice(source, n)))
         end
         nothing
     end
-    return name
+    return name[]
 end
 
 unit_name(unit::FunctionUnit, profile::LanguageProfile, source::AbstractString) =
@@ -85,7 +85,7 @@ in_scope(scan::Scan, line::Int) = scan.within === nothing || inrange(scan.within
 # Scalar findings for one function unit, one per scalar rule that fires.
 function unit_findings!(out, scan::Scan, unit::FunctionUnit)
     name = unit_name(unit, scan.profile, scan.source)
-    for r in scalar_rules(scan.rules)
+    for r in rules_of_kind(scan.rules, :scalar)
         value = r.fn(unit, scan.profile, scan.source)::Int
         band = severity(value, something(r.band))
         pct = scan.baseline === nothing ? nothing :
@@ -105,7 +105,7 @@ function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
     for node in nodes
         line = line_of(node)
         in_scope(scan, line) || continue
-        name = TreeSitter.node_type(node) in scan.profile.function_types ?
+        name = is_function(node, scan.profile) ?
             unit_name(node, scan.profile, scan.source) : ""
         sup = is_suppressed(scan.directives, line, metric)
         push!(out, Finding(scan.file, line, name, metric, nothing, :high, nothing, :flag, sup))
@@ -121,14 +121,14 @@ breach their absolute band or, given a baseline, land at or above the cut
 percentile. Flag metrics fire on presence. A diff-scoped `scan` reports only
 units overlapping a changed range and flags on a changed line.
 """
-function findings_for_tree(tree, scan::Scan)
+function findings_for_tree(tree::TreeSitter.Tree, scan::Scan)
     out = Finding[]
     for unit in functions(tree, scan.profile)
         in_scope(scan, unit.firstline, unit.lastline) || continue
         unit_findings!(out, scan, unit)
     end
-    for r in flag_rules(scan.rules)
-        flag_findings!(out, scan, r.fn(tree, scan.profile, scan.source), r.name)
+    for r in rules_of_kind(scan.rules, :flag)
+        flag_findings!(out, scan, r.fn(tree, scan.profile, scan.source)::Vector{TreeSitter.Node}, r.name)
     end
     return out
 end

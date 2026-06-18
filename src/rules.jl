@@ -32,8 +32,8 @@ const BUILTIN_RULES = Rule[
     Rule(:nesting_depth, :scalar, (4, 6), (u, p, s) -> nesting_depth(u.node, p)),
     Rule(:parameter_count, :scalar, (5, 8), (u, p, s) -> parameter_count(u.node, p)),
     Rule(:boolean_complexity, :scalar, (4, 6), (u, p, s) -> boolean_complexity(u.node, p, s)),
-    Rule(:identical_operands, :flag, nothing, (t, p, s) -> identical_operands(t, p, s)),
-    Rule(:duplicate_branches, :flag, nothing, (t, p, s) -> duplicate_branches(t, p, s)),
+    Rule(:identical_operands, :flag, nothing, (t, p, s) -> flagged_nodes(is_identical_operands, t, p, s, p.binary_expr_types)),
+    Rule(:duplicate_branches, :flag, nothing, (t, p, s) -> flagged_nodes(is_duplicate_branches, t, p, s, p.conditional_types)),
     Rule(:empty_body, :flag, nothing, (t, p, s) -> empty_bodies(t, p)),
     Rule(:empty_catch, :flag, nothing, (t, p, s) -> empty_catches(t, p)),
     Rule(:stub_marker, :flag, nothing, (t, p, s) -> stub_markers(t, p, s)),
@@ -49,8 +49,8 @@ const OPTIONAL_RULES = Rule[
     Rule(:unreachable_after_jump, :flag, nothing, (t, p, s) -> unreachable_statements(t, p)),
 ]
 
-scalar_rules(rules) = Iterators.filter(r -> r.kind == :scalar, rules)
-flag_rules(rules) = Iterators.filter(r -> r.kind == :flag, rules)
+# The active rules of one kind (`:scalar` or `:flag`), in order.
+rules_of_kind(rules, kind::Symbol) = Iterators.filter(r -> r.kind == kind, rules)
 
 # Metrics produced by corpus clustering rather than a rule.
 const RELATIONAL_METRICS = (:duplicate, :near_duplicate, :unnatural)

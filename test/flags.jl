@@ -14,7 +14,7 @@ end
 
 @testset "identical_operands (julia)" begin
     p, prof = fixture(:julia)
-    flag(src) = length(Dendro.identical_operands(parse(p, src), prof, src))
+    flag(src) = length(Dendro.flagged_nodes(Dendro.is_identical_operands, parse(p, src), prof, src, prof.binary_expr_types))
 
     # Equal operands almost always mean a mistake.
     @test flag("f(x) = x == x") == 1
@@ -34,7 +34,7 @@ end
 
 @testset "duplicate_branches (julia)" begin
     p, prof = fixture(:julia)
-    flag(src) = length(Dendro.duplicate_branches(parse(p, src), prof, src))
+    flag(src) = length(Dendro.flagged_nodes(Dendro.is_duplicate_branches, parse(p, src), prof, src, prof.conditional_types))
 
     # Every arm runs the same code, so the condition decides nothing.
     @test flag("if c\n    a()\nelse\n    a()\nend\n") == 1
@@ -61,8 +61,8 @@ end
 end
 
 @testset "redundant-logic rules across languages" begin
-    operands(lang, src) = length(Dendro.identical_operands(parse(Dendro.parser_for(lang), src), Dendro.PROFILES[lang], src))
-    branches(lang, src) = length(Dendro.duplicate_branches(parse(Dendro.parser_for(lang), src), Dendro.PROFILES[lang], src))
+    operands(lang, src) = length(Dendro.flagged_nodes(Dendro.is_identical_operands, parse(Dendro.parser_for(lang), src), Dendro.PROFILES[lang], src, Dendro.PROFILES[lang].binary_expr_types))
+    branches(lang, src) = length(Dendro.flagged_nodes(Dendro.is_duplicate_branches, parse(Dendro.parser_for(lang), src), Dendro.PROFILES[lang], src, Dendro.PROFILES[lang].conditional_types))
     dead(lang, src) = length(Dendro.unreachable_statements(parse(Dendro.parser_for(lang), src), Dendro.PROFILES[lang]))
 
     # identical_operands reads each grammar's binary-expression node.
@@ -105,6 +105,10 @@ end
 
     u = only(Dendro.functions(parse(p, "function g()\n    1\nend\n"), prof))
     @test !Dendro.empty_body(u.node, prof)
+
+    # A short-form def's expression body always does work, so it is never empty.
+    u = only(Dendro.functions(parse(p, "f(x) = x + 1\n"), prof))
+    @test !Dendro.empty_body(u.node, prof)
 end
 
 @testset "returns_in_finally (javascript)" begin
@@ -134,4 +138,9 @@ end
 
     work = "function f(x)\n    y = g(x)\n    return y + 1\nend\n"
     @test isempty(Dendro.trivial_wrappers(parse(p, work), prof))
+
+    # A short-form def whose expression body is one delegating call is a wrapper;
+    # one that does real work is not.
+    @test length(Dendro.trivial_wrappers(parse(p, "f(x) = g(x)\n"), prof)) == 1
+    @test isempty(Dendro.trivial_wrappers(parse(p, "f(x) = x + 1\n"), prof))
 end

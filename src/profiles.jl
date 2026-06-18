@@ -11,6 +11,9 @@ const PROFILES = Dict{Symbol, LanguageProfile}()
 PROFILES[:julia] = LanguageProfile(
     :julia;
     function_types = ["function_definition"],
+    short_function_types = ["assignment"],
+    signature_wrapper_types = ["typed_expression", "where_expression"],
+    signature_types = ["call_expression"],
     decision_types = [
         "if_statement", "elseif_clause", "for_statement", "while_statement",
         "ternary_expression", "catch_clause",

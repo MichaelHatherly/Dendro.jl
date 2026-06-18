@@ -33,6 +33,14 @@
     @test Dendro.cyclomatic(u.node, prof, src) == 9
 end
 
+@testset "cyclomatic on a short-form def (julia)" begin
+    p, prof = fixture(:julia)
+    src = "f(x) = x > 0 ? x : -x\n"
+    u = only(Dendro.functions(parse(p, src), prof))
+    @test Dendro.cyclomatic(u.node, prof, src) == 2   # base + ternary
+    @test Dendro.function_length(u) == 1
+end
+
 @testset "nested functions do not inflate the enclosing unit (julia)" begin
     p, prof = fixture(:julia)
 

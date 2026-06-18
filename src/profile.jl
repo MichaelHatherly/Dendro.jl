@@ -8,6 +8,13 @@ Names the tree-sitter node types a language uses for the constructs Dendro
 measures.
 
 - `function_types`: nodes that define a callable unit.
+- `short_function_types`: outer nodes that may be a short-form definition, an
+  `assignment` whose left side is a call signature (`f(x) = expr`). Empty for a
+  language without the form.
+- `signature_wrapper_types`: left-hand-side wrappers to unwrap before checking for a
+  signature (`f(x)::T`, `f(x) where {T}`).
+- `signature_types`: the unwrapped left-hand-side core that confirms a short-form
+  definition, a call signature.
 - `decision_types`: branch points counted for cyclomatic complexity.
 - `continuation_types`: dedicated else-if clauses (`elseif`, `elif`) a grammar nests
   inside their parent conditional. Counted as a branch point, but scored as a flat
@@ -34,6 +41,9 @@ measures.
 struct LanguageProfile
     name::Symbol
     function_types::Set{String}
+    short_function_types::Set{String}
+    signature_wrapper_types::Set{String}
+    signature_types::Set{String}
     decision_types::Set{String}
     continuation_types::Set{String}
     short_circuit_ops::Set{String}
@@ -56,27 +66,33 @@ end
 # each profile lists only the node types it actually has.
 function LanguageProfile(
         name::Symbol;
-        function_types,
-        decision_types,
-        body_types,
-        name_types,
-        continuation_types = String[],
-        short_circuit_ops = String[],
-        nesting_types = String[],
-        parameter_types = String[],
-        catch_types = String[],
-        comment_types = String[],
-        trivial_body_types = String[],
-        return_types = String[],
-        finally_types = String[],
-        call_types = String[],
-        binary_expr_types = String[],
-        conditional_types = String[],
-        terminal_types = String[],
+        function_types::AbstractVector{<:AbstractString},
+        decision_types::AbstractVector{<:AbstractString},
+        body_types::AbstractVector{<:AbstractString},
+        name_types::AbstractVector{<:AbstractString},
+        short_function_types::AbstractVector{<:AbstractString} = String[],
+        signature_wrapper_types::AbstractVector{<:AbstractString} = String[],
+        signature_types::AbstractVector{<:AbstractString} = String[],
+        continuation_types::AbstractVector{<:AbstractString} = String[],
+        short_circuit_ops::AbstractVector{<:AbstractString} = String[],
+        nesting_types::AbstractVector{<:AbstractString} = String[],
+        parameter_types::AbstractVector{<:AbstractString} = String[],
+        catch_types::AbstractVector{<:AbstractString} = String[],
+        comment_types::AbstractVector{<:AbstractString} = String[],
+        trivial_body_types::AbstractVector{<:AbstractString} = String[],
+        return_types::AbstractVector{<:AbstractString} = String[],
+        finally_types::AbstractVector{<:AbstractString} = String[],
+        call_types::AbstractVector{<:AbstractString} = String[],
+        binary_expr_types::AbstractVector{<:AbstractString} = String[],
+        conditional_types::AbstractVector{<:AbstractString} = String[],
+        terminal_types::AbstractVector{<:AbstractString} = String[],
     )
     return LanguageProfile(
         name,
         Set{String}(function_types),
+        Set{String}(short_function_types),
+        Set{String}(signature_wrapper_types),
+        Set{String}(signature_types),
         Set{String}(decision_types),
         Set{String}(continuation_types),
         Set{String}(short_circuit_ops),

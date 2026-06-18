@@ -52,13 +52,13 @@ function token_stream(unit::FunctionUnit, profile::LanguageProfile, source::Abst
     return tokens
 end
 
-function collect_tokens!(tokens, node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+function collect_tokens!(tokens::Vector{String}, node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
     if TreeSitter.is_leaf(node)
         push!(tokens, token_of(node, source))
         return tokens
     end
     for c in TreeSitter.children(node)
-        TreeSitter.node_type(c) in profile.function_types && continue
+        is_function(c, profile) && continue
         collect_tokens!(tokens, c, profile, source)
     end
     return tokens
@@ -73,7 +73,11 @@ struct NGramModel
 end
 
 # One padded sequence's trigrams folded into the running counts and vocabulary.
-function count_sequence!(trigrams, contexts, vocabulary, tokens)
+function count_sequence!(
+        trigrams::Dict{Tuple{String, String, String}, Int},
+        contexts::Dict{Tuple{String, String}, Int},
+        vocabulary::Set{String}, tokens::Vector{String}
+    )
     seq = [SEQ_START; SEQ_START; tokens]
     for t in tokens
         push!(vocabulary, t)
@@ -92,7 +96,7 @@ end
 
 A trigram model over every token stream in one language's corpus.
 """
-function build_model(streams)
+function build_model(streams::AbstractVector{Vector{String}})
     trigrams = Dict{Tuple{String, String, String}, Int}()
     contexts = Dict{Tuple{String, String}, Int}()
     vocabulary = Set{String}()
@@ -109,7 +113,7 @@ Mean bits per token to encode `tokens` under `model`: the smoothed surprise of e
 token given its two predecessors, averaged. A higher value is a more surprising,
 less idiomatic function.
 """
-function cross_entropy(tokens, model::NGramModel)
+function cross_entropy(tokens::Vector{String}, model::NGramModel)
     isempty(tokens) && return 0.0
     seq = [SEQ_START; SEQ_START; tokens]
     total = 0.0
@@ -132,7 +136,7 @@ end
 
 # Collect every function in the corpus as a NaturalnessUnit, grouped by language so a
 # model never mixes grammars.
-function naturalness_units(files)
+function naturalness_units(files::AbstractVector{ParsedFile})
     bylang = Dict{Symbol, Vector{NaturalnessUnit}}()
     for f in files
         for unit in functions(f.tree, f.profile)
@@ -147,7 +151,10 @@ end
 
 # Naturalness findings for one language's units, scored against a model built from
 # them. Skipped when the corpus is too thin to rank against.
-function unnatural_in_language!(findings, units::Vector{NaturalnessUnit}, band, cut, min_tokens)
+function unnatural_in_language!(
+        findings::Vector{Finding}, units::Vector{NaturalnessUnit},
+        band::Tuple{Int, Int}, cut::Real, min_tokens::Integer
+    )
     sum(length(u.tokens) for u in units; init = 0) < min_tokens && return findings
     model = build_model([u.tokens for u in units])
     entropies = [cross_entropy(u.tokens, model) for u in units]
@@ -172,7 +179,7 @@ in centibits, and the corpus percentile, fired when either trips. A language wit
 fewer than `min_tokens` tokens is skipped, its model too sparse to rank against.
 """
 function cluster_unnatural(
-        files; band = UNNATURAL_BAND, cut::Real = 0.95,
+        files::AbstractVector{ParsedFile}; band::Tuple{Int, Int} = UNNATURAL_BAND, cut::Real = 0.95,
         min_tokens::Integer = MIN_CORPUS_TOKENS
     )
     findings = Finding[]
