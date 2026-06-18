@@ -30,4 +30,11 @@
 
 [(if_statement) (switch_statement)] @conditional
 
+; NPath construct families.
+[(for_statement) (for_range_loop) (while_statement) (do_statement)] @loop
+(switch_statement) @switch
+(case_statement) @case
+(conditional_expression) @ternary
+(try_statement) @try
+
 [(return_statement) (break_statement) (continue_statement) (throw_statement)] @terminal

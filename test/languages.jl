@@ -63,6 +63,41 @@ end
     @test Dendro.cyclomatic(u.node, i) == 2
 end
 
+# NPath per grammar: one construct per case, the value hand-derived from PMD's rules
+# (sequences multiply, branches add, each `&&`/`||` in a condition adds one, a switch
+# sums its case bodies). Ruby and Bash are absent: their branch bodies are not block
+# nodes, so the construct families are not wired.
+const NPATH_CASES = [
+    (lang = :c, name = "if", src = "int f(int x){ if(x>0){a();} }", npath = 2),
+    (lang = :c, name = "ifelse", src = "int f(int x){ if(x>0){a();}else{b();} }", npath = 2),
+    (lang = :c, name = "while", src = "int f(int x){ while(x>0){a();} }", npath = 2),
+    (lang = :c, name = "switch", src = "int f(int x){ switch(x){case 1:a();break;case 2:b();break;default:c();} }", npath = 3),
+    (lang = :c, name = "ternary", src = "int f(int x){ return x>0?a():b(); }", npath = 2),
+    (lang = :c, name = "bools", src = "int f(int x){ if(x>0&&x<9){a();} }", npath = 3),
+    (lang = :cpp, name = "try", src = "int f(){ try{a();}catch(...){b();} return 0; }", npath = 2),
+    (lang = :go, name = "switch", src = "func f(x int){ switch x { case 1: a(); default: b() } }", npath = 2),
+    (lang = :go, name = "ifelseif", src = "func f(x int){ if x>0 {a()} else if x<0 {b()} else {c()} }", npath = 3),
+    (lang = :java, name = "switch", src = "class C{ void f(int x){ switch(x){ case 1: a(); break; default: b(); } } }", npath = 2),
+    (lang = :java, name = "tryfinally", src = "class C{ void f(){ try{a();}catch(Exception e){b();}finally{c();} } }", npath = 3),
+    (lang = :javascript, name = "switch", src = "function f(x){ switch(x){ case 1: a(); break; default: b(); } }", npath = 2),
+    (lang = :typescript, name = "try", src = "function f(){ try{a();}catch(e){b();} }", npath = 2),
+    (lang = :php, name = "ternary", src = "<?php function f(\$x){ return \$x>0?a():b(); }", npath = 2),
+    (lang = :php, name = "foreach", src = "<?php function f(\$xs){ foreach(\$xs as \$x){ g(\$x); } }", npath = 2),
+    (lang = :rust, name = "match", src = "fn f(x: i32){ match x { 1 => a(), _ => b() } }", npath = 2),
+    (lang = :rust, name = "ifelseif", src = "fn f(x: i32){ if x>0 { a(); } else if x<0 { b(); } else { c(); } }", npath = 3),
+    (lang = :python, name = "match", src = "def f(x):\n    match x:\n        case 1:\n            a()\n        case _:\n            b()\n", npath = 2),
+    (lang = :python, name = "tryfinally", src = "def f(x):\n    try:\n        a()\n    except E:\n        b()\n    finally:\n        c()\n", npath = 3),
+    # Python places the ternary condition in the middle (`a if c else b`); its `&&`
+    # must still count, which the order-agnostic rule handles.
+    (lang = :python, name = "ternary_bool", src = "def f(x):\n    return a() if x>0 and x<9 else b()\n", npath = 3),
+]
+
+@testset "npath $(case.lang)/$(case.name)" for case in NPATH_CASES
+    i = idx(case.lang, case.src)
+    u = only(Dendro.functions(i))
+    @test Dendro.npath(u.node, i) == case.npath
+end
+
 for case in LANGUAGE_CASES
     @testset "$(case.lang) profile" begin
         i = idx(case.lang, case.src)

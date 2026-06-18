@@ -36,4 +36,11 @@
 
 [(if_statement) (match_statement)] @conditional
 
+; NPath construct families.
+[(for_statement) (while_statement)] @loop
+(match_statement) @switch
+(case_clause) @case
+(conditional_expression) @ternary
+(try_statement) @try
+
 [(return_statement) (break_statement) (continue_statement) (raise_statement)] @terminal

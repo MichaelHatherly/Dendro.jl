@@ -28,4 +28,10 @@
 
 [(if_expression) (match_expression)] @conditional
 
+; NPath construct families. Rust has no ternary (an `if` expression fills that role)
+; or try construct; a match arm is its case body.
+[(while_expression) (for_expression) (loop_expression)] @loop
+(match_expression) @switch
+(match_arm) @case
+
 [(return_expression) (break_expression) (continue_expression)] @terminal

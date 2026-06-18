@@ -28,4 +28,10 @@
 
 [(if_statement) (expression_switch_statement) (type_switch_statement)] @conditional
 
+; NPath construct families. Go has no ternary or try construct. The default case has
+; its own node type, so it joins @case explicitly.
+(for_statement) @loop
+[(expression_switch_statement) (type_switch_statement) (select_statement)] @switch
+[(expression_case) (type_case) (communication_case) (default_case)] @case
+
 [(return_statement) (break_statement) (continue_statement)] @terminal

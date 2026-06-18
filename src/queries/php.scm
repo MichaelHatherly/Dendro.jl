@@ -34,6 +34,13 @@
 
 [(if_statement) (switch_statement)] @conditional
 
+; NPath construct families.
+[(for_statement) (foreach_statement) (while_statement) (do_statement)] @loop
+(switch_statement) @switch
+[(case_statement) (default_statement)] @case
+(conditional_expression) @ternary
+(try_statement) @try
+
 [(return_statement) (break_statement) (continue_statement)] @terminal
 
 ; `throw` is an expression wrapped in a statement; tag the statement so code after

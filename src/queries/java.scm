@@ -31,4 +31,12 @@
 
 [(if_statement) (switch_expression)] @conditional
 
+; NPath construct families. A switch case body is a statement group (colon form) or a
+; rule (arrow form).
+[(for_statement) (enhanced_for_statement) (while_statement) (do_statement)] @loop
+(switch_expression) @switch
+[(switch_block_statement_group) (switch_rule)] @case
+(ternary_expression) @ternary
+(try_statement) @try
+
 [(return_statement) (break_statement) (continue_statement) (throw_statement)] @terminal

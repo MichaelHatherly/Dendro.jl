@@ -231,9 +231,15 @@ band and the corpus percentile like any built-in. A rule reads nodes through the
 index's concepts, never a node-type string, so one definition works across languages.
 
 `OPTIONAL_RULES` holds rules that are off by default: `return_count` (return points
-per function, which needs per-project band tuning) and `trivial_wrapper` (a function
-whose body is one delegating call, which has a higher false-positive rate). Opt in
-with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
+per function, which needs per-project band tuning), `trivial_wrapper` (a function
+whose body is one delegating call, which has a higher false-positive rate), and
+`npath` (NPath complexity, the count of acyclic execution paths after Nejmeh's
+measure as PMD computes it: sequences multiply, branches add, each `&&`/`||` in a
+condition adds a path). NPath catches the sequential-branch explosion cyclomatic and
+cognitive complexity rate as moderate; its band wants per-project tuning, and it
+grows multiplicatively so the count saturates rather than overflowing. NPath is not
+wired for Ruby or Bash, whose branch bodies are not block nodes. Opt in with
+`analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 
 ## Languages
 

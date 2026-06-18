@@ -26,4 +26,10 @@
 
 [(if_statement) (switch_statement)] @conditional
 
+; NPath construct families. C has no try construct.
+[(for_statement) (while_statement) (do_statement)] @loop
+(switch_statement) @switch
+(case_statement) @case
+(conditional_expression) @ternary
+
 [(return_statement) (break_statement) (continue_statement)] @terminal

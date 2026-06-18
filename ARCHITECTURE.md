@@ -89,8 +89,9 @@ Measurement:
   clones, and tokens.
 - `metrics.jl` defines the scalar metrics and `severity`: `cyclomatic`,
   `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
-  `boolean_complexity`, `return_count`. `severity` classifies a value against a
-  `(warn, high)` band.
+  `boolean_complexity`, `return_count`, and `npath` (NPath complexity, a recursion
+  that dispatches on construct family from the query and saturates at `NPATH_CAP`).
+  `severity` classifies a value against a `(warn, high)` band.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
   `unreachable_statements`, `identical_operands`, and `duplicate_branches`. Each
@@ -163,10 +164,12 @@ and `function_ids` (the no-descend boundary), plus one `Concept` per measured
 construct (decision points, short-circuit operators, nesting, parameters, bodies,
 catches, comments, names, trivial statements, returns, finally clauses, calls,
 binary expressions, binary operators, conditionals, terminals, short-form
-definitions). A `Concept`
+definitions, and the NPath construct families: loops, switches, ternaries, tries,
+cases). A `Concept`
 holds the tagged nodes in source order and a `Set{NodeId}` for membership. Built
-once per file by `build_index`: the constructor starts every concept empty, then
-`dispatch!` files each capture by name and throws on a name outside `CONCEPT_NAMES`.
+once per file by `build_index`: the constructor starts every concept empty and
+builds a `by_name` table mapping each capture to its concept, then `dispatch!` files
+each capture through that table and throws on a name outside `CONCEPT_NAMES`.
 The suite checks every query's capture names against that set. This is the only
 place a language's concrete grammar leaks in: a construct a language lacks has no
 pattern, so its concept is empty and a rule reading it finds nothing.

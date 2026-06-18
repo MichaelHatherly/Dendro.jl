@@ -317,30 +317,38 @@ function loop_npath(node::TreeSitter.Node, index::QueryIndex)
     return sat_add(sat_add(branch, b), 1)
 end
 
-# A switch: the sum of its case-body NPaths plus the test's `B`, no implicit
-# fall-through path.
-# dendro-ignore: duplicate, near_duplicate
+# A switch: the sum of its case-body NPaths. Cases are not `@body` blocks, so they
+# carry a `@case` capture; this descends the switch's body wrapper to reach them,
+# stopping at a case (its statements score as their own sequence) and at a nested
+# switch (its cases are its own). A discriminant rarely carries `&&`, so its `B` is
+# dropped.
 function switch_npath(node::TreeSitter.Node, index::QueryIndex)
-    branch, b = fold_branches(node, index, sat_add, 0)
-    return sat_add(branch, b)
-end
-
-# A ternary `c ? a : b`: NP(a) + NP(b) + B(c). The first named child is the
-# condition; the rest are the two result expressions.
-function ternary_npath(node::TreeSitter.Node, index::QueryIndex)
-    parts = 0
-    b = 0
-    seen_cond = false
-    for c in TreeSitter.named_children(node)
+    total = 0
+    for c in TreeSitter.children(node)
         is_function(c, index) && continue
-        if !seen_cond
-            b = sat_add(b, short_circuit_count(c, index))
-            seen_cond = true
+        c in index.switch && continue
+        if c in index.case
+            total = sat_add(total, npath(c, index))
         else
-            parts = sat_add(parts, npath(c, index))
+            total = sat_add(total, switch_npath(c, index))
         end
     end
-    return sat_add(parts, b)
+    return total
+end
+
+# A ternary `c ? a : b`: NP(a) + NP(b) + B(c). Summing every child counts the
+# condition's own path, which for a plain boolean is one, so subtract one and add its
+# `B`. Order-agnostic: a grammar may place the condition first (`c ? a : b`) or in the
+# middle (Python's `a if c else b`).
+function ternary_npath(node::TreeSitter.Node, index::QueryIndex)
+    total = 0
+    b = 0
+    for c in TreeSitter.named_children(node)
+        is_function(c, index) && continue
+        total = sat_add(total, npath(c, index))
+        b = sat_add(b, short_circuit_count(c, index))
+    end
+    return sat_add(max(total - 1, 0), b)
 end
 
 # A try: NP(try-block) + the NPath of each catch and finally block. Every body-bearing
