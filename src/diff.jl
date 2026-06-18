@@ -53,6 +53,9 @@ function changed_ranges(diff::AbstractString)
         # content that resembles a `+++` header is read by its column alone.
         if startswith(ln, "@@")
             m = match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", ln)
+            # A combined diff (`@@@`, from a merge conflict) is not the two-side
+            # format this reads. Skip its header rather than deref a failed match.
+            m === nothing && continue
             curnew = parse(Int, m.captures[2])
             oldleft = m.captures[1] === nothing ? 1 : parse(Int, m.captures[1])
             newleft = m.captures[3] === nothing ? 1 : parse(Int, m.captures[3])
@@ -63,8 +66,10 @@ function changed_ranges(diff::AbstractString)
             oldleft += e.old
             newleft += e.new
         elseif startswith(ln, "+++ ")
-            path = ln[5:end]
-            file = startswith(path, "b/") ? path[3:end] : path
+            # Git terminates a path that contains a space with a tab; keep only the
+            # path itself so the key matches the file's relative path.
+            path = first(split(ln[5:end], '\t'))
+            file = String(startswith(path, "b/") ? path[3:end] : path)
         end
     end
     return Dict(f => coalesce_lines(ls) for (f, ls) in added)
