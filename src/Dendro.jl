@@ -1,6 +1,7 @@
 module Dendro
 
 import NearestNeighbors
+import RelocatableFolders
 import TreeSitter
 
 public analyze, active, github_annotations
@@ -10,6 +11,7 @@ public Rule, BUILTIN_RULES, OPTIONAL_RULES
 include("resolve.jl")
 include("profile.jl")
 include("profiles.jl")
+include("query_index.jl")
 include("units.jl")
 include("metrics.jl")
 include("flags.jl")

@@ -1,15 +1,7 @@
 # A custom flag rule a caller might supply: comments carrying a BUG marker. Mirrors
 # the built-in stub_marker rule, but names a metric Dendro does not ship.
-function bug_markers(tree, profile, source)
-    out = TreeSitter.Node[]
-    TreeSitter.traverse(tree) do n, enter
-        if enter && TreeSitter.node_type(n) in profile.comment_types
-            occursin("BUG", TreeSitter.slice(source, n)) && push!(out, n)
-        end
-        nothing
-    end
-    return out
-end
+bug_markers(index) =
+    [n for n in index.comment.nodes if occursin("BUG", TreeSitter.slice(index.source, n))]
 
 const BUG_RULE = Dendro.Rule(:bug_marker, :flag, nothing, bug_markers)
 
@@ -40,11 +32,10 @@ end
     end
 
     # The active set validates the name, so the directive parses with no warning.
-    p, prof = fixture(:julia)
     src = "# dendro-ignore: bug_marker\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(parse(p, src), prof, src; file = "x.jl", rules))
+    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl", rules))
     @test d.metrics == Set([:bug_marker])
 
     # Without the rule, the same name is unknown and warns.
-    @test_logs (:warn,) Dendro.suppressions(parse(p, src), prof, src; file = "x.jl")
+    @test_logs (:warn,) Dendro.suppressions(idx(:julia, src); file = "x.jl")
 end

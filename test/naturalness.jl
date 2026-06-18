@@ -1,8 +1,8 @@
 @testset "token_stream (julia)" begin
-    p, prof = fixture(:julia)
     src = "function f(x)\n    return x + 1\nend\n"
-    u = only(Dendro.functions(parse(p, src), prof))
-    toks = Dendro.token_stream(u, prof, src)
+    i = idx(:julia, src)
+    u = only(Dendro.functions(i))
+    toks = Dendro.token_stream(u, i)
 
     # Identifiers reduce to their node type; anonymous tokens (keywords, and in
     # Julia the `operator` node) keep their grammar token. The name is gone.
@@ -21,19 +21,17 @@ end
 end
 
 @testset "cluster_unnatural guards a thin corpus" begin
-    p, prof = fixture(:julia)
     src = "function f()\n    1\nend\n"
-    files = [Dendro.ParsedFile(:julia, prof, src, "f.jl", parse(p, src), Dendro.Directive[])]
+    files = [parsedfile(:julia, src; file = "f.jl")]
     @test isempty(Dendro.cluster_unnatural(files))
 end
 
 @testset "cluster_unnatural ranks the odd function out first" begin
-    p, prof = fixture(:julia)
     # A corpus of one idiom, plus a function with a structure none of the rest share.
     common = join(["g$i(x) = x + $i" for i in 1:12], "\n")
     odd = "function odd(xs)\n    while true\n        try\n            break\n        catch\n        end\n    end\nend\n"
     src = string(common, "\n", odd, "\n")
-    files = [Dendro.ParsedFile(:julia, prof, src, "c.jl", parse(p, src), Dendro.Directive[])]
+    files = [parsedfile(:julia, src; file = "c.jl")]
 
     findings = Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9)
     @test !isempty(findings)
@@ -43,12 +41,12 @@ end
 end
 
 @testset "unnatural suppression and scores" begin
-    p, prof = fixture(:julia)
     common = join(["g$i(x) = x + $i" for i in 1:12], "\n")
     odd = "# dendro-ignore: unnatural\nfunction odd(xs)\n    while true\n        try\n            break\n        catch\n        end\n    end\nend\n"
     src = string(common, "\n", odd, "\n")
-    directives = Dendro.suppressions(parse(p, src), prof, src; file = "c.jl")
-    files = [Dendro.ParsedFile(:julia, prof, src, "c.jl", parse(p, src), directives)]
+    i = idx(:julia, src)
+    directives = Dendro.suppressions(i; file = "c.jl")
+    files = [parsedfile(:julia, src; file = "c.jl", directives = directives)]
 
     findings = Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9)
     odd = only(f for f in findings if f.locations[1].unit == "odd")

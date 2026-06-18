@@ -41,18 +41,18 @@ function parse_metrics(list::AbstractString, valid::Vector{Symbol}, file, line)
 end
 
 """
-    suppressions(tree, profile, source; file) -> Vector{Directive}
+    suppressions(index; file) -> Vector{Directive}
 
 Scan every comment node for `dendro-ignore` directives and return one
 `Directive` per match. A `-file` directive carries `:file` scope, others carry
 the comment's line. Named metrics are validated against the active `rules`; an
 unknown name warns and is dropped.
 """
-function suppressions(tree::TreeSitter.Tree, profile::LanguageProfile, source::AbstractString; file, rules = BUILTIN_RULES)
+function suppressions(index::QueryIndex; file, rules = BUILTIN_RULES)
     valid = metric_names(rules)
     out = Directive[]
-    for n in collect_typed(tree, profile, profile.comment_types)
-        text = TreeSitter.slice(source, n)
+    for n in index.comment.nodes
+        text = TreeSitter.slice(index.source, n)
         for m in eachmatch(DIRECTIVE_RE, text)
             scope = m.captures[1] === nothing ? line_of(n) : :file
             names = m.captures[2]

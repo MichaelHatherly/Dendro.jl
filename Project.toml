@@ -1,18 +1,20 @@
 name = "Dendro"
 uuid = "1795b8db-9815-49e8-b387-5b722b8875ff"
-authors = ["Michael Hatherly <michaelhatherly@gmail.com>"]
 version = "0.1.0"
+authors = ["Michael Hatherly <michaelhatherly@gmail.com>"]
 
 [deps]
 Artifacts = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+RelocatableFolders = "05181044-ff0b-4ac5-8273-598c1e38db00"
 TreeSitter = "f42328cb-ece0-4cf2-995f-9e7abb27d006"
 
 [compat]
 Artifacts = "1"
 NearestNeighbors = "0.4"
 Pkg = "1"
+RelocatableFolders = "1.0.1"
 TreeSitter = "0.2"
 julia = "1.11"
 

@@ -10,10 +10,9 @@
     findings = active(analyze(srcdir))
 
     # No genuine complexity smell, and no function so structurally surprising it
-    # trips the absolute naturalness floor. parameter_count is excluded: the
-    # LanguageProfile keyword constructor takes one argument per field by design.
-    # `:unnatural` is checked on its absolute band only; its percentile flags the
-    # top of any distribution and so is not part of this deterministic gate.
+    # trips the absolute naturalness floor. `:unnatural` is checked on its absolute
+    # band only; its percentile flags the top of any distribution and so is not part
+    # of this deterministic gate.
     smells = filter(findings) do f
         f.absolute == :high && f.metric in (:cyclomatic, :cognitive_complexity, :nesting_depth, :function_length, :boolean_complexity, :unnatural)
     end

@@ -42,31 +42,29 @@ Finding(file, line, unit, metric, value, absolute, percentile, kind, suppressed)
     Finding(metric, [Location(file, line, unit)], value, absolute, percentile, kind, suppressed)
 
 # Label a function node by its name, or "" when no name node is found.
-function unit_name(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+function unit_name(node::TreeSitter.Node, index::QueryIndex)
     name = Ref("")
     TreeSitter.traverse(node) do n, enter
-        if enter && isempty(name[]) && TreeSitter.node_type(n) in profile.name_types
-            name[] = String(strip(TreeSitter.slice(source, n)))
+        if enter && isempty(name[]) && n in index.name
+            name[] = String(strip(TreeSitter.slice(index.source, n)))
         end
         nothing
     end
     return name[]
 end
 
-unit_name(unit::FunctionUnit, profile::LanguageProfile, source::AbstractString) =
-    unit_name(unit.node, profile, source)
+unit_name(unit::FunctionUnit, index::QueryIndex) = unit_name(unit.node, index)
 
 """
     Scan
 
-The fixed context for analysing one file: its `profile`, `source`, and `file`
-path, the active `rules`, the optional `baseline` and `cut` percentile for
+The fixed context for analysing one file: its `index` of identified nodes and the
+`file` path, the active `rules`, the optional `baseline` and `cut` percentile for
 relative scoring, the optional `within` line ranges that restrict findings to a
 diff, and the `directives` parsed from the source that suppress accepted findings.
 """
 struct Scan
-    profile::LanguageProfile
-    source::String
+    index::QueryIndex
     file::String
     rules::Vector{Rule}
     baseline::Union{Baseline, Nothing}
@@ -75,8 +73,8 @@ struct Scan
     directives::Vector{Directive}
 end
 
-Scan(profile, source, file; rules = BUILTIN_RULES, baseline = nothing, cut = 0.95, within = nothing, directives = Directive[]) =
-    Scan(profile, String(source), String(file), rules, baseline, Float64(cut), within, directives)
+Scan(index, file; rules = BUILTIN_RULES, baseline = nothing, cut = 0.95, within = nothing, directives = Directive[]) =
+    Scan(index, String(file), rules, baseline, Float64(cut), within, directives)
 
 # Whether a line span (or single line) is reported, given the scan's diff scope.
 in_scope(scan::Scan, a::Int, b::Int) = scan.within === nothing || intersects(scan.within, a, b)
@@ -84,12 +82,12 @@ in_scope(scan::Scan, line::Int) = scan.within === nothing || inrange(scan.within
 
 # Scalar findings for one function unit, one per scalar rule that fires.
 function unit_findings!(out, scan::Scan, unit::FunctionUnit)
-    name = unit_name(unit, scan.profile, scan.source)
+    name = unit_name(unit, scan.index)
     for r in rules_of_kind(scan.rules, :scalar)
-        value = r.fn(unit, scan.profile, scan.source)::Int
+        value = r.fn(unit, scan.index)::Int
         band = severity(value, something(r.band))
         pct = scan.baseline === nothing ? nothing :
-            percentile(scan.baseline, scan.profile.name, r.name, value)
+            percentile(scan.baseline, scan.index.language, r.name, value)
         outlier = pct !== nothing && pct >= scan.cut
         if band != :ok || outlier
             sup = is_suppressed(scan.directives, unit.firstline, r.name)
@@ -105,8 +103,8 @@ function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
     for node in nodes
         line = line_of(node)
         in_scope(scan, line) || continue
-        name = is_function(node, scan.profile) ?
-            unit_name(node, scan.profile, scan.source) : ""
+        name = is_function(node, scan.index) ?
+            unit_name(node, scan.index) : ""
         sup = is_suppressed(scan.directives, line, metric)
         push!(out, Finding(scan.file, line, name, metric, nothing, :high, nothing, :flag, sup))
     end
@@ -114,21 +112,21 @@ function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
 end
 
 """
-    findings_for_tree(tree, scan) -> Vector{Finding}
+    findings_for(scan) -> Vector{Finding}
 
-Collect findings for an already-parsed `tree`. Scalar metrics fire when they
-breach their absolute band or, given a baseline, land at or above the cut
-percentile. Flag metrics fire on presence. A diff-scoped `scan` reports only
-units overlapping a changed range and flags on a changed line.
+Collect findings for the scan's indexed tree. Scalar metrics fire when they breach
+their absolute band or, given a baseline, land at or above the cut percentile. Flag
+metrics fire on presence. A diff-scoped `scan` reports only units overlapping a
+changed range and flags on a changed line.
 """
-function findings_for_tree(tree::TreeSitter.Tree, scan::Scan)
+function findings_for(scan::Scan)
     out = Finding[]
-    for unit in functions(tree, scan.profile)
+    for unit in functions(scan.index)
         in_scope(scan, unit.firstline, unit.lastline) || continue
         unit_findings!(out, scan, unit)
     end
     for r in rules_of_kind(scan.rules, :flag)
-        flag_findings!(out, scan, r.fn(tree, scan.profile, scan.source)::Vector{TreeSitter.Node}, r.name)
+        flag_findings!(out, scan, r.fn(scan.index)::Vector{TreeSitter.Node}, r.name)
     end
     return out
 end

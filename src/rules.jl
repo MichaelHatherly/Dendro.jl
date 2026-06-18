@@ -8,12 +8,12 @@
 One lint rule. `name` is the metric a finding reports under and the name an
 inline `dendro-ignore` directive accepts. `kind` is `:scalar` or `:flag`. A
 scalar rule carries its `(warn, high)` `band`; a flag rule carries `nothing`.
-`fn` measures one tree or unit:
+`fn` measures one unit or the whole index:
 
-- scalar `fn(unit, profile, source) -> Int`, scored against the band and the
-  corpus percentile.
-- flag `fn(tree, profile, source) -> Vector{TreeSitter.Node}`, one `:high`
-  finding per returned node.
+- scalar `fn(unit, index) -> Int`, scored against the band and the corpus
+  percentile.
+- flag `fn(index) -> Vector{TreeSitter.Node}`, one `:high` finding per returned
+  node.
 """
 struct Rule
     name::Symbol
@@ -26,27 +26,27 @@ end
 # so a uniformly-weak codebase has a standard to improve toward rather than only
 # its own median. Drawn from common complexity guidance.
 const BUILTIN_RULES = Rule[
-    Rule(:cyclomatic, :scalar, (11, 21), (u, p, s) -> cyclomatic(u.node, p, s)),
-    Rule(:cognitive_complexity, :scalar, (15, 25), (u, p, s) -> cognitive_complexity(u.node, p, s)),
-    Rule(:function_length, :scalar, (50, 100), (u, p, s) -> function_length(u)),
-    Rule(:nesting_depth, :scalar, (4, 6), (u, p, s) -> nesting_depth(u.node, p)),
-    Rule(:parameter_count, :scalar, (5, 8), (u, p, s) -> parameter_count(u.node, p)),
-    Rule(:boolean_complexity, :scalar, (4, 6), (u, p, s) -> boolean_complexity(u.node, p, s)),
-    Rule(:identical_operands, :flag, nothing, (t, p, s) -> flagged_nodes(is_identical_operands, t, p, s, p.binary_expr_types)),
-    Rule(:duplicate_branches, :flag, nothing, (t, p, s) -> flagged_nodes(is_duplicate_branches, t, p, s, p.conditional_types)),
-    Rule(:empty_body, :flag, nothing, (t, p, s) -> empty_bodies(t, p)),
-    Rule(:empty_catch, :flag, nothing, (t, p, s) -> empty_catches(t, p)),
-    Rule(:stub_marker, :flag, nothing, (t, p, s) -> stub_markers(t, p, s)),
-    Rule(:return_in_finally, :flag, nothing, (t, p, s) -> returns_in_finally(t, p)),
+    Rule(:cyclomatic, :scalar, (11, 21), (u, i) -> cyclomatic(u.node, i)),
+    Rule(:cognitive_complexity, :scalar, (15, 25), (u, i) -> cognitive_complexity(u.node, i)),
+    Rule(:function_length, :scalar, (50, 100), (u, i) -> function_length(u)),
+    Rule(:nesting_depth, :scalar, (4, 6), (u, i) -> nesting_depth(u.node, i)),
+    Rule(:parameter_count, :scalar, (5, 8), (u, i) -> parameter_count(u.node, i)),
+    Rule(:boolean_complexity, :scalar, (4, 6), (u, i) -> boolean_complexity(u.node, i)),
+    Rule(:identical_operands, :flag, nothing, identical_operands),
+    Rule(:duplicate_branches, :flag, nothing, duplicate_branches),
+    Rule(:empty_body, :flag, nothing, empty_bodies),
+    Rule(:empty_catch, :flag, nothing, empty_catches),
+    Rule(:stub_marker, :flag, nothing, stub_markers),
+    Rule(:return_in_finally, :flag, nothing, returns_in_finally),
 ]
 
 # Rules a caller can opt into but that are off by default: return_count needs
 # per-project band tuning, trivial_wrapper has a higher false-positive rate.
 # Use them with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 const OPTIONAL_RULES = Rule[
-    Rule(:return_count, :scalar, (4, 8), (u, p, s) -> return_count(u.node, p)),
-    Rule(:trivial_wrapper, :flag, nothing, (t, p, s) -> trivial_wrappers(t, p)),
-    Rule(:unreachable_after_jump, :flag, nothing, (t, p, s) -> unreachable_statements(t, p)),
+    Rule(:return_count, :scalar, (4, 8), (u, i) -> return_count(u.node, i)),
+    Rule(:trivial_wrapper, :flag, nothing, trivial_wrappers),
+    Rule(:unreachable_after_jump, :flag, nothing, unreachable_statements),
 ]
 
 # The active rules of one kind (`:scalar` or `:flag`), in order.

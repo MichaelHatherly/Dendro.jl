@@ -10,43 +10,43 @@
 end
 
 @testset "subtree_hashes tolerates renames and literals" begin
-    p, prof = fixture(:julia)
     a = "function f(x)\n    y = x + 1\n    return y * 2\nend\n"
     b = "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n"
     c = "function h(x)\n    while x > 0\n        x -= 1\n    end\nend\n"
-    ha = Dendro.subtree_hashes(only(Dendro.functions(parse(p, a), prof)), prof)
-    hb = Dendro.subtree_hashes(only(Dendro.functions(parse(p, b), prof)), prof)
-    hc = Dendro.subtree_hashes(only(Dendro.functions(parse(p, c), prof)), prof)
+    ia, ib, ic = idx(:julia, a), idx(:julia, b), idx(:julia, c)
+    ha = Dendro.subtree_hashes(only(Dendro.functions(ia)), ia)
+    hb = Dendro.subtree_hashes(only(Dendro.functions(ib)), ib)
+    hc = Dendro.subtree_hashes(only(Dendro.functions(ic)), ic)
     @test ha == hb
     @test Dendro.dice(ha, hb) == 1.0
     @test Dendro.dice(ha, hc) < 1.0
 end
 
 @testset "subtree_hashes excludes nested functions" begin
-    p, prof = fixture(:julia)
     plain = "function f(x)\n    y = x + 1\n    return y\nend\n"
     nested = "function f(x)\n    function helper()\n        0\n    end\n    y = x + 1\n    return y\nend\n"
-    hp = Dendro.subtree_hashes(first(Dendro.functions(parse(p, plain), prof)), prof)
-    hn = Dendro.subtree_hashes(first(Dendro.functions(parse(p, nested), prof)), prof)
+    ip, inn = idx(:julia, plain), idx(:julia, nested)
+    hp = Dendro.subtree_hashes(first(Dendro.functions(ip)), ip)
+    hn = Dendro.subtree_hashes(first(Dendro.functions(inn)), inn)
     @test hp == hn
 end
 
 @testset "subtree_hashes scores near-misses below identity" begin
-    p, prof = fixture(:julia)
     base = "function f(x)\n    y = x + 1\n    z = y * 2\n    return z\nend\n"
     near = "function g(t)\n    a = t + 9\n    b = a * 7\n    c = b - 1\n    return c\nend\n"
-    hf = Dendro.subtree_hashes(only(Dendro.functions(parse(p, base), prof)), prof)
-    hg = Dendro.subtree_hashes(only(Dendro.functions(parse(p, near), prof)), prof)
+    ib, inr = idx(:julia, base), idx(:julia, near)
+    hf = Dendro.subtree_hashes(only(Dendro.functions(ib)), ib)
+    hg = Dendro.subtree_hashes(only(Dendro.functions(inr)), inr)
     d = Dendro.dice(hf, hg)
     @test 0.5 < d < 1.0
 end
 
 @testset "node_histogram counts named node types" begin
-    p, prof = fixture(:julia)
-    u = only(Dendro.functions(parse(p, "function f(x)\n    y = x + 1\n    return y\nend\n"), prof))
-    hist = Dendro.node_histogram(u, prof)
+    i = idx(:julia, "function f(x)\n    y = x + 1\n    return y\nend\n")
+    u = only(Dendro.functions(i))
+    hist = Dendro.node_histogram(u, i)
     # Both walk the same named-node set, so the totals agree.
-    @test sum(values(hist)) == length(Dendro.subtree_hashes(u, prof))
+    @test sum(values(hist)) == length(Dendro.subtree_hashes(u, i))
     @test haskey(hist, "identifier")
 end
 

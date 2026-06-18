@@ -26,54 +26,52 @@
 end
 
 @testset "suppressions parsing" begin
-    p, prof = fixture(:julia)
 
     src = "# dendro-ignore\nfunction f()\nend\n"
-    dirs = Dendro.suppressions(parse(p, src), prof, src; file = "x.jl")
+    dirs = Dendro.suppressions(idx(:julia, src); file = "x.jl")
     d = only(dirs)
     @test d.scope == 1
     @test d.metrics === nothing
 
     src = "# dendro-ignore: cyclomatic, parameter_count\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(parse(p, src), prof, src; file = "x.jl"))
+    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
     @test d.scope == 1
     @test d.metrics == Set([:cyclomatic, :parameter_count])
 
     src = "# dendro-ignore-file\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(parse(p, src), prof, src; file = "x.jl"))
+    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
     @test d.scope === :file
     @test d.metrics === nothing
 
     src = "# dendro-ignore-file: cyclomatic\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(parse(p, src), prof, src; file = "x.jl"))
+    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
     @test d.scope === :file
     @test d.metrics == Set([:cyclomatic])
 
     src = "# just a comment\nfunction f()\nend\n"
-    @test isempty(Dendro.suppressions(parse(p, src), prof, src; file = "x.jl"))
+    @test isempty(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
 end
 
 @testset "suppressions typo guard" begin
-    p, prof = fixture(:julia)
+
     src = "# dendro-ignore: cyclomatc\nfunction f()\nend\n"
 
-    dirs = @test_logs (:warn,) Dendro.suppressions(parse(p, src), prof, src; file = "x.jl")
+    dirs = @test_logs (:warn,) Dendro.suppressions(idx(:julia, src); file = "x.jl")
     # The unknown token is dropped, leaving a directive that suppresses nothing.
     @test only(dirs).metrics == Set{Symbol}()
 end
 
 @testset "suppression directive with a reason" begin
-    p, prof = fixture(:julia)
 
     # A reason after a `--` delimiter is ignored, with no warning.
     src = "# dendro-ignore: cyclomatic -- it is a dispatch table\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(parse(p, src), prof, src; file = "x.jl"))
+    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
     @test d.metrics == Set([:cyclomatic])
 
     # A recognized metric still applies when followed by stray prose, rather
     # than silently suppressing nothing. The prose words warn.
     src = "# dendro-ignore: cyclomatic generated\nfunction f()\nend\n"
-    dirs = @test_logs (:warn,) Dendro.suppressions(parse(p, src), prof, src; file = "x.jl")
+    dirs = @test_logs (:warn,) Dendro.suppressions(idx(:julia, src); file = "x.jl")
     @test :cyclomatic in only(dirs).metrics
 end
 

@@ -41,10 +41,12 @@ scope by design. The line is symbol resolution, not the file boundary: comparing
 structure across files is fine, resolving what a name points at is not. Resist
 requests to make a metric smarter by reaching for meaning instead of shape.
 
-Languages are data. A `LanguageProfile` maps abstract concepts (decision points,
-nesting, comments, catch clauses) to a language's concrete node types. Adding a
-language is a profile plus an extension entry. If you find yourself special-casing
-a language inside metric code, the profile is missing a field.
+Languages are data. A tree-sitter query (`src/queries/<lang>.scm`) maps abstract
+concepts (decision points, nesting, comments, catch clauses) to a language's
+concrete node types, tagging each with a capture; one pass builds a `QueryIndex` the
+metrics read. Adding a language is a query, a `PROFILES` entry, and an extension
+entry. If you find yourself special-casing a language inside metric code, the query
+is missing a capture.
 
 The diff is the question. Whole-file analysis asks whether code is bad.
 Diff-scoping asks whether an edit made it worse, which is what review actually

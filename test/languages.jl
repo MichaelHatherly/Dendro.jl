@@ -45,41 +45,40 @@ const LANGUAGE_CASES = [
 ]
 
 @testset "cpp range-based for is a loop" begin
-    # tree-sitter-cpp parses `for (auto x : v)` as `for_range_loop`. The profile
-    # must name that node so a range-for adds to cyclomatic and nesting like any loop.
-    prof = Dendro.PROFILES[:cpp]
+    # tree-sitter-cpp parses `for (auto x : v)` as `for_range_loop`. The query must
+    # tag that node so a range-for adds to cyclomatic and nesting like any loop.
     src = "int f(std::vector<int> v){ for(auto a:v){ for(auto b:v){ g(a,b); } } return 0; }"
-    u = only(Dendro.functions(parse(Dendro.parser_for(:cpp), src), prof))
-    @test Dendro.cyclomatic(u.node, prof, src) == 3      # base + two range-fors
-    @test Dendro.nesting_depth(u.node, prof) == 2
+    i = idx(:cpp, src)
+    u = only(Dendro.functions(i))
+    @test Dendro.cyclomatic(u.node, i) == 3      # base + two range-fors
+    @test Dendro.nesting_depth(u.node, i) == 2
 end
 
 @testset "rust while-let is a loop" begin
-    # `while let` parses as `while_expression`, already in the profile, so it counts
-    # as one decision point.
-    prof = Dendro.PROFILES[:rust]
+    # `while let` parses as `while_expression`, already tagged, so it counts as one
+    # decision point.
     src = "fn f(){ while let Some(x)=it.next() { g(x); } }"
-    u = only(Dendro.functions(parse(Dendro.parser_for(:rust), src), prof))
-    @test Dendro.cyclomatic(u.node, prof, src) == 2
+    i = idx(:rust, src)
+    u = only(Dendro.functions(i))
+    @test Dendro.cyclomatic(u.node, i) == 2
 end
 
 for case in LANGUAGE_CASES
     @testset "$(case.lang) profile" begin
-        prof = Dendro.PROFILES[case.lang]
-        tree = parse(Dendro.parser_for(case.lang), case.src)
+        i = idx(case.lang, case.src)
 
-        units = Dendro.functions(tree, prof)
+        units = Dendro.functions(i)
         @test length(units) == 1
         u = only(units)
-        @test Dendro.unit_name(u, prof, case.src) == "f"
-        @test Dendro.cyclomatic(u.node, prof, case.src) == case.cyclomatic
-        @test Dendro.cognitive_complexity(u.node, prof, case.src) == case.cognitive
-        @test Dendro.parameter_count(u.node, prof) == case.params
-        @test Dendro.nesting_depth(u.node, prof) == case.nesting
+        @test Dendro.unit_name(u, i) == "f"
+        @test Dendro.cyclomatic(u.node, i) == case.cyclomatic
+        @test Dendro.cognitive_complexity(u.node, i) == case.cognitive
+        @test Dendro.parameter_count(u.node, i) == case.params
+        @test Dendro.nesting_depth(u.node, i) == case.nesting
         @test Dendro.function_length(u) == case.length
-        @test Dendro.boolean_complexity(u.node, prof, case.src) == case.boolean
-        @test Dendro.return_count(u.node, prof) == case.returns
-        @test length(Dendro.empty_catches(tree, prof)) == case.catches
-        @test length(Dendro.stub_markers(tree, prof, case.src)) == case.stubs
+        @test Dendro.boolean_complexity(u.node, i) == case.boolean
+        @test Dendro.return_count(u.node, i) == case.returns
+        @test length(Dendro.empty_catches(i)) == case.catches
+        @test length(Dendro.stub_markers(i)) == case.stubs
     end
 end

@@ -67,3 +67,25 @@ carries no parser dependencies of its own.
 parser_for(name::Symbol) = TreeSitter.Parser(language_module(name))
 parser_for(name::AbstractString) = parser_for(Symbol(lowercase(name)))
 parser_for(mod::Module) = TreeSitter.Parser(mod)
+
+# The query source directory, made relocatable so the `.scm` files resolve after
+# precompilation or when the package is moved.
+const QUERIES_DIR = RelocatableFolders.@path joinpath(@__DIR__, "queries")
+
+# Compiled queries cached per language. Populated lazily at runtime: a `Query` wraps
+# a C pointer that cannot survive precompilation, so it is built on first use.
+const QUERY_CACHE = Dict{Symbol, TreeSitter.Query}()
+
+"""
+    query_for(language) -> TreeSitter.Query
+
+The compiled node-identification query for `language`, read from
+`src/queries/<language>.scm` and cached. The language JLL loads lazily, so the
+query compiles on first use against the freshly loaded grammar.
+"""
+function query_for(name::Symbol)
+    return get!(QUERY_CACHE, name) do
+        source = read(joinpath(QUERIES_DIR, "$(name).scm"), String)
+        TreeSitter.Query(language_module(name), source)
+    end
+end

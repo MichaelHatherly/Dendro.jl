@@ -15,12 +15,12 @@ function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothin
     for path in paths
         lang = forced === nothing ? language_for_path(path) : forced
         (lang === nothing || !haskey(PROFILES, lang)) && continue
-        profile = PROFILES[lang]
         parser = get!(() -> parser_for(lang), parsers, lang)
         source = read(path, String)
         tree = parse(parser, source)
-        directives = suppressions(tree, profile, source; file = path, rules)
-        push!(files, ParsedFile(lang, profile, source, String(path), tree, directives))
+        index = build_index(tree, lang, source, query_for(lang))
+        directives = suppressions(index; file = path, rules)
+        push!(files, ParsedFile(lang, source, String(path), tree, index, directives))
     end
     return files
 end
@@ -29,7 +29,7 @@ end
 function baseline_from(files::AbstractVector{ParsedFile}, rules = BUILTIN_RULES)
     baseline = Baseline()
     for f in files
-        add_samples!(baseline, f.language, f.tree, f.profile, f.source, rules)
+        add_samples!(baseline, f.index, rules)
     end
     for samples in values(baseline.samples)
         sort!(samples)
@@ -135,8 +135,8 @@ function analyze(
             haskey(scope.ranges, rel) || continue
             within = scope.ranges[rel]
         end
-        scan = Scan(f.profile, f.source, f.file; rules, baseline = bl, cut = cut, within = within, directives = f.directives)
-        append!(findings, findings_for_tree(f.tree, scan))
+        scan = Scan(f.index, f.file; rules, baseline = bl, cut = cut, within = within, directives = f.directives)
+        append!(findings, findings_for(scan))
     end
 
     append!(findings, scope_clusters(cluster_duplicates(files; min_size), scope))

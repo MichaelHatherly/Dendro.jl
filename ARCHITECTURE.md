@@ -13,8 +13,9 @@ One scan of one file runs the same path every time.
 source text
   -> parse (TreeSitter, parser chosen by language)
   -> tree
-  -> functions(tree, profile)        units to measure
-  -> per unit: scalar rules; per tree: flag rules
+  -> build_index(tree, query)        nodes the language query identifies
+  -> functions(index)                units to measure
+  -> per unit: scalar rules; per index: flag rules
   -> score each reading (absolute band, optional corpus percentile)
   -> mark suppressed findings from inline directives
   -> Findings (a Vector{Finding} that prints as a report)
@@ -60,49 +61,57 @@ that order is load-bearing: a type must be defined before the file that uses it.
 Resolution and configuration:
 
 - `resolve.jl` maps file extensions to language names and resolves a language to a
-  parser. `parser_for` loads `tree_sitter_<lang>_jll` lazily through
-  `Base.require`, so Dendro depends on no grammars itself. A missing grammar
-  errors with an install hint.
-- `profile.jl` defines `LanguageProfile`, pure data with no parser reference. Its
-  keyword constructor takes one argument per field and defaults unused node-type
-  sets to empty.
-- `profiles.jl` holds the `LanguageProfile` instance for each supported language.
+  parser and a query. `parser_for` loads `tree_sitter_<lang>_jll` lazily through
+  `Base.require`, so Dendro depends on no grammars itself; `query_for` reads
+  `src/queries/<lang>.scm` (located through a `RelocatableFolders` path so it
+  survives precompilation) and compiles it against that grammar, caching both
+  lazily. A missing grammar errors with an install hint.
+- `profile.jl` defines `LanguageProfile`, now just a language `name`. The node types
+  it measures live in the language's query, not in this type.
+- `profiles.jl` holds the `LanguageProfile` for each supported language, the set
+  `analyze` gates a file's extension on.
+- `query_index.jl` defines `NodeId`/`nodeid`, `Concept` (the nodes a query tagged
+  for one measured construct, plus their ids for O(1) membership), `FunctionUnit`,
+  `QueryIndex`, and `build_index`, which runs a language's query over a tree once
+  and files every capture under its concept. Identification lives here: metric code
+  asks whether a node was tagged, never matches a node-type string.
 
 Measurement:
 
-- `units.jl` defines `FunctionUnit` (a node plus its 1-based first and last line),
-  `functions(tree, profile)`, which collects every callable definition, and
-  `is_function`, the predicate behind it. `is_function` recognises both a
-  `function_types` node (`function ... end`) and a short-form `f(x) = expr`, an
-  `assignment` whose left side unwraps (through `signature_wrapper_types`) to a call
-  signature (`signature_types`). Every "is this a callable" check routes through it,
-  so a nested short-form def is its own unit and is excluded from its enclosing unit's
-  metrics, clones, and tokens.
+- `units.jl` exposes the function units the query identified: `functions(index)`
+  returns them (the `index.functions` the query built), and `is_function(node,
+  index)` is the no-descend boundary, a node the query tagged `@function`. Both the
+  full form (`function ... end`) and the short form (`f(x) = expr`, including the
+  `where`/typed unwrapping) are recognised by the language query, so a nested
+  short-form def is its own unit and is excluded from its enclosing unit's metrics,
+  clones, and tokens.
 - `metrics.jl` defines the scalar metrics and `severity`: `cyclomatic`,
   `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
   `boolean_complexity`, `return_count`. `severity` classifies a value against a
   `(warn, high)` band.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
-  `unreachable_statements`, and the predicates `is_identical_operands`/
-  `is_duplicate_branches` that `flagged_nodes` collects for the matching rules. Plus
-  the helpers: `function_body` (a block child or a short-form's right-hand
-  expression), reading a body's real-work count, comparing subtrees by normalised
-  text, and collecting the blocks of one conditional chain (`branch_blocks`).
+  `unreachable_statements`, `identical_operands`, and `duplicate_branches`. Each
+  reads the nodes one concept tagged and keeps those a predicate accepts, through the
+  shared `filter_nodes`. Plus the helpers: `function_body` (a block child or a
+  short-form's right-hand expression), reading a body's real-work count, comparing
+  subtrees by normalised text, and collecting the blocks of one conditional chain
+  (`branch_blocks`).
 - `rules.jl` defines `Rule` (a metric name, kind, band, and measuring function),
   `BUILTIN_RULES` (the default set, in report order), `OPTIONAL_RULES` (off by
   default), `rules_of_kind` (the active rules of one kind), and `metric_names` (the names a directive
   may name: the active rules plus the relational clone metrics). The built-in rules
   wrap the metrics.jl/flags.jl functions; a caller's rule wraps their own.
 - `baseline.jl` defines `Baseline` over a corpus, `percentile` scoring, and
-  `add_samples!`, which samples the active rule set's scalar rules per tree.
+  `add_samples!`, which samples the active rule set's scalar rules over one file's
+  index.
 - `suppress.jl` defines inline suppression: `Directive`, `DIRECTIVE_RE`,
   `suppressions`, `parse_metrics` (validating against the active rule set's names),
   `is_suppressed`, and `line_of`.
 
 Reporting:
 
-- `report.jl` defines `Location`, `Finding`, `Scan`, `findings_for_tree`,
+- `report.jl` defines `Location`, `Finding`, `Scan`, `findings_for`,
   `Findings` (the result wrapper, an `AbstractVector{Finding}` with a `show`
   method that renders the report), and `active`. This is where measurement,
   scoring, and suppression meet. Two renderers walk `Findings`: the `show`
@@ -134,7 +143,7 @@ Reporting:
   Pure path logic, no parsing. Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
   folder for analysable files, pruning ignored paths), `parse_corpus` (parse each
-  path once into a `Vector{ParsedFile}`),
+  path once and build its query index into a `Vector{ParsedFile}`),
   `baseline_from`, `scope_clusters` (the shared diff filter for the relational
   passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
   per-file findings, exact and near duplicates, naturalness, and optional diff
@@ -143,23 +152,29 @@ Reporting:
 
 ## Core types
 
-`LanguageProfile` (`profile.jl`). Names the tree-sitter node types a language uses
-for each construct Dendro measures: function definitions, short-form definitions
-(the assignment node plus the signature wrappers and call-signature node that confirm
-one), decision points, short-circuit operators, nesting constructs, parameter lists,
-bodies, catch clauses, comments, name nodes, trivial (no-op) statements, return
-statements, finally clauses, and call expressions. Pure data. This is the only place a
-language's concrete grammar leaks in. A concept a language lacks stays an empty
-set, and a rule reading that concept finds nothing there.
+`LanguageProfile` (`profile.jl`). Just a language `name`. The set of profiles is
+what `analyze` gates a file's extension on; the node types each language uses live
+in its query, not here.
+
+`QueryIndex` (`query_index.jl`). One tree's identified nodes: the `functions` units
+and `function_ids` (the no-descend boundary), plus one `Concept` per measured
+construct (decision points, short-circuit operators, nesting, parameters, bodies,
+catches, comments, names, trivial statements, returns, finally clauses, calls,
+binary expressions, conditionals, terminals, short-form definitions). A `Concept`
+holds the tagged nodes in source order and a `Set{NodeId}` for membership. Built
+once per file by `build_index`, which runs the language query and dispatches each
+capture by name. This is the only place a language's concrete grammar leaks in: a
+construct a language lacks has no pattern, so its concept is empty and a rule
+reading it finds nothing.
 
 `Rule` (`rules.jl`). One lint check as data: a metric `name`, a `kind` (`:scalar`
 or `:flag`), a `(warn, high)` `band` for scalars, and an `fn` that measures one
-unit (scalar) or tree (flag). The active set is a `Vector{Rule}` carried by `Scan`
+unit (scalar) or the file's index (flag). The active set is a `Vector{Rule}` carried by `Scan`
 and `analyze`, so checks are a value, not module constants. Built-ins wrap the
 metrics.jl/flags.jl functions; a caller's rule wraps their own.
 
-`ParsedFile` (`parsed_file.jl`). One parsed corpus file: language, profile, source,
-path, tree-sitter tree, and inline suppression directives. `parse_corpus` builds a
+`ParsedFile` (`parsed_file.jl`). One parsed corpus file: language, source, path,
+tree-sitter tree, the query index, and inline suppression directives. `parse_corpus` builds a
 `Vector{ParsedFile}`, and the baseline, per-file scoring, and clustering passes all
 read from it, so no file is parsed twice. Concrete in every field, so the relational
 passes dispatch statically over it rather than through `getproperty(::Any)`.
@@ -199,7 +214,7 @@ it filters, iterates, and indexes like any vector, with a `show` method that
 renders the report. The wrapper exists so display lives on a Dendro-owned type
 rather than pirating `show` for `Vector{Finding}`.
 
-`Scan` (`report.jl`). The fixed context for analysing one file: profile, source,
+`Scan` (`report.jl`). The fixed context for analysing one file: the query index,
 path, the active `rules`, optional baseline, cut percentile, optional diff line
 ranges, and the parsed directives. New per-file analysis state belongs here, passed
 through the keyword constructor, rather than as a new parameter to `unit_findings!`
@@ -292,13 +307,14 @@ unsuppressed findings for gating.
 - Metrics are syntactic, with no symbol resolution. Per-file metrics are scoped to
   one file's tree; duplicate detection, exact and near, is what spans files, and it
   still compares only structure.
-- Adding a language is data only: a `LanguageProfile` in `profiles.jl` and an
-  extension entry in `resolve.jl`. No metric code changes. If a metric needs a
-  language special case, the profile is missing a field; add the field.
+- Adding a language is data only: a query in `src/queries/<lang>.scm`, a
+  `LanguageProfile` entry in `profiles.jl`, and an extension entry in `resolve.jl`.
+  No metric code changes. If a metric needs a language special case, the query is
+  missing a capture; add the pattern.
 - A check is a `Rule`: a measuring function plus its metadata. Adding a built-in is
   a `metrics.jl`/`flags.jl` function and a `BUILTIN_RULES` entry. The rule set is a
   value, so a caller adds checks through `analyze`'s `rules` without forking. A rule
-  reads node types through the profile, never a raw node-type string, so it stays
+  reads nodes through the index's concepts, never a raw node-type string, so it stays
   language-agnostic.
 - Analysis state travels inside `Scan`, not as new positional parameters.
 

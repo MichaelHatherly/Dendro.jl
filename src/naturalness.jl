@@ -40,26 +40,26 @@ token_of(node::TreeSitter.Node, source::AbstractString) =
     String(strip(TreeSitter.slice(source, node)))
 
 """
-    token_stream(unit, profile, source) -> Vector{String}
+    token_stream(unit, index) -> Vector{String}
 
 The pre-order leaf tokens of a function unit, stopping at nested callables so each
 is scored on its own. Each token abstracts identifier and literal text but keeps the
 grammar's anonymous tokens, the shape an n-gram model reads.
 """
-function token_stream(unit::FunctionUnit, profile::LanguageProfile, source::AbstractString)
-    tokens = String[]
-    collect_tokens!(tokens, unit.node, profile, source)
-    return tokens
-end
+# Shares the `collect_unit` entry shape with `subtrees`; the collectors and element
+# types differ, so the one-line wrappers collide with nothing to extract.
+# dendro-ignore: duplicate
+token_stream(unit::FunctionUnit, index::QueryIndex) =
+    collect_unit(collect_tokens!, String, unit, index)
 
-function collect_tokens!(tokens::Vector{String}, node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
+function collect_tokens!(tokens::Vector{String}, node::TreeSitter.Node, index::QueryIndex)
     if TreeSitter.is_leaf(node)
-        push!(tokens, token_of(node, source))
+        push!(tokens, token_of(node, index.source))
         return tokens
     end
     for c in TreeSitter.children(node)
-        is_function(c, profile) && continue
-        collect_tokens!(tokens, c, profile, source)
+        is_function(c, index) && continue
+        collect_tokens!(tokens, c, index)
     end
     return tokens
 end
@@ -139,9 +139,9 @@ end
 function naturalness_units(files::AbstractVector{ParsedFile})
     bylang = Dict{Symbol, Vector{NaturalnessUnit}}()
     for f in files
-        for unit in functions(f.tree, f.profile)
-            tokens = token_stream(unit, f.profile, f.source)
-            loc = Location(f.file, unit.firstline, unit_name(unit, f.profile, f.source))
+        for unit in functions(f.index)
+            tokens = token_stream(unit, f.index)
+            loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
             sup = is_suppressed(f.directives, unit.firstline, :unnatural)
             push!(get!(() -> NaturalnessUnit[], bylang, f.language), NaturalnessUnit(tokens, loc, sup))
         end

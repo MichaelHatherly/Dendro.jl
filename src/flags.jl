@@ -12,29 +12,29 @@ const IDEMPOTENT_OPS = Set{String}(["+", "*", "**", "<<", ">>", "!=", "!=="])
 normalized_text(node::TreeSitter.Node, source::AbstractString) =
     replace(strip(TreeSitter.slice(source, node)), r"\s+" => " ")
 
-# First direct child of `node` whose type is in `types`, or `nothing`.
-function first_child_of(node::TreeSitter.Node, types::Set{String})
+# First direct child of `node` that the query tagged for `concept`, or `nothing`.
+function first_child_in(node::TreeSitter.Node, concept::Concept)
     for c in TreeSitter.children(node)
-        TreeSitter.node_type(c) in types && return c
+        c in concept && return c
     end
     return nothing
 end
 
 # Named children of a body that do real work, ignoring no-op statements like
 # `pass`. A body is effectively empty when this count is zero.
-function nontrivial_count(body::TreeSitter.Node, profile::LanguageProfile)
+function nontrivial_count(body::TreeSitter.Node, index::QueryIndex)
     n = 0
     for c in TreeSitter.children(body)
         TreeSitter.is_named(c) || continue
-        TreeSitter.node_type(c) in profile.trivial_body_types || (n += 1)
+        c in index.trivial_body || (n += 1)
     end
     return n
 end
 
 # True when a body node is missing or does no real work.
-function empty_block(body, profile::LanguageProfile)
+function empty_block(body, index::QueryIndex)
     body === nothing && return true
-    return nontrivial_count(body, profile) == 0
+    return nontrivial_count(body, index) == 0
 end
 
 # Last named child of `node`, or `nothing`.
@@ -49,46 +49,40 @@ end
 # A function's body: its block child (`function ... end`), or the right-hand
 # expression of a short-form `f(x) = expr`. `nothing` for a function with neither,
 # a genuinely bodyless declaration.
-function function_body(node::TreeSitter.Node, profile::LanguageProfile)
-    block = first_child_of(node, profile.body_types)
+function function_body(node::TreeSitter.Node, index::QueryIndex)
+    block = first_child_in(node, index.body)
     block === nothing || return block
-    TreeSitter.node_type(node) in profile.short_function_types || return nothing
+    # A short form has no block; its body is the right-hand side. A block-less
+    # function that is not a short form (an abstract method) is genuinely bodyless.
+    node in index.short_function || return nothing
     return last_named_child(node)
 end
 
 """
-    empty_body(node, profile) -> Bool
+    empty_body(node, index) -> Bool
 
 True when the function `node` has no body, or a block body that does no real work. A
 short-form `f(x) = expr` has an expression body, which always does work, so it is
 never empty.
 """
-function empty_body(node::TreeSitter.Node, profile::LanguageProfile)
-    body = function_body(node, profile)
+function empty_body(node::TreeSitter.Node, index::QueryIndex)
+    body = function_body(node, index)
     body === nothing && return true
-    TreeSitter.node_type(body) in profile.body_types && return empty_block(body, profile)
+    body in index.body && return empty_block(body, index)
     return false
 end
 
-# Nodes matching `match`, or none without descending when `types` is empty: a language
-# whose grammar lacks the relevant node types can hold no match, so the walk is skipped.
-function flagged_nodes(match::M, tree::TreeSitter.Tree, profile::LanguageProfile, source::AbstractString, types::Set{String}) where {M}
-    isempty(types) && return TreeSitter.Node[]
-    return collect_tree(match, tree, profile, source)
-end
-
 """
-    is_identical_operands(node, profile, source) -> Bool
+    is_identical_operands(node, index) -> Bool
 
-True when `node` is a binary expression (`profile.binary_expr_types`) whose two
-operands are textually identical, like `x == x` or `a && a`. The duplication is almost
-always a mistake: a comparison that is always true or false, a redundant boolean.
-Operators where equal operands are ordinary (`profile`-independent: `+`, `*`, shifts,
-`!=` for a NaN check) are left alone. The `:identical_operands` rule reports one
-finding per match.
+True when `node` is a binary expression whose two operands are textually identical,
+like `x == x` or `a && a`. The duplication is almost always a mistake: a comparison
+that is always true or false, a redundant boolean. Operators where equal operands
+are ordinary (`+`, `*`, shifts, `!=` for a NaN check) are left alone. The
+`:identical_operands` rule reports one finding per match.
 """
-function is_identical_operands(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
-    TreeSitter.node_type(node) in profile.binary_expr_types || return false
+function is_identical_operands(node::TreeSitter.Node, index::QueryIndex)
+    source = index.source
     kids = collect(TreeSitter.named_children(node))
     return length(kids) >= 2 &&
         normalized_text(first(kids), source) == normalized_text(last(kids), source) &&
@@ -100,126 +94,129 @@ end
 # conditional, loop, or function. Conservative by design: a chain a grammar nests
 # rather than flattens (an `else if` parsed as an `if` inside an `else`) yields only
 # the branches reachable without crossing a fresh construct.
-function branch_blocks(node::TreeSitter.Node, profile::LanguageProfile)
+function branch_blocks(node::TreeSitter.Node, index::QueryIndex)
     blocks = TreeSitter.Node[]
-    collect_branch_blocks!(blocks, node, profile)
+    collect_branch_blocks!(blocks, node, index)
     return blocks
 end
 
-function collect_branch_blocks!(blocks, node::TreeSitter.Node, profile::LanguageProfile)
+function collect_branch_blocks!(blocks, node::TreeSitter.Node, index::QueryIndex)
     for c in TreeSitter.children(node)
-        t = TreeSitter.node_type(c)
-        if t in profile.body_types
+        if c in index.body
             push!(blocks, c)
-        elseif is_function(c, profile) || t in profile.nesting_types
+        elseif is_function(c, index) || c in index.nesting
             continue
         else
-            collect_branch_blocks!(blocks, c, profile)
+            collect_branch_blocks!(blocks, c, index)
         end
     end
     return blocks
 end
 
 """
-    is_duplicate_branches(node, profile, source) -> Bool
+    is_duplicate_branches(node, index) -> Bool
 
-True when `node` is a conditional (`profile.conditional_types`) whose branches are all
-textually identical: every arm of an `if`/`else` chain or `switch` runs the same code,
-so the condition decides nothing. At least two arms must be present to compare. The
-`:duplicate_branches` rule reports one finding per match.
+True when `node` is a conditional whose branches are all textually identical: every
+arm of an `if`/`else` chain or `switch` runs the same code, so the condition decides
+nothing. At least two arms must be present to compare. The `:duplicate_branches`
+rule reports one finding per match.
 """
-function is_duplicate_branches(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
-    TreeSitter.node_type(node) in profile.conditional_types || return false
-    blocks = branch_blocks(node, profile)
+function is_duplicate_branches(node::TreeSitter.Node, index::QueryIndex)
+    blocks = branch_blocks(node, index)
     length(blocks) >= 2 || return false
-    texts = [normalized_text(b, source) for b in blocks]
+    texts = [normalized_text(b, index.source) for b in blocks]
     return all(==(first(texts)), texts)
 end
 
-"""
-    unreachable_statements(tree, profile) -> Vector{TreeSitter.Node}
+# Tagged nodes of one concept that `pred` accepts, the shape every node-filtering
+# flag rule shares.
+filter_nodes(pred::P, concept::Concept, index::QueryIndex) where {P} =
+    [n for n in concept.nodes if pred(n, index)]
 
-Statements that follow an unconditional control-flow terminator
-(`profile.terminal_types`: `return`, `break`, `throw`) in the same block, and so can
-never run. One finding per block, anchored on the first dead statement.
 """
-function unreachable_statements(tree::TreeSitter.Tree, profile::LanguageProfile)
+    identical_operands(index) -> Vector{TreeSitter.Node}
+
+Binary expressions whose two operands are textually identical.
+"""
+# The node-filtering flag rules are each one `filter_nodes` call over a different
+# concept and predicate, so they share a shape with nothing left to extract.
+# dendro-ignore: duplicate
+identical_operands(index::QueryIndex) =
+    filter_nodes(is_identical_operands, index.binary_expr, index)
+
+"""
+    duplicate_branches(index) -> Vector{TreeSitter.Node}
+
+Conditionals whose branches are all textually identical.
+"""
+duplicate_branches(index::QueryIndex) =
+    filter_nodes(is_duplicate_branches, index.conditional, index)
+
+"""
+    unreachable_statements(index) -> Vector{TreeSitter.Node}
+
+Statements that follow an unconditional control-flow terminator (`return`, `break`,
+`throw`) in the same block, and so can never run. One finding per block, anchored on
+the first dead statement.
+"""
+function unreachable_statements(index::QueryIndex)
     out = TreeSitter.Node[]
-    isempty(profile.terminal_types) && return out
-    for body in collect_typed(tree, profile, profile.body_types)
+    for body in index.body.nodes
         terminated = false
         for c in TreeSitter.children(body)
-            (TreeSitter.is_named(c) && !(TreeSitter.node_type(c) in profile.comment_types)) || continue
-            t = TreeSitter.node_type(c)
-            if terminated && !(t in profile.trivial_body_types)
+            (TreeSitter.is_named(c) && !(c in index.comment)) || continue
+            if terminated && !(c in index.trivial_body)
                 push!(out, c)
                 break
             end
-            t in profile.terminal_types && (terminated = true)
+            c in index.terminal && (terminated = true)
         end
     end
     return out
 end
 
 """
-    empty_bodies(tree, profile) -> Vector{TreeSitter.Node}
+    empty_bodies(index) -> Vector{TreeSitter.Node}
 
 Function nodes with no body, or a body that does no real work.
 """
-empty_bodies(tree::TreeSitter.Tree, profile::LanguageProfile) =
-    [u.node for u in functions(tree, profile) if empty_body(u.node, profile)]
+empty_bodies(index::QueryIndex) =
+    [u.node for u in functions(index) if empty_body(u.node, index)]
 
 """
-    empty_catches(tree, profile) -> Vector{TreeSitter.Node}
+    empty_catches(index) -> Vector{TreeSitter.Node}
 
 Exception-handling clauses with an empty or absent body, which swallow errors.
 """
-empty_catches(tree::TreeSitter.Tree, profile::LanguageProfile) =
-    collect_tree(is_empty_catch, tree, profile, "")
-
-is_empty_catch(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString) =
-    TreeSitter.node_type(node) in profile.catch_types &&
-    empty_block(first_child_of(node, profile.body_types), profile)
+empty_catches(index::QueryIndex) =
+    [n for n in index.catch_clause.nodes if empty_block(first_child_in(n, index.body), index)]
 
 """
-    stub_markers(tree, profile, source) -> Vector{TreeSitter.Node}
+    stub_markers(index) -> Vector{TreeSitter.Node}
 
 Comment nodes carrying a stub marker (`TODO`, `FIXME`, `XXX`, `HACK`).
 """
-stub_markers(tree::TreeSitter.Tree, profile::LanguageProfile, source::AbstractString) =
-    collect_tree(is_stub_comment, tree, profile, source)
-
-# Shares the `node-type check && condition` shape of is_empty_catch but no logic: a
-# catch-emptiness test versus a stub-marker regex. The verbose typed signature
-# dominates the structural hash, so the two read as a near-miss with nothing to extract.
-# dendro-ignore: near_duplicate
-is_stub_comment(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString) =
-    TreeSitter.node_type(node) in profile.comment_types &&
-    occursin(STUB_PATTERN, TreeSitter.slice(source, node))
+stub_markers(index::QueryIndex) =
+    [n for n in index.comment.nodes if occursin(STUB_PATTERN, TreeSitter.slice(index.source, n))]
 
 """
-    returns_in_finally(tree, profile) -> Vector{TreeSitter.Node}
+    returns_in_finally(index) -> Vector{TreeSitter.Node}
 
-Return statements inside a finally/ensure clause (`profile.finally_types`), which
-discard a pending exception or return value. Empty for a language with no finally
-construct.
+Return statements inside a finally/ensure clause, which discard a pending exception
+or return value. Empty for a language with no finally construct.
 """
-function returns_in_finally(tree::TreeSitter.Tree, profile::LanguageProfile)
-    (isempty(profile.finally_types) || isempty(profile.return_types)) && return TreeSitter.Node[]
-    return collect_tree(is_return_in_finally, tree, profile, "")
-end
+returns_in_finally(index::QueryIndex) =
+    filter_nodes(is_return_in_finally, index.return_stmt, index)
 
 # A return whose nearest enclosing finally/function ancestor is a finally. Walking up
 # `parent`, a finally seen before any function means the return runs in that finally;
 # a function seen first means the return belongs to a nested callable, excluded. This
-# matches the old "stop at a nested callable" descent exactly.
-function is_return_in_finally(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
-    TreeSitter.node_type(node) in profile.return_types || return false
+# matches a "stop at a nested callable" descent exactly.
+function is_return_in_finally(node::TreeSitter.Node, index::QueryIndex)
     p = TreeSitter.parent(node)
     while !TreeSitter.is_null(p)
-        t = TreeSitter.node_type(p)
-        t in profile.finally_types && return true
-        is_function(p, profile) && return false
+        p in index.finally_clause && return true
+        is_function(p, index) && return false
         p = TreeSitter.parent(p)
     end
     return false
@@ -227,32 +224,32 @@ end
 
 # True when a statement is, or directly wraps, a single call: a bare call, or a
 # return/expression statement whose only named child is a call.
-function single_call(stmt::TreeSitter.Node, profile::LanguageProfile)
-    TreeSitter.node_type(stmt) in profile.call_types && return true
+function single_call(stmt::TreeSitter.Node, index::QueryIndex)
+    stmt in index.call && return true
     kids = collect(TreeSitter.named_children(stmt))
-    return length(kids) == 1 && TreeSitter.node_type(only(kids)) in profile.call_types
+    return length(kids) == 1 && only(kids) in index.call
 end
 
 """
-    trivial_wrappers(tree, profile) -> Vector{TreeSitter.Node}
+    trivial_wrappers(index) -> Vector{TreeSitter.Node}
 
 Function nodes whose body is one delegating call, an indirection that adds no
 behaviour. Empty for a language with no call-expression concept.
 """
-function trivial_wrappers(tree::TreeSitter.Tree, profile::LanguageProfile)
+function trivial_wrappers(index::QueryIndex)
     out = TreeSitter.Node[]
-    isempty(profile.call_types) && return out
-    for u in functions(tree, profile)
-        body = function_body(u.node, profile)
+    isempty(index.call.ids) && return out
+    for u in functions(index)
+        body = function_body(u.node, index)
         body === nothing && continue
-        if TreeSitter.node_type(body) in profile.body_types
+        if body in index.body
             stmts = [
                 c for c in TreeSitter.children(body)
-                    if TreeSitter.is_named(c) && !(TreeSitter.node_type(c) in profile.trivial_body_types)
+                    if TreeSitter.is_named(c) && !(c in index.trivial_body)
             ]
-            length(stmts) == 1 && single_call(only(stmts), profile) && push!(out, u.node)
+            length(stmts) == 1 && single_call(only(stmts), index) && push!(out, u.node)
         else
-            single_call(body, profile) && push!(out, u.node)
+            single_call(body, index) && push!(out, u.node)
         end
     end
     return out

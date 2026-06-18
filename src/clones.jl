@@ -26,20 +26,22 @@ Every named subtree of a function unit, bottom-up, stopping at nested callables 
 each is its own unit. The last entry is the unit's own node, the whole-function
 subtree.
 """
-function subtrees(unit::FunctionUnit, profile::LanguageProfile)
-    acc = Subtree[]
-    collect_subtrees!(acc, unit.node, profile)
-    return acc
-end
+# Collect a unit's nodes into a fresh vector via `collector!`, which fills it walking
+# from the unit's node and stopping at nested callables.
+collect_unit(collector!::F, ::Type{T}, unit::FunctionUnit, index::QueryIndex) where {F, T} =
+    (acc = T[]; collector!(acc, unit.node, index); acc)
+
+subtrees(unit::FunctionUnit, index::QueryIndex) =
+    collect_unit(collect_subtrees!, Subtree, unit, index)
 
 # Push every named subtree of `node` into `acc`, returning `node`'s own so a parent
 # can fold its hash and size in.
-function collect_subtrees!(acc::Vector{Subtree}, node::TreeSitter.Node, profile::LanguageProfile)
+function collect_subtrees!(acc::Vector{Subtree}, node::TreeSitter.Node, index::QueryIndex)
     h = hash(TreeSitter.node_type(node))
     size = 1
     for c in TreeSitter.named_children(node)
-        is_function(c, profile) && continue
-        child = collect_subtrees!(acc, c, profile)
+        is_function(c, index) && continue
+        child = collect_subtrees!(acc, c, index)
         h = hash(child.hash, h)
         size += child.size
     end
@@ -59,11 +61,11 @@ function histogram_of(st::Vector{Subtree})
 end
 
 # Sorted multiset of a function's subtree hashes, the input to Dice.
-subtree_hashes(unit::FunctionUnit, profile::LanguageProfile) =
-    sort!([s.hash for s in subtrees(unit, profile)])
+subtree_hashes(unit::FunctionUnit, index::QueryIndex) =
+    sort!([s.hash for s in subtrees(unit, index)])
 
-node_histogram(unit::FunctionUnit, profile::LanguageProfile) =
-    histogram_of(subtrees(unit, profile))
+node_histogram(unit::FunctionUnit, index::QueryIndex) =
+    histogram_of(subtrees(unit, index))
 
 """
     dice(a, b) -> Float64
@@ -96,10 +98,9 @@ end
 # boilerplate, a couple of counter updates, coincides across unrelated code, while a
 # whole small function is already a meaningful unit. Expressions and lone statements
 # never anchor, so a recurring call shape is not a finding.
-function anchor_floor(node::TreeSitter.Node, profile::LanguageProfile, min_size::Integer)
-    t = TreeSitter.node_type(node)
-    is_function(node, profile) && return min_size
-    t in profile.body_types && return 2 * min_size
+function anchor_floor(node::TreeSitter.Node, index::QueryIndex, min_size::Integer)
+    is_function(node, index) && return min_size
+    node in index.body && return 2 * min_size
     return nothing
 end
 
@@ -132,10 +133,10 @@ function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer
     buckets = Dict{Tuple{Symbol, UInt64}, Vector{Int}}()
     anchor_at = Dict{Tuple{String, Int, Int}, Int}()
     for f in files
-        for unit in functions(f.tree, f.profile)
-            name = unit_name(unit, f.profile, f.source)
-            for s in subtrees(unit, f.profile)
-                floor = anchor_floor(s.node, f.profile, min_size)
+        for unit in functions(f.index)
+            name = unit_name(unit, f.index)
+            for s in subtrees(unit, f.index)
+                floor = anchor_floor(s.node, f.index, min_size)
                 (floor === nothing || s.size < floor) && continue
                 line = Int(TreeSitter.start_point(s.node).row) + 1
                 sup = is_suppressed(f.directives, line, :duplicate)
@@ -288,11 +289,11 @@ function cluster_near_duplicates(
     )
     units = CloneUnit[]
     for f in files
-        for unit in functions(f.tree, f.profile)
-            st = subtrees(unit, f.profile)
+        for unit in functions(f.index)
+            st = subtrees(unit, f.index)
             root = st[end]
             root.size < min_size && continue
-            loc = Location(f.file, unit.firstline, unit_name(unit, f.profile, f.source))
+            loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
             sup = is_suppressed(f.directives, unit.firstline, :near_duplicate)
             hashes = sort!([s.hash for s in st])
             push!(units, CloneUnit(f.language, loc, sup, hashes, histogram_of(st), root.hash, root.size))

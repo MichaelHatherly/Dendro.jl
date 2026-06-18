@@ -6,15 +6,15 @@
 """
     ParsedFile
 
-One parsed file in the corpus: its `language`, the resolved `profile`, the raw
-`source`, the `file` path, the tree-sitter `tree`, and the inline suppression
-`directives` found in it.
+One parsed file in the corpus: its `language`, the raw `source`, the `file` path,
+the tree-sitter `tree`, the `index` of nodes the language query identified, and the
+inline suppression `directives` found in it.
 """
 struct ParsedFile
     language::Symbol
-    profile::LanguageProfile
     source::String
     file::String
     tree::TreeSitter.Tree
+    index::QueryIndex
     directives::Vector{Directive}
 end

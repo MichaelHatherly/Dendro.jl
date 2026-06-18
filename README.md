@@ -211,31 +211,24 @@ Patterns apply to folder scans, not a single named file.
 ## Custom rules
 
 A rule is a `Rule`: a metric name, its kind (`:scalar` or `:flag`), a `(warn, high)`
-band for scalars, and a function that measures one unit or tree. The defaults live
-in `BUILTIN_RULES`; pass `rules` to `analyze` to extend them.
+band for scalars, and a function that measures one unit or the file's index. The
+defaults live in `BUILTIN_RULES`; pass `rules` to `analyze` to extend them.
 
 ```julia
 using Dendro: analyze, Rule, BUILTIN_RULES
 
-# A flag rule reports one finding per node it returns from (tree, profile, source).
-# This one flags comments carrying a BUG marker.
-function bug_markers(tree, profile, source)
-    out = TreeSitter.Node[]
-    TreeSitter.traverse(tree) do n, enter
-        if enter && TreeSitter.node_type(n) in profile.comment_types
-            occursin("BUG", TreeSitter.slice(source, n)) && push!(out, n)
-        end
-        nothing
-    end
-    return out
-end
+# A flag rule reports one finding per node it returns from (index). The index's
+# concepts are the nodes the language query tagged. This one flags comments carrying
+# a BUG marker.
+bug_markers(index) =
+    [n for n in index.comment.nodes if occursin("BUG", TreeSitter.slice(index.source, n))]
 
 analyze("src"; rules = [BUILTIN_RULES; Rule(:bug_marker, :flag, nothing, bug_markers)])
 ```
 
-A scalar rule's function is `(unit, profile, source) -> Int`; its value is scored
-against the band and the corpus percentile like any built-in. A rule reads node
-types through the `LanguageProfile`, so one definition works across languages.
+A scalar rule's function is `(unit, index) -> Int`; its value is scored against the
+band and the corpus percentile like any built-in. A rule reads nodes through the
+index's concepts, never a node-type string, so one definition works across languages.
 
 `OPTIONAL_RULES` holds rules that are off by default: `return_count` (return points
 per function, which needs per-project band tuning) and `trivial_wrapper` (a function
