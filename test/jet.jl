@@ -13,10 +13,6 @@ JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 # Julia version the limits were measured against, and skips elsewhere.
 const JET_JULIA = v"1.12"
 const SOUND_LIMIT = 446   # JET.report_package(Dendro; mode = :sound)
-# Lowered from 449: query-driven identification dropped the node-type `Set` plumbing
-# the old profiles threaded through every metric.
-# Raised from 5: building a QueryIndex dispatches on capture-name strings and walks
-# the query's capture generator, one new dynamic-dispatch site under `analyze`.
 const OPT_LIMIT = 6       # JET.report_opt on analyze(::String), scoped to Dendro
 
 if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

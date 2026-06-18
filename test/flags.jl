@@ -77,6 +77,8 @@ end
     @test dead(:python, "def f():\n    return 1\n    g()\n") == 1
     @test dead(:javascript, "function f() { return 1; g(); }") == 1
     @test dead(:javascript, "function f() { return 1; }") == 0
+    # PHP `throw` is an expression wrapped in a statement, still a terminator.
+    @test dead(:php, "<?php function f() { throw new Exception(); g(); }") == 1
 end
 
 @testset "stub_markers (julia)" begin

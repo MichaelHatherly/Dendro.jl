@@ -35,3 +35,7 @@
 [(if_statement) (switch_statement)] @conditional
 
 [(return_statement) (break_statement) (continue_statement)] @terminal
+
+; `throw` is an expression wrapped in a statement; tag the statement so code after
+; it in the same block reads as unreachable.
+(expression_statement (throw_expression)) @terminal
