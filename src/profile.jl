@@ -9,6 +9,9 @@ measures.
 
 - `function_types`: nodes that define a callable unit.
 - `decision_types`: branch points counted for cyclomatic complexity.
+- `continuation_types`: dedicated else-if clauses (`elseif`, `elif`) a grammar nests
+  inside their parent conditional. Counted as a branch point, but scored as a flat
+  increment in cognitive complexity rather than a deeper nested one.
 - `short_circuit_ops`: operator texts (`"&&"`, `"||"`) that add a branch.
 - `nesting_types`: control constructs that introduce a level of nesting.
 - `parameter_types`: the node that holds a function's parameter list.
@@ -32,6 +35,7 @@ struct LanguageProfile
     name::Symbol
     function_types::Set{String}
     decision_types::Set{String}
+    continuation_types::Set{String}
     short_circuit_ops::Set{String}
     nesting_types::Set{String}
     parameter_types::Set{String}
@@ -56,6 +60,7 @@ function LanguageProfile(
     decision_types,
     body_types,
     name_types,
+    continuation_types = String[],
     short_circuit_ops = String[],
     nesting_types = String[],
     parameter_types = String[],
@@ -73,6 +78,7 @@ function LanguageProfile(
         name,
         Set{String}(function_types),
         Set{String}(decision_types),
+        Set{String}(continuation_types),
         Set{String}(short_circuit_ops),
         Set{String}(nesting_types),
         Set{String}(parameter_types),

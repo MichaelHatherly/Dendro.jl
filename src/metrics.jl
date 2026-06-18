@@ -192,8 +192,10 @@ end
 A structural reading of how hard a function is to follow, after SonarSource's
 Cognitive Complexity. Each decision point (`profile.decision_types`) adds one plus
 the nesting (`profile.nesting_types`) it sits under, so a branch three levels deep
-costs more than a flat one of the same cyclomatic count. Each maximal run of one
-short-circuit operator adds one; an operator change starts a new run.
+costs more than a flat one of the same cyclomatic count. An else-if continuation
+(`profile.continuation_types`) adds a flat one instead, since it reads at the same
+level as the `if` it extends. Each maximal run of one short-circuit operator adds
+one; an operator change starts a new run.
 """
 function cognitive_complexity(node::TreeSitter.Node, profile::LanguageProfile, source::AbstractString)
     score = 0
@@ -202,7 +204,11 @@ function cognitive_complexity(node::TreeSitter.Node, profile::LanguageProfile, s
         TreeSitter.is_named(n) || return nothing
         t = TreeSitter.node_type(n)
         if enter
-            t in profile.decision_types && (score += 1 + nesting)
+            if t in profile.continuation_types
+                score += 1
+            elseif t in profile.decision_types
+                score += 1 + nesting
+            end
             t in profile.nesting_types && (nesting += 1)
         else
             t in profile.nesting_types && (nesting -= 1)

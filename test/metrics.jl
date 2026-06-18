@@ -207,6 +207,30 @@ end
     @test Dendro.cognitive_complexity(outer.node, prof, closure) == 1
 end
 
+@testset "cognitive_complexity scores else-if chains flat" begin
+    # SonarSource scores each condition in an if/else-if chain as a flat +1: the
+    # continuation is not deeper nested code. `if/elseif/elseif` costs 3, not the
+    # 1 + 2 + 2 a naive "decision plus nesting" reading would charge.
+    jl = "function f(x)\n if x>0\n a()\n elseif x>1\n b()\n elseif x>2\n c()\n end\nend\n"
+    pj, prof_jl = fixture(:julia)
+    uj = only(Dendro.functions(parse(pj, jl), prof_jl))
+    @test Dendro.cognitive_complexity(uj.node, prof_jl, jl) == 3
+    # Each arm is still an independent path, so cyclomatic keeps counting them.
+    @test Dendro.cyclomatic(uj.node, prof_jl, jl) == 4
+
+    # Python's dedicated `elif_clause` scores the same way.
+    py = "def f(x):\n    if x>0:\n        a()\n    elif x>1:\n        b()\n    elif x>2:\n        c()\n"
+    pp, prof_py = fixture(:python)
+    up = only(Dendro.functions(parse(pp, py), prof_py))
+    @test Dendro.cognitive_complexity(up.node, prof_py, py) == 3
+
+    # A decision genuinely nested under the chain still pays the nesting penalty:
+    # the `for` sits one level deep inside the elseif body, so it costs +2.
+    nested = "function f(x)\n if x>0\n a()\n elseif x>1\n for i in 1:x\n g(i)\n end\n end\nend\n"
+    un = only(Dendro.functions(parse(pj, nested), prof_jl))
+    @test Dendro.cognitive_complexity(un.node, prof_jl, nested) == 4  # if(1) + elseif(1) + for(2)
+end
+
 @testset "absolute severity bands" begin
     # Classification against a (warn, high) band.
     @test Dendro.severity(10, (11, 21)) == :ok
