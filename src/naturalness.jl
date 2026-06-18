@@ -179,6 +179,6 @@ function cluster_unnatural(
     for units in values(naturalness_units(files))
         unnatural_in_language!(findings, units, band, cut, min_tokens)
     end
-    sort!(findings; by = f -> (-f.value, first(f.locations).file, first(f.locations).line))
+    sort!(findings; by = f -> (-something(f.value), first(f.locations).file, first(f.locations).line))
     return findings
 end

@@ -86,8 +86,8 @@ in_scope(scan::Scan, line::Int) = scan.within === nothing || inrange(scan.within
 function unit_findings!(out, scan::Scan, unit::FunctionUnit)
     name = unit_name(unit, scan.profile, scan.source)
     for r in scalar_rules(scan.rules)
-        value = r.fn(unit, scan.profile, scan.source)
-        band = severity(value, r.band)
+        value = r.fn(unit, scan.profile, scan.source)::Int
+        band = severity(value, something(r.band))
         pct = scan.baseline === nothing ? nothing :
             percentile(scan.baseline, scan.profile.name, r.name, value)
         outlier = pct !== nothing && pct >= scan.cut

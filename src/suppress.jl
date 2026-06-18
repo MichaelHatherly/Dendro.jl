@@ -56,8 +56,9 @@ function suppressions(tree, profile::LanguageProfile, source::AbstractString; fi
             text = TreeSitter.slice(source, n)
             for m in eachmatch(DIRECTIVE_RE, text)
                 scope = m.captures[1] === nothing ? line_of(n) : :file
-                metrics = m.captures[2] === nothing ? nothing :
-                    parse_metrics(m.captures[2], valid, file, line_of(n))
+                names = m.captures[2]
+                metrics = names === nothing ? nothing :
+                    parse_metrics(names, valid, file, line_of(n))
                 push!(out, Directive(scope, metrics))
             end
         end

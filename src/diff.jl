@@ -56,9 +56,10 @@ function changed_ranges(diff::AbstractString)
             # A combined diff (`@@@`, from a merge conflict) is not the two-side
             # format this reads. Skip its header rather than deref a failed match.
             m === nothing && continue
-            curnew = parse(Int, m.captures[2])
-            oldleft = m.captures[1] === nothing ? 1 : parse(Int, m.captures[1])
-            newleft = m.captures[3] === nothing ? 1 : parse(Int, m.captures[3])
+            oldcount, newstart, newcount = m.captures[1], m.captures[2], m.captures[3]
+            curnew = parse(Int, something(newstart))
+            oldleft = oldcount === nothing ? 1 : parse(Int, oldcount)
+            newleft = newcount === nothing ? 1 : parse(Int, newcount)
         elseif oldleft > 0 || newleft > 0
             e = body_line_effect(isempty(ln) ? ' ' : ln[1])
             e.added && push!(get!(() -> Int[], added, file), curnew)

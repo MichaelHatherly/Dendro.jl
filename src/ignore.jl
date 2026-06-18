@@ -65,7 +65,7 @@ dropped.
 function compile_ignores(patterns)
     out = IgnorePattern[]
     for raw in patterns
-        pat = String(raw)
+        pat = String(raw)::String
         negated = startswith(pat, '!')
         negated && (pat = pat[nextind(pat, firstindex(pat)):end])
         dir_only = endswith(pat, '/')
