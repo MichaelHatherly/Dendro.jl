@@ -117,9 +117,10 @@ end
     is_duplicate_branches(node, index) -> Bool
 
 True when `node` is a conditional whose branches are all textually identical: every
-arm of an `if`/`else` chain or `switch` runs the same code, so the condition decides
-nothing. At least two arms must be present to compare. The `:duplicate_branches`
-rule reports one finding per match.
+arm of an `if`/`else` chain runs the same code, so the condition decides nothing. At
+least two arms must be present to compare. The `:duplicate_branches` rule reports one
+finding per match. A `switch`/`case` is not compared: its arms carry their statements
+directly, with no per-arm body block to set against each other.
 """
 function is_duplicate_branches(node::TreeSitter.Node, index::QueryIndex)
     blocks = branch_blocks(node, index)
