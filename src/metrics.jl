@@ -170,6 +170,184 @@ function op_run_step(node::TreeSitter.Node, index::QueryIndex, parent_op::String
     return (op == parent_op ? 0 : 1), op
 end
 
+# NPath grows multiplicatively and overflows fast; PMD's int version produced false
+# negatives when a huge method wrapped below the threshold. The count saturates here
+# instead. Inputs stay at or below the cap, so one more multiply (cap^2 < typemax)
+# never overflows before clamping.
+const NPATH_CAP = 1_000_000_000
+
+# Clamp at the cap. The two differ only in the operator, so they share a structural
+# shape with nothing to extract.
+# dendro-ignore: duplicate
+sat_mul(a::Int, b::Int) = min(NPATH_CAP, a * b)
+sat_add(a::Int, b::Int) = min(NPATH_CAP, a + b)
+
+# True when `node`'s subtree holds a `@body` block, the mark of a branch (a then/else
+# arm, a loop body, a case) as opposed to a condition. Nested callables are their own
+# units, so a closure body in a condition does not make the condition a branch.
+function holds_body(node::TreeSitter.Node, index::QueryIndex)
+    node in index.body && return true
+    for c in TreeSitter.children(node)
+        is_function(c, index) && continue
+        holds_body(c, index) && return true
+    end
+    return false
+end
+
+# Number of short-circuit operators in `node`'s subtree, the `B(c)` a control
+# statement's condition contributes to NPath: each `&&`/`||` adds one path.
+function short_circuit_count(node::TreeSitter.Node, index::QueryIndex)
+    n = node in index.short_circuit ? 1 : 0
+    for c in TreeSitter.children(node)
+        is_function(c, index) && continue
+        n += short_circuit_count(c, index)
+    end
+    return n
+end
+
+# The nearest direct child of `node` that is an `if`, or `nothing`. A C-style
+# `else if` nests the next `if` directly under an else clause; a Julia `else` whose
+# body merely contains an `if` does not, so only direct children count.
+function direct_child_if(node::TreeSitter.Node, index::QueryIndex)
+    for c in TreeSitter.children(node)
+        is_function(c, index) && continue
+        c in index.conditional && return c
+    end
+    return nothing
+end
+
+"""
+    npath(node, index) -> Int
+
+NPath complexity: the number of acyclic execution paths through the unit, after
+Nejmeh's measure as PMD computes it. Statement sequences multiply, branches add, and
+each `&&`/`||` in a condition adds one path. Dispatches on construct family from the
+query, so the arithmetic is the same across languages. Saturates at `NPATH_CAP`.
+"""
+function npath(node::TreeSitter.Node, index::QueryIndex)
+    node in index.loop && return loop_npath(node, index)
+    node in index.switch && return switch_npath(node, index)
+    node in index.ternary && return ternary_npath(node, index)
+    node in index.try_stmt && return try_npath(node, index)
+    node in index.conditional && return if_npath(node, index)
+    return sequence_npath(node, index)
+end
+
+# A sequence or any node without its own rule: the product of its children, a leaf
+# being one. Nested callables are skipped, scored as their own units.
+function sequence_npath(node::TreeSitter.Node, index::QueryIndex)
+    p = 1
+    for c in TreeSitter.children(node)
+        is_function(c, index) && continue
+        p = sat_mul(p, npath(c, index))
+    end
+    return p
+end
+
+# `if`: NP(then) + NP(each alternative) + B(conditions), plus one for the
+# fall-through when no unconditional else closes the chain. An `else if` (a nested
+# `if`, or an else clause wrapping one) carries its own fall-through, so the outer
+# `if` adds none. Handles both the flat chain (Julia `elseif_clause`/`else_clause`
+# siblings) and the nested chain (the alternative is itself an `if`).
+function if_npath(node::TreeSitter.Node, index::QueryIndex)
+    np = 0
+    b = 0
+    seen_then = false
+    has_else = false
+    delegated = false
+    for c in TreeSitter.children(node)
+        is_function(c, index) && continue
+        if !holds_body(c, index)
+            b = sat_add(b, short_circuit_count(c, index))
+        elseif c in index.continuation
+            np = sat_add(np, clause_npath(c, index))
+        elseif c in index.conditional
+            np = sat_add(np, npath(c, index))
+            delegated = true
+        elseif !seen_then
+            np = sat_add(np, npath(c, index))
+            seen_then = true
+        else
+            inner = direct_child_if(c, index)
+            if inner === nothing
+                np = sat_add(np, npath(c, index))
+                has_else = true
+            else
+                np = sat_add(np, npath(inner, index))
+                delegated = true
+            end
+        end
+    end
+    np = sat_add(np, b)
+    (has_else || delegated) || (np = sat_add(np, 1))
+    return np
+end
+
+# Fold a control node's children into (branch paths, condition B): each child holding
+# a `@body` is a branch, its NPath folded with `combine` from `init`; each other child
+# is condition, its short-circuit operators summed. The shared shape behind the loop,
+# switch, and elseif rules.
+function fold_branches(node::TreeSitter.Node, index::QueryIndex, combine::F, init::Int) where {F}
+    branch = init
+    b = 0
+    for c in TreeSitter.children(node)
+        is_function(c, index) && continue
+        if holds_body(c, index)
+            branch = combine(branch, npath(c, index))
+        else
+            b = sat_add(b, short_circuit_count(c, index))
+        end
+    end
+    return branch, b
+end
+
+# An `elseif_clause`: its condition's `B` plus the NPath of its body, the same arm an
+# `if`'s then-branch is, without the fall-through the chain accounts for once. Shares
+# its combine-then-total shape with `switch_npath`.
+# dendro-ignore: duplicate, near_duplicate
+function clause_npath(node::TreeSitter.Node, index::QueryIndex)
+    branch, b = fold_branches(node, index, sat_mul, 1)
+    return sat_add(branch, b)
+end
+
+# A loop: NP(body) + B(condition) + 1 for the path that skips the loop. A for-each has
+# no boolean guard, so `B` is zero and it reduces to NP(body) + 1.
+function loop_npath(node::TreeSitter.Node, index::QueryIndex)
+    branch, b = fold_branches(node, index, sat_mul, 1)
+    return sat_add(sat_add(branch, b), 1)
+end
+
+# A switch: the sum of its case-body NPaths plus the test's `B`, no implicit
+# fall-through path.
+# dendro-ignore: duplicate, near_duplicate
+function switch_npath(node::TreeSitter.Node, index::QueryIndex)
+    branch, b = fold_branches(node, index, sat_add, 0)
+    return sat_add(branch, b)
+end
+
+# A ternary `c ? a : b`: NP(a) + NP(b) + B(c). The first named child is the
+# condition; the rest are the two result expressions.
+function ternary_npath(node::TreeSitter.Node, index::QueryIndex)
+    parts = 0
+    b = 0
+    seen_cond = false
+    for c in TreeSitter.named_children(node)
+        is_function(c, index) && continue
+        if !seen_cond
+            b = sat_add(b, short_circuit_count(c, index))
+            seen_cond = true
+        else
+            parts = sat_add(parts, npath(c, index))
+        end
+    end
+    return sat_add(parts, b)
+end
+
+# A try: NP(try-block) + the NPath of each catch and finally block. Every body-bearing
+# arm adds its paths; the clauses carry no boolean guard, so `B` is dropped.
+try_npath(node::TreeSitter.Node, index::QueryIndex) =
+    first(fold_branches(node, index, sat_add, 0))
+
 """
     cognitive_complexity(node, index) -> Int
 

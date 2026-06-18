@@ -228,6 +228,79 @@ end
     @test Dendro.cognitive_complexity(un.node, ni) == 4  # if(1) + elseif(1) + for(2)
 end
 
+@testset "npath (julia)" begin
+    # A straight-line function has one path.
+    simple = "function f(x)\n    x + 1\nend\n"
+    si = idx(:julia, simple)
+    @test Dendro.npath(only(Dendro.functions(si)).node, si) == 1
+
+    # if without else: NP(then) + B(cond) + 1 = 1 + 0 + 1.
+    ifonly = "function f(x)\n    if x > 0\n        a()\n    end\nend\n"
+    ii = idx(:julia, ifonly)
+    @test Dendro.npath(only(Dendro.functions(ii)).node, ii) == 2
+
+    # if/elseif/else is exhaustive: NP(then) + NP(elseif) + NP(else) = 1 + 1 + 1, no
+    # fall-through path to add.
+    chain = "function f(x)\n    if x > 0\n        a()\n    elseif x < 0\n        b()\n    else\n        c()\n    end\nend\n"
+    ci = idx(:julia, chain)
+    @test Dendro.npath(only(Dendro.functions(ci)).node, ci) == 3
+
+    # if/elseif without a final else keeps the fall-through path: 1 + 1 + 1 + 1.
+    noelse = "function f(x)\n    if x > 0\n        a()\n    elseif x < 0\n        b()\n    elseif x == 0\n        c()\n    end\nend\n"
+    ne = idx(:julia, noelse)
+    @test Dendro.npath(only(Dendro.functions(ne)).node, ne) == 4
+
+    # A loop adds the skip-the-loop path: NP(body) + 1.
+    wh = "function f(x)\n    while x > 0\n        a()\n    end\nend\n"
+    wi = idx(:julia, wh)
+    @test Dendro.npath(only(Dendro.functions(wi)).node, wi) == 2
+
+    # for-each has no boolean guard: NP(body) + 1.
+    fr = "function f(xs)\n    for x in xs\n        a()\n    end\nend\n"
+    fi = idx(:julia, fr)
+    @test Dendro.npath(only(Dendro.functions(fi)).node, fi) == 2
+
+    # A ternary: NP(then) + NP(else) + B(cond) = 1 + 1 + 0.
+    tern = "function f(x)\n    y = x > 0 ? a() : b()\nend\n"
+    tei = idx(:julia, tern)
+    @test Dendro.npath(only(Dendro.functions(tei)).node, tei) == 2
+
+    # try/catch/finally: NP(try) + NP(catch) + NP(finally) = 1 + 1 + 1.
+    tc = "function f()\n    try\n        a()\n    catch e\n        b()\n    finally\n        c()\n    end\nend\n"
+    tci = idx(:julia, tc)
+    @test Dendro.npath(only(Dendro.functions(tci)).node, tci) == 3
+
+    # Each && / || in a condition adds one path: NP(then) + B + 1 = 1 + 2 + 1.
+    bools = "function f(x)\n    if x > 0 && x < 10 || x == 20\n        a()\n    end\nend\n"
+    bi = idx(:julia, bools)
+    @test Dendro.npath(only(Dendro.functions(bi)).node, bi) == 4
+
+    # Sequential statements multiply: two independent ifs give 2 * 2, not 2 + 2.
+    seq = "function f(x)\n    if x > 0\n        a()\n    end\n    if x < 0\n        b()\n    end\nend\n"
+    sqi = idx(:julia, seq)
+    @test Dendro.npath(only(Dendro.functions(sqi)).node, sqi) == 4
+
+    # Ten flat sequential ifs explode to 2^10 while cyclomatic stays linear at 11,
+    # the signal NPath adds.
+    tenifs = "function f(x)\n" * repeat("    if x > 0\n        a()\n    end\n", 10) * "end\n"
+    ti = idx(:julia, tenifs)
+    u = only(Dendro.functions(ti))
+    @test Dendro.npath(u.node, ti) == 1024
+    @test Dendro.cyclomatic(u.node, ti) == 11
+
+    # A nested function's branches belong to it, not the enclosing unit.
+    nested = "function outer(xs)\n    g = function (y)\n        if y > 0\n            return y\n        end\n    end\n    if length(xs) > 0\n        h()\n    end\nend\n"
+    ni = idx(:julia, nested)
+    units = Dendro.functions(ni)
+    outer = units[findfirst(u -> u.firstline == 1, units)]
+    @test Dendro.npath(outer.node, ni) == 2   # outer's one if; the closure's is its own
+
+    # The count saturates at NPATH_CAP rather than overflowing Int.
+    bigfn = "function f(x)\n" * repeat("    if x > 0\n        a()\n    end\n", 35) * "end\n"
+    bgi = idx(:julia, bigfn)
+    @test Dendro.npath(only(Dendro.functions(bgi)).node, bgi) == Dendro.NPATH_CAP
+end
+
 @testset "absolute severity bands" begin
     # Classification against a (warn, high) band.
     @test Dendro.severity(10, (11, 21)) == :ok

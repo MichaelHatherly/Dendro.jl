@@ -45,4 +45,9 @@
 
 (if_statement) @conditional
 
+; NPath dispatches on construct family. Julia has no switch.
+[(for_statement) (while_statement)] @loop
+(ternary_expression) @ternary
+(try_statement) @try
+
 [(return_statement) (break_statement) (continue_statement)] @terminal

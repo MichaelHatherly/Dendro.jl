@@ -41,12 +41,14 @@ const BUILTIN_RULES = Rule[
 ]
 
 # Rules a caller can opt into but that are off by default: return_count needs
-# per-project band tuning, trivial_wrapper has a higher false-positive rate.
+# per-project band tuning, trivial_wrapper has a higher false-positive rate, npath
+# grows multiplicatively so its band wants per-project tuning.
 # Use them with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 const OPTIONAL_RULES = Rule[
     Rule(:return_count, :scalar, (4, 8), (u, i) -> return_count(u.node, i)),
     Rule(:trivial_wrapper, :flag, nothing, trivial_wrappers),
     Rule(:unreachable_after_jump, :flag, nothing, unreachable_statements),
+    Rule(:npath, :scalar, (200, 1000), (u, i) -> npath(u.node, i)),
 ]
 
 # The active rules of one kind (`:scalar` or `:flag`), in order.

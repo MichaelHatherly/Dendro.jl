@@ -52,6 +52,7 @@ const CONCEPT_NAMES = (
     :short_function, :decision, :continuation, :nesting, :short_circuit,
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
+    :loop, :switch, :ternary, :try,
 )
 
 """
@@ -88,59 +89,50 @@ struct QueryIndex
     conditional::Concept
     terminal::Concept
     operator::Concept
+    loop::Concept
+    switch::Concept
+    ternary::Concept
+    try_stmt::Concept
+    # Capture name to its concept, the same `Concept` objects the fields hold, so
+    # `dispatch!` routes by name without a branch per concept. The reserved-word
+    # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
+    # fields.
+    by_name::Dict{String, Concept}
 
-    QueryIndex(language::Symbol, source::String) = new(
-        language, source, FunctionUnit[], Set{NodeId}(),
-        Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
-        Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
-        Concept(), Concept(), Concept(), Concept(), Concept(), Concept(),
-    )
+    function QueryIndex(language::Symbol, source::String)
+        short_function, decision, continuation, nesting = Concept(), Concept(), Concept(), Concept()
+        short_circuit, parameter, body, catch_clause = Concept(), Concept(), Concept(), Concept()
+        comment, name, trivial_body, return_stmt = Concept(), Concept(), Concept(), Concept()
+        finally_clause, call, binary_expr, conditional = Concept(), Concept(), Concept(), Concept()
+        terminal, operator, loop, switch = Concept(), Concept(), Concept(), Concept()
+        ternary, try_stmt = Concept(), Concept()
+        by_name = Dict{String, Concept}(
+            "short_function" => short_function, "decision" => decision,
+            "continuation" => continuation, "nesting" => nesting,
+            "short_circuit" => short_circuit, "parameter" => parameter,
+            "body" => body, "catch" => catch_clause, "comment" => comment,
+            "name" => name, "trivial_body" => trivial_body, "return" => return_stmt,
+            "finally" => finally_clause, "call" => call, "binary_expr" => binary_expr,
+            "conditional" => conditional, "terminal" => terminal, "operator" => operator,
+            "loop" => loop, "switch" => switch, "ternary" => ternary, "try" => try_stmt,
+        )
+        return new(
+            language, source, FunctionUnit[], Set{NodeId}(),
+            short_function, decision, continuation, nesting, short_circuit, parameter,
+            body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
+            call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
+            try_stmt, by_name,
+        )
+    end
 end
 
-# Route one capture to its concept. A plain if/elseif so the dispatch stays
-# concretely typed: every branch pushes into a `Concept` field. A name with no
-# branch is a query bug, not a silent drop: the `else` throws, and the suite guards
-# every query's captures against `CONCEPT_NAMES`.
+# Route one capture to its concept by name. A name with no concept is a query bug,
+# not a silent drop: the lookup misses and throws, and the suite guards every query's
+# captures against `CONCEPT_NAMES`.
 function dispatch!(idx::QueryIndex, name::AbstractString, n::TreeSitter.Node)
-    if name == "short_function"
-        record!(idx.short_function, n)
-    elseif name == "decision"
-        record!(idx.decision, n)
-    elseif name == "continuation"
-        record!(idx.continuation, n)
-    elseif name == "nesting"
-        record!(idx.nesting, n)
-    elseif name == "short_circuit"
-        record!(idx.short_circuit, n)
-    elseif name == "parameter"
-        record!(idx.parameter, n)
-    elseif name == "body"
-        record!(idx.body, n)
-    elseif name == "catch"
-        record!(idx.catch_clause, n)
-    elseif name == "comment"
-        record!(idx.comment, n)
-    elseif name == "name"
-        record!(idx.name, n)
-    elseif name == "trivial_body"
-        record!(idx.trivial_body, n)
-    elseif name == "return"
-        record!(idx.return_stmt, n)
-    elseif name == "finally"
-        record!(idx.finally_clause, n)
-    elseif name == "call"
-        record!(idx.call, n)
-    elseif name == "binary_expr"
-        record!(idx.binary_expr, n)
-    elseif name == "conditional"
-        record!(idx.conditional, n)
-    elseif name == "terminal"
-        record!(idx.terminal, n)
-    elseif name == "operator"
-        record!(idx.operator, n)
-    else
-        throw(ArgumentError("unknown capture name :$name"))
-    end
+    c = get(idx.by_name, name, nothing)
+    c === nothing && throw(ArgumentError("unknown capture name :$name"))
+    record!(c, n)
     return nothing
 end
 
