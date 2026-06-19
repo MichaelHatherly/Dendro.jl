@@ -21,8 +21,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 417   # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 6       # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 426   # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 7       # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))

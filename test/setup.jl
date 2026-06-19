@@ -8,15 +8,45 @@
     fixture(lang) = (Dendro.parser_for(lang), Dendro.PROFILES[lang])
 
     # Parse `src` and build its query index, the per-tree node identification every
-    # metric and flag reads from.
+    # metric and flag reads from. The scopes query is threaded through so the index
+    # carries bindings for languages that ship one.
     idx(lang, src) =
-        Dendro.build_index(TreeSitter.parse(Dendro.parser_for(lang), src), Symbol(lang), String(src), Dendro.query_for(lang))
+        Dendro.build_index(
+        TreeSitter.parse(Dendro.parser_for(lang), src), Symbol(lang), String(src),
+        Dendro.query_for(lang), Dendro.scopes_query_for(Symbol(lang))
+    )
 
     # A ParsedFile for one source, the corpus record clone and naturalness tests need.
     function parsedfile(lang, src; file = "f." * string(lang), directives = Dendro.Directive[])
         tree = TreeSitter.parse(Dendro.parser_for(lang), src)
-        index = Dendro.build_index(tree, Symbol(lang), String(src), Dendro.query_for(lang))
+        index = Dendro.build_index(
+            tree, Symbol(lang), String(src), Dendro.query_for(lang),
+            Dendro.scopes_query_for(Symbol(lang))
+        )
         return Dendro.ParsedFile(Symbol(lang), String(src), file, tree, index, directives)
+    end
+
+    # The bindings resolved for `src`, the type-stable entry the binding test asserts
+    # inference on. Narrows the scopes query past its `nothing` case before the call.
+    function resolve(lang, src)
+        tree = TreeSitter.parse(Dendro.parser_for(lang), src)
+        query = Dendro.scopes_query_for(Symbol(lang))
+        query === nothing && error("no scopes query for $lang")
+        return Dendro.resolve_bindings!(Dict{Dendro.NodeId, Dendro.NodeId}(), tree, query, String(src))
+    end
+
+    # Each resolved binding as `(ref_text, ref_line) => (def_text, def_line)`, the
+    # readable form the binding tests assert on.
+    function binding_pairs(index)
+        info = Dict{Dendro.NodeId, Tuple{String, Int}}()
+        for n in index.name.nodes
+            info[Dendro.nodeid(n)] = (String(strip(TreeSitter.slice(index.source, n))), Int(TreeSitter.start_point(n).row) + 1)
+        end
+        pairs = Pair{Tuple{String, Int}, Tuple{String, Int}}[]
+        for (r, d) in index.bindings
+            push!(pairs, info[r] => info[d])
+        end
+        return pairs
     end
 
     # Findings of one relational metric, the filters the clone and corpus items share.

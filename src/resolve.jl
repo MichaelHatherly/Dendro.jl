@@ -86,3 +86,23 @@ function query_for(name::Symbol)
         TreeSitter.Query(language_module(name), source)
     end
 end
+
+# Compiled scopes queries cached per language, `nothing` for a language that ships
+# none. Cached like `query_for`, so the missing-file check runs once.
+const SCOPES_QUERY_CACHE = Dict{Symbol, Union{TreeSitter.Query, Nothing}}()
+
+"""
+    scopes_query_for(language) -> Union{TreeSitter.Query, Nothing}
+
+The compiled lexical-scopes query for `language`, read from
+`src/queries/<language>.scopes.scm`, or `nothing` when the language ships none. A
+language without a scopes query carries no bindings, and the cohesion metric skips
+it rather than treating every function as isolated.
+"""
+function scopes_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
+    return get!(SCOPES_QUERY_CACHE, name) do
+        path = joinpath(QUERIES_DIR, "$(name).scopes.scm")
+        isfile(path) || return nothing
+        TreeSitter.Query(language_module(name), read(path, String))
+    end
+end
