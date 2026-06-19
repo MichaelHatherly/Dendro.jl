@@ -18,6 +18,22 @@ duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :duplicate, findi
     end
 end
 
+@testset "analyze scans multiple roots as one corpus" begin
+    mktempdir() do root1
+        mktempdir() do root2
+            a = joinpath(root1, "a.jl")
+            b = joinpath(root2, "b.jl")
+            write(a, "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
+            write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
+
+            hit = only(duplicates(analyze([root1, root2]; min_size = 1)))
+            @test hit.value == 2
+            @test sort([loc.file for loc in hit.locations]) == sort([a, b])
+            @test Set(loc.unit for loc in hit.locations) == Set(["f", "g"])
+        end
+    end
+end
+
 @testset "analyze clusters more than two duplicates" begin
     mktempdir() do dir
         a = joinpath(dir, "a.jl")

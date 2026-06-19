@@ -43,6 +43,11 @@ analyze("src"; base = "HEAD")
 # functions are the corpus it is scored against.
 analyze("src/parser.jl")
 
+# Scan several roots as one corpus. A package's `src` and `ext` are measured
+# together, the baseline and duplicate detection span both, and the rest of the
+# tree stays out. With `base`, the repo-wide diff scopes all roots.
+analyze(["src", "ext"])
+
 # Capture the findings to filter or gate on.
 findings = analyze("src")
 high = filter(f -> f.absolute == :high, active(findings))

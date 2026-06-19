@@ -22,9 +22,10 @@ source text
   -> show / active / gate
 ```
 
-`analyze` (corpus.jl) is the one entrypoint. It resolves `path` to a corpus (every
-profile-resolvable file under a folder, or one file), parses each once, builds a
-baseline from that corpus, runs the per-file path above against it for each file,
+`analyze` (corpus.jl) is the one entrypoint. It resolves one or more paths to a
+corpus (every profile-resolvable file under each folder, or a named file), parses
+each once, builds a baseline from that corpus, runs the per-file path above
+against it for each file,
 and appends the corpus-relational findings: cross-file duplicates and naturalness
 outliers. The active rule set is a value it carries: the
 `rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
@@ -207,7 +208,8 @@ stays type-stable.
 `Scope` (`corpus.jl`). The diff-scoped view's data: the git toplevel `root` and the
 changed line ranges per file relative to it (`Dict{String, Vector{UnitRange{Int}}}`).
 `analyze` builds one from `base`'s diff, and `scope_clusters` filters cluster findings
-to it. A concrete record, so the diff-scoping passes dispatch statically rather than
+to it. Several scanned roots still resolve to one toplevel and one repo-wide diff,
+since findings carry absolute paths that `relpath` against `root` regardless of root. A concrete record, so the diff-scoping passes dispatch statically rather than
 over an ad-hoc NamedTuple.
 
 `Location` (`report.jl`). A code site: file, 1-based line, and enclosing unit

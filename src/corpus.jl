@@ -80,6 +80,7 @@ end
 
 """
     analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, threshold=$DEFAULT_THRESHOLD, language=nothing, rules=BUILTIN_RULES) -> Findings
+    analyze(paths::AbstractVector; ...) -> Findings
 
 Analyze the file or folder at `path`. Every function gets scalar and flag metrics;
 functions duplicated across the corpus are reported as `:duplicate` findings, and
@@ -87,6 +88,12 @@ functions that are close but not identical as `:near_duplicate`. A baseline is b
 from the corpus, the folder's files or the single file, so relative scoring works
 against the input's own distribution with no setup. With `base`, only functions
 changed against that git ref are reported, scored against the full-corpus baseline.
+
+Passing several paths folds their files into one corpus, so a package's `src` and
+`ext` are scanned together (`analyze(["src", "ext"])`) without dragging in the rest
+of the tree. The baseline, duplicate detection, and naturalness span the roots, so
+a function copied from one into another is caught. With `base`, all roots resolve
+to the one git toplevel and the repo-wide diff scopes them.
 
 `threshold` is the Dice cutoff for a near-miss, `radius_factor` scales the
 candidate-search radius to a function's size.
@@ -104,26 +111,34 @@ directory cannot be re-included. Patterns apply to folder scans, not a single na
 file.
 """
 function analyze(
-        path::AbstractString; base = nothing, cut::Real = 0.95,
+        paths::Union{AbstractString, AbstractVector{<:AbstractString}};
+        base = nothing, cut::Real = 0.95,
         min_size::Integer = DEFAULT_MIN_SIZE,
         threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing,
         rules = BUILTIN_RULES, ignore = String[]
     )
-    ispath(path) || error("Dendro: no such path $path")
-    if isdir(path)
-        corpus = source_files(path, ignore)
-    else
-        language === nothing && language_for_path(path) === nothing &&
-            error("Dendro: cannot infer language for $path; pass `language=`.")
-        corpus = [path]
+    roots::Vector{String} = paths isa AbstractString ? [paths] : paths
+    isempty(roots) && error("Dendro: no paths given")
+    corpus = String[]
+    for path in roots
+        ispath(path) || error("Dendro: no such path $path")
+        if isdir(path)
+            append!(corpus, source_files(path, ignore))
+        else
+            language === nothing && language_for_path(path) === nothing &&
+                error("Dendro: cannot infer language for $path; pass `language=`.")
+            push!(corpus, path)
+        end
     end
+    unique!(corpus)
     files = parse_corpus(corpus; language, rules)
     bl = baseline_from(files, rules)
 
     scope::Union{Scope, Nothing} = nothing
     if base !== nothing
-        root = String(strip(read(`git -C $(isdir(path) ? path : dirname(path)) rev-parse --show-toplevel`, String)))
+        ref = first(roots)
+        root = String(strip(read(`git -C $(isdir(ref) ? ref : dirname(ref)) rev-parse --show-toplevel`, String)))
         scope = Scope(root, changed_ranges(read(`git -C $root diff $base`, String)))
     end
 
