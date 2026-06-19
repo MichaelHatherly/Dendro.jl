@@ -19,9 +19,10 @@ struct ScopeEntry
 end
 
 # Definition kinds whose name binds in the enclosing scope, not their own. A
-# function, type, or macro is visible to its siblings, so a call from one sibling
-# to another resolves to it. Other kinds (locals, consts) bind in their own scope.
-const HOISTED_KINDS = ("function", "struct", "macro")
+# function, named type, class, or macro is visible to its siblings, so a call from
+# one sibling to another resolves to it. Other kinds (locals, consts) bind in their
+# own scope.
+const HOISTED_KINDS = ("function", "struct", "macro", "class")
 
 # A `definition.<kind>` capture is hoisted when its kind is one of HOISTED_KINDS.
 function is_hoisted(capture::AbstractString)

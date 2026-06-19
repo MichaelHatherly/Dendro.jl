@@ -192,10 +192,17 @@ by most of the file's functions is a cross-cutting utility, not a shared concern
 links nothing. Reported with both scores, the absolute band on the component count
 and the corpus percentile.
 
-The resolution is lexical, never dispatch: a Julia edge means two functions reference
-the same file-local name, not that they call the same method. The signal stays
-syntactic and within one file. Cohesion runs only for languages that ship a scopes
-query; Julia does, and others are added as the query is written.
+The resolution is lexical, never dispatch: an edge means two functions reference the
+same file-local name, not that they call the same method. The signal stays syntactic
+and within one file. Cohesion runs for every supported language; each ships a scopes
+query.
+
+The lexical line has a cost in class-based code. An edge is call linkage, two
+functions naming the same file-local definition, not shared-field cohesion: with no
+symbol or field resolution, methods that touch the same instance field through
+different names form no edge. The reading is weakest for a file that is one class,
+where field-sharing is the main cohesion and Dendro sees only method-to-method calls.
+Java is the extreme, since every file is one class.
 
 ## Suppressing findings
 

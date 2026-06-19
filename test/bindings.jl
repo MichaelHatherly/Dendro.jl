@@ -57,10 +57,12 @@ end
     @test !any(p -> first(first(p)) == "push!", pairs)
 end
 
-@testitem "bindings empty for a language with no scopes query" setup = [Fixtures] tags = [:bindings] begin
-    @test Dendro.scopes_query_for(:python) === nothing
-    index = Fixtures.idx(:python, "def f(x):\n    return f(x)\n")
-    @test isempty(index.bindings)
+@testitem "bindings link a sibling call in every language" setup = [Fixtures] tags = [:bindings] begin
+    @testset "$(case.lang)" for case in Fixtures.LANGUAGE_BINDING_CASES
+        pairs = Fixtures.binding_pairs(Fixtures.idx(case.lang, case.src))
+        # `f`'s call to `helper` resolves to the sibling definition: the cohesion edge.
+        @test (("helper", case.ref) => ("helper", case.def)) in pairs
+    end
 end
 
 @testitem "resolve_bindings! is type stable" setup = [Fixtures] tags = [:bindings] begin

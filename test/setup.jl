@@ -121,6 +121,25 @@
         ),
     ]
 
+    # One binding fixture per language: a two-function source where `f` calls
+    # `helper`. The cohesion edge is the call reference binding to the sibling
+    # definition. `ref`/`def` are the 1-based lines of the call and the definition,
+    # hand-read from each source. Proves the scopes query compiles and the core edge
+    # forms in every language Dendro parses.
+    const LANGUAGE_BINDING_CASES = [
+        (lang = :bash, src = "helper() {\n  echo \$1\n}\nf() {\n  helper \$1\n}\n", ref = 5, def = 1),
+        (lang = :c, src = "int helper(int x) { return x + 1; }\nint f(int a) { return helper(a); }\n", ref = 2, def = 1),
+        (lang = :cpp, src = "int helper(int x) { return x + 1; }\nint f(int a) { return helper(a); }\n", ref = 2, def = 1),
+        (lang = :go, src = "package m\nfunc helper(x int) int { return x + 1 }\nfunc f(a int) int { return helper(a) }\n", ref = 3, def = 2),
+        (lang = :java, src = "class C {\n  int helper(int x) { return x + 1; }\n  int f(int a) { return helper(a); }\n}\n", ref = 3, def = 2),
+        (lang = :javascript, src = "function helper(x) { return x + 1; }\nfunction f(a) { return helper(a); }\n", ref = 2, def = 1),
+        (lang = :php, src = "<?php\nfunction helper(\$x) { return \$x + 1; }\nfunction f(\$a) { return helper(\$a); }\n", ref = 3, def = 2),
+        (lang = :python, src = "def helper(x):\n    return x + 1\ndef f(a):\n    return helper(a)\n", ref = 4, def = 1),
+        (lang = :ruby, src = "def helper(x)\n  x + 1\nend\ndef f(a)\n  helper(a)\nend\n", ref = 5, def = 1),
+        (lang = :rust, src = "fn helper(x: i32) -> i32 { x + 1 }\nfn f(a: i32) -> i32 { helper(a) }\n", ref = 2, def = 1),
+        (lang = :typescript, src = "function helper(x: number): number { return x + 1; }\nfunction f(a: number): number { return helper(a); }\n", ref = 2, def = 1),
+    ]
+
     # NPath per grammar: one construct per case, the value hand-derived from PMD's rules
     # (sequences multiply, branches add, each `&&`/`||` in a condition adds one, a switch
     # sums its case bodies). Ruby and Bash are absent: their branch bodies are not block

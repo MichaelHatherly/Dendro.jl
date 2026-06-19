@@ -334,7 +334,7 @@ reviewer reads differently.
 is tier-1 lexical binding (`bindings.jl`): a per-language scopes query
 (`src/queries/<lang>.scopes.scm`) tags scope regions, definitions, and references,
 and `resolve_bindings!` binds each reference to the nearest enclosing definition of
-its name, hoisting function, type, and macro names to the enclosing scope so a
+its name, hoisting function, type, class, and macro names to the enclosing scope so a
 sibling reference resolves to them. Linking on a resolved binding rather than a
 shared identifier string is what drops the `x`/`i`/`T` and imported-name noise a
 string graph carries: a local in one function and a same-named local in another are
@@ -351,11 +351,14 @@ per component.
 
 Like naturalness, cohesion carries both scores, fired when either trips: the absolute
 `LOW_COHESION_BAND` on the component count, set above an idiomatic corpus's spread,
-and the corpus percentile across the scored files. A language with no scopes query is
-skipped rather than reported as all-isolated. The ceiling is honest: name resolution
-gives def-site linkage, never dispatch resolution, so a Julia edge is "these two
+and the corpus percentile across the scored files. Every supported language ships a
+scopes query, so cohesion runs everywhere Dendro parses; a language without one would
+be skipped rather than reported as all-isolated. The ceiling is honest: name
+resolution gives def-site linkage, never dispatch resolution, so an edge is "these two
 functions reference this file-local name," not "these two dispatch to the same
-method." Most cohesion signal lives below that line.
+method." With no field resolution, the edge is call linkage, not shared-field
+cohesion, so a file that is one class reads only its method-to-method calls. Java is
+the extreme, every file a single class. Most cohesion signal lives below that line.
 
 ## Suppression
 
