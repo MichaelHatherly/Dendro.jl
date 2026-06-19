@@ -24,6 +24,7 @@ include("report.jl")
 include("diff.jl")
 include("clones.jl")
 include("naturalness.jl")
+include("cohesion.jl")
 include("ignore.jl")
 include("corpus.jl")
 

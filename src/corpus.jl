@@ -162,5 +162,6 @@ function analyze(
         )
     )
     append!(findings, scope_clusters(cluster_unnatural(files; cut), scope))
+    append!(findings, scope_clusters(cluster_low_cohesion(files; cut), scope))
     return Findings(findings)
 end

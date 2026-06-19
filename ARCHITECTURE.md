@@ -14,6 +14,7 @@ source text
   -> parse (TreeSitter, parser chosen by language)
   -> tree
   -> build_index(tree, query)        nodes the language query identifies
+       (+ scopes query: resolve each reference to its in-file definition)
   -> functions(index)                units to measure
   -> per unit: scalar rules; per index: flag rules
   -> score each reading (absolute band, optional corpus percentile)
@@ -26,8 +27,8 @@ source text
 corpus (every profile-resolvable file under each folder, or a named file), parses
 each once, builds a baseline from that corpus, runs the per-file path above
 against it for each file,
-and appends the corpus-relational findings: cross-file duplicates and naturalness
-outliers. The active rule set is a value it carries: the
+and appends the corpus-relational findings: cross-file duplicates, naturalness
+outliers, and low-cohesion files. The active rule set is a value it carries: the
 `rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
 per-file scoring, and suppression validation, so a caller extends the checks
 without touching the pipeline. The baseline-from-the-corpus step is what makes
@@ -66,7 +67,9 @@ Resolution and configuration:
   `Base.require`, so Dendro depends on no grammars itself; `query_for` reads
   `src/queries/<lang>.scm` (located through a `RelocatableFolders` path so it
   survives precompilation) and compiles it against that grammar, caching both
-  lazily. A missing grammar errors with an install hint.
+  lazily. A missing grammar errors with an install hint. `scopes_query_for` reads the
+  optional `src/queries/<lang>.scopes.scm` the same way, returning `nothing` for a
+  language that ships none.
 - `profile.jl` defines `LanguageProfile`, now just a language `name`. The node types
   it measures live in the language's query, not in this type.
 - `profiles.jl` holds the `LanguageProfile` for each supported language, the set
@@ -77,7 +80,16 @@ Resolution and configuration:
   `build_index`, which runs a language's query over a tree once and files every
   capture under its concept. Identification lives here: metric code asks whether a
   node was tagged, never matches a node-type string. An unhandled capture name
-  throws rather than dropping silently.
+  throws rather than dropping silently. Given a scopes query, `build_index` runs a
+  second pass through `resolve_bindings!` and fills `index.bindings`.
+- `bindings.jl` defines tier-1 lexical scope resolution: `ScopeEntry`, the helpers
+  `owning_scope` and `lookup_definition`, and
+  `resolve_bindings!`, which runs a language's scopes query over a tree and binds
+  each `@reference` to the nearest enclosing `@definition` of its name. Function,
+  type, and macro names (`HOISTED_KINDS`) bind in the enclosing scope so a sibling
+  reference resolves to them. Scope membership is geometric, from byte ranges.
+  Single file, no symbol resolution across files, no types, no dispatch. Included
+  after `query_index.jl`, whose `NodeId` it uses.
 
 Measurement:
 
@@ -146,6 +158,17 @@ Reporting:
   corpus is below `MIN_CORPUS_TOKENS`. A surprising function
   reads as unidiomatic, which correlates with bugs. Structure only, no symbol
   resolution; within one language. Included before `corpus.jl`, which calls it.
+- `cohesion.jl` defines within-file cohesion, the third corpus-relational pass.
+  `file_components` builds a file's unit graph from `index.bindings` (two units
+  linked when one references a binding the other defines or references, dropping a
+  binding referenced by more than `ubiquity` of the units), counts connected
+  components with the `clones.jl` union-find, and returns a representative unit per
+  component; `cluster_low_cohesion` emits a `:low_cohesion` finding per file,
+  carrying the absolute `LOW_COHESION_BAND` on the component count and the corpus
+  percentile, skipping a language with no scopes query and a corpus below
+  `MIN_COHESION_FILES` for the percentile. The LCOM4 reading of independent concerns
+  cohabiting. Binding-keyed but still syntactic, within one file. Included before
+  `corpus.jl`, which calls it.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
@@ -155,9 +178,9 @@ Reporting:
   path once and build its query index into a `Vector{ParsedFile}`),
   `baseline_from`, `scope_clusters` (the shared diff filter for the relational
   passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
-  per-file findings, exact and near duplicates, naturalness, and optional diff
-  scoping). It is included after `report.jl`, `diff.jl`, `clones.jl`, and
-  `naturalness.jl` so everything it calls is defined first.
+  per-file findings, exact and near duplicates, naturalness, low cohesion, and
+  optional diff scoping). It is included after `report.jl`, `diff.jl`, `clones.jl`,
+  `naturalness.jl`, and `cohesion.jl` so everything it calls is defined first.
 
 ## Core types
 
@@ -178,7 +201,9 @@ builds a `by_name` table mapping each capture to its concept, then `dispatch!` f
 each capture through that table and throws on a name outside `CONCEPT_NAMES`.
 The suite checks every query's capture names against that set. This is the only
 place a language's concrete grammar leaks in: a construct a language lacks has no
-pattern, so its concept is empty and a rule reading it finds nothing.
+pattern, so its concept is empty and a rule reading it finds nothing. `QueryIndex`
+also carries `bindings`, a `Dict{NodeId, NodeId}` from each reference to the in-file
+definition it resolves to, empty unless `build_index` was given a scopes query.
 
 `Rule` (`rules.jl`). One lint check as data: a metric `name`, a `kind` (`:scalar`
 or `:flag`), a `(warn, high)` `band` for scalars, and an `fn` that measures one
@@ -303,6 +328,35 @@ Two reasons near-miss is a separate metric, not a smarter `:duplicate`: the exac
 path stays near-linear, and an exact match and a 0.85 match are different signals a
 reviewer reads differently.
 
+## Within-file cohesion
+
+`cluster_low_cohesion` reads whether a file's functions group by usage. The substrate
+is tier-1 lexical binding (`bindings.jl`): a per-language scopes query
+(`src/queries/<lang>.scopes.scm`) tags scope regions, definitions, and references,
+and `resolve_bindings!` binds each reference to the nearest enclosing definition of
+its name, hoisting function, type, and macro names to the enclosing scope so a
+sibling reference resolves to them. Linking on a resolved binding rather than a
+shared identifier string is what drops the `x`/`i`/`T` and imported-name noise a
+string graph carries: a local in one function and a same-named local in another are
+different bindings, and an external name resolves to nothing.
+
+`file_components` builds the unit graph: nodes are `functions(index)`, and two units
+are linked when they reference a common file-local binding, by `index.bindings`. A
+binding referenced by more than `ubiquity` of the units is cross-cutting (a file-wide
+utility) and links nothing, so it cannot fold genuine concerns into one component.
+Connected components come from the same union-find as the clone passes. The component
+count is the score: one component is a cohesive file, several are independent concerns
+cohabiting, the LCOM4 reading. The finding's locations are one representative function
+per component.
+
+Like naturalness, cohesion carries both scores, fired when either trips: the absolute
+`LOW_COHESION_BAND` on the component count, set above an idiomatic corpus's spread,
+and the corpus percentile across the scored files. A language with no scopes query is
+skipped rather than reported as all-isolated. The ceiling is honest: name resolution
+gives def-site linkage, never dispatch resolution, so a Julia edge is "these two
+functions reference this file-local name," not "these two dispatch to the same
+method." Most cohesion signal lives below that line.
+
 ## Suppression
 
 `suppressions` walks the same comment nodes as `stub_markers` and matches
@@ -328,7 +382,8 @@ unsuppressed findings for gating.
 - Adding a language is data only: a query in `src/queries/<lang>.scm`, a
   `LanguageProfile` entry in `profiles.jl`, and an extension entry in `resolve.jl`.
   No metric code changes. If a metric needs a language special case, the query is
-  missing a capture; add the pattern.
+  missing a capture; add the pattern. A `src/queries/<lang>.scopes.scm` is optional;
+  with it the language gains binding resolution and cohesion, without it both skip.
 - A check is a `Rule`: a measuring function plus its metadata. Adding a built-in is
   a `metrics.jl`/`flags.jl` function and a `BUILTIN_RULES` entry. The rule set is a
   value, so a caller adds checks through `analyze`'s `rules` without forking. A rule
@@ -349,9 +404,12 @@ helpers and the language-fixture tables live in one `@testmodule Fixtures`
 
 `test/dogfood.jl` runs Dendro on its own `src/`, gated on `active(...)`, and must
 stay clean: no `:high` complexity findings (cyclomatic, nesting, length, boolean),
-no stub markers, no swallowed errors, no empty bodies, no returns inside a finally
-clause, no duplicates exact or near. A change that makes Dendro trip its own
-metrics is a signal to fix the code.
+no function so unnatural or file so low in cohesion it trips the absolute band, no
+stub markers, no swallowed errors, no empty bodies, no returns inside a finally
+clause, no duplicates exact or near. `:unnatural` and `:low_cohesion` are checked on
+their absolute band only; their percentile flags the top of any distribution and is
+not part of this deterministic gate. A change that makes Dendro trip its own metrics
+is a signal to fix the code.
 
 `test/jet.jl` is the `:jet` item: basic-mode JET is a zero-tolerance gate on every
 Julia version, sound mode and the optimization analyzer are ratcheted at
