@@ -1,4 +1,4 @@
-@testset "language_for_path" begin
+@testitem "language_for_path" tags = [:resolve] begin
     @test Dendro.language_for_path("foo.jl") == :julia
     @test Dendro.language_for_path("a/b/foo.py") == :python
     @test Dendro.language_for_path("script.sh") == :bash

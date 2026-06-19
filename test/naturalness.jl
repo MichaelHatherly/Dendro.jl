@@ -1,6 +1,6 @@
-@testset "token_stream (julia)" begin
+@testitem "token_stream (julia)" setup = [Fixtures] tags = [:naturalness] begin
     src = "function f(x)\n    return x + 1\nend\n"
-    i = idx(:julia, src)
+    i = Fixtures.idx(:julia, src)
     u = only(Dendro.functions(i))
     toks = Dendro.token_stream(u, i)
 
@@ -12,7 +12,7 @@
     @test !("x" in toks)
 end
 
-@testset "cross_entropy ranks the surprising function higher" begin
+@testitem "cross_entropy ranks the surprising function higher" tags = [:naturalness] begin
     common = ["identifier", "=", "identifier", "+", "integer_literal"]
     model = Dendro.build_model([copy(common) for _ in 1:50])
 
@@ -20,7 +20,7 @@ end
     @test Dendro.cross_entropy(common, model) < Dendro.cross_entropy(novel, model)
 end
 
-@testset "the cache lowers entropy for a file-local idiom" begin
+@testitem "the cache lowers entropy for a file-local idiom" tags = [:naturalness] begin
     idiom_a = ["identifier", "=", "identifier", "+", "integer_literal"]
     idiom_b = ["while", "identifier", "<", "identifier", "break"]
     # The corpus is almost all idiom A, so idiom B is globally surprising.
@@ -34,18 +34,18 @@ end
     @test with_cache < global_only
 end
 
-@testset "cluster_unnatural guards a thin corpus" begin
+@testitem "cluster_unnatural guards a thin corpus" setup = [Fixtures] tags = [:naturalness] begin
     src = "function f()\n    1\nend\n"
-    files = [parsedfile(:julia, src; file = "f.jl")]
+    files = [Fixtures.parsedfile(:julia, src; file = "f.jl")]
     @test isempty(Dendro.cluster_unnatural(files))
 end
 
-@testset "cluster_unnatural ranks the odd function out first" begin
+@testitem "cluster_unnatural ranks the odd function out first" setup = [Fixtures] tags = [:naturalness] begin
     # A corpus of one idiom, plus a function with a structure none of the rest share.
     common = join(["g$i(x) = x + $i" for i in 1:12], "\n")
     odd = "function odd(xs)\n    while true\n        try\n            break\n        catch\n        end\n    end\nend\n"
     src = string(common, "\n", odd, "\n")
-    files = [parsedfile(:julia, src; file = "c.jl")]
+    files = [Fixtures.parsedfile(:julia, src; file = "c.jl")]
 
     findings = Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9)
     @test !isempty(findings)
@@ -54,13 +54,13 @@ end
     @test first(findings).locations[1].unit == "odd"
 end
 
-@testset "unnatural suppression and scores" begin
+@testitem "unnatural suppression and scores" setup = [Fixtures] tags = [:naturalness] begin
     common = join(["g$i(x) = x + $i" for i in 1:12], "\n")
     odd = "# dendro-ignore: unnatural\nfunction odd(xs)\n    while true\n        try\n            break\n        catch\n        end\n    end\nend\n"
     src = string(common, "\n", odd, "\n")
-    i = idx(:julia, src)
+    i = Fixtures.idx(:julia, src)
     directives = Dendro.suppressions(i; file = "c.jl")
-    files = [parsedfile(:julia, src; file = "c.jl", directives = directives)]
+    files = [Fixtures.parsedfile(:julia, src; file = "c.jl", directives = directives)]
 
     findings = Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9)
     odd = only(f for f in findings if f.locations[1].unit == "odd")

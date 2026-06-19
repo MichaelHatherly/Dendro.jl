@@ -84,7 +84,11 @@ not the test.
 - Run the suite: `julia --project=. -e 'using Pkg; Pkg.test()'`. Language parsers
   live in `test/Project.toml`, so parsing only works under `Pkg.test()`, not a
   bare package-env REPL. Redirect test output to a file and read it on failure.
-  The suite ends with [JET](https://github.com/aviatesk/JET.jl) static analysis
+  The suite is [TestItemRunner](https://github.com/julia-vscode/TestItemRunner.jl):
+  each check is a tagged `@testitem`, shared helpers live in `@testmodule Fixtures`
+  (`test/setup.jl`), reached qualified as `Fixtures.idx(...)`. Items run in any
+  order, each in its own module.
+  The `:jet` item runs [JET](https://github.com/aviatesk/JET.jl) static analysis
   (`test/jet.jl`): basic mode is a zero-tolerance gate on every Julia version, so a
   type-level regression fails the run. Sound mode and the optimization analyzer are
   ratcheted instead: their report counts are capped at the current value and may only

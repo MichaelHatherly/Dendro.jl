@@ -1,4 +1,6 @@
-@testset "parser_for" begin
+@testitem "parser_for" tags = [:parser] begin
+    using TreeSitter
+
     # Lazy-loads tree_sitter_julia_jll and returns a working parser.
     p = Dendro.parser_for(:julia)
     @test p isa TreeSitter.Parser

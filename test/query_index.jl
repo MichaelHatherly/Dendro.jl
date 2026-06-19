@@ -1,6 +1,6 @@
-@testset "QueryIndex identifies functions and concepts (julia)" begin
+@testitem "QueryIndex identifies functions and concepts (julia)" setup = [Fixtures] tags = [:query_index] begin
     src = "function f(x)\n    # TODO\n    if x > 0 && x < 9\n        g(x)\n    end\nend\ng(y) = y && y\n"
-    i = idx(:julia, src)
+    i = Fixtures.idx(:julia, src)
 
     # Both definitions, in source order: the full form and the short form.
     units = Dendro.functions(i)
@@ -18,22 +18,26 @@
     @test length(i.short_circuit.nodes) == 2
 end
 
-@testset "QueryIndex short-circuit is text-filtered (python)" begin
+@testitem "QueryIndex short-circuit is text-filtered (python)" setup = [Fixtures] tags = [:query_index] begin
+    using TreeSitter
+
     # Python's `and`/`or` are anonymous keyword tokens; the query tags exactly those.
-    i = idx(:python, "def f(x):\n    return x and y or z\n")
+    i = Fixtures.idx(:python, "def f(x):\n    return x and y or z\n")
     @test length(i.short_circuit.nodes) == 2
     @test Set(strip(TreeSitter.slice(i.source, n)) for n in i.short_circuit.nodes) == Set(["and", "or"])
 end
 
-# Capture names declared by a compiled query, enumerated through the C API by id.
-function capture_names(q::TreeSitter.Query)
-    return [
-        unsafe_string(TreeSitter.API.ts_query_capture_name_for_id(q.ptr, UInt32(i), Ref{UInt32}()))
-            for i in 0:(TreeSitter.capture_count(q) - 1)
-    ]
-end
+@testitem "every query uses only known capture names" tags = [:query_index] begin
+    using TreeSitter
 
-@testset "every query uses only known capture names" begin
+    # Capture names declared by a compiled query, enumerated through the C API by id.
+    function capture_names(q::TreeSitter.Query)
+        return [
+            unsafe_string(TreeSitter.API.ts_query_capture_name_for_id(q.ptr, UInt32(i), Ref{UInt32}()))
+                for i in 0:(TreeSitter.capture_count(q) - 1)
+        ]
+    end
+
     # A capture outside CONCEPT_NAMES (or @function) has no field in QueryIndex and
     # would throw in dispatch!. Catch a typo'd capture here, including one that never
     # matches a node, before it reaches a parse.

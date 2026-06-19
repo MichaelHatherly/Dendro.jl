@@ -1,65 +1,67 @@
-@testset "ignore: leading slash anchors to root" begin
+@testitem "ignore: leading slash anchors to root" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["/root.jl"])
     @test Dendro.is_ignored(pats, "root.jl", false)
     @test !Dendro.is_ignored(pats, "a/root.jl", false)
 end
 
-@testset "ignore: a middle slash anchors to root" begin
+@testitem "ignore: a middle slash anchors to root" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["vendor/x.jl"])
     @test Dendro.is_ignored(pats, "vendor/x.jl", false)
     @test !Dendro.is_ignored(pats, "a/vendor/x.jl", false)
 end
 
-@testset "ignore: a bare name matches at any depth" begin
+@testitem "ignore: a bare name matches at any depth" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["build"])
     @test Dendro.is_ignored(pats, "build", true)
     @test Dendro.is_ignored(pats, "a/b/build", true)
 end
 
-@testset "ignore: an unanchored glob matches at any depth" begin
+@testitem "ignore: an unanchored glob matches at any depth" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["*.generated.jl"])
     @test Dendro.is_ignored(pats, "x.generated.jl", false)
     @test Dendro.is_ignored(pats, "a/b/x.generated.jl", false)
 end
 
-@testset "ignore: a trailing slash matches directories only" begin
+@testitem "ignore: a trailing slash matches directories only" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["vendor/"])
     @test Dendro.is_ignored(pats, "vendor", true)
     @test !Dendro.is_ignored(pats, "vendor", false)
 end
 
-@testset "ignore: a star stops at a separator" begin
+@testitem "ignore: a star stops at a separator" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["gen/*.jl"])
     @test Dendro.is_ignored(pats, "gen/a.jl", false)
     @test !Dendro.is_ignored(pats, "gen/sub/a.jl", false)
 end
 
-@testset "ignore: a question mark matches one non-separator char" begin
+@testitem "ignore: a question mark matches one non-separator char" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["v?.jl"])
     @test Dendro.is_ignored(pats, "va.jl", false)
     @test !Dendro.is_ignored(pats, "vab.jl", false)
 end
 
-@testset "ignore: a leading ** spans directories" begin
+@testitem "ignore: a leading ** spans directories" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["**/gen/a.jl"])
     @test Dendro.is_ignored(pats, "gen/a.jl", false)
     @test Dendro.is_ignored(pats, "x/y/gen/a.jl", false)
 end
 
-@testset "ignore: a trailing /** matches everything inside" begin
+@testitem "ignore: a trailing /** matches everything inside" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["gen/**"])
     @test Dendro.is_ignored(pats, "gen/a.jl", false)
     @test Dendro.is_ignored(pats, "gen/sub/a.jl", false)
     @test !Dendro.is_ignored(pats, "gen", true)
 end
 
-@testset "ignore: negation re-includes, last match wins" begin
+@testitem "ignore: negation re-includes, last match wins" tags = [:ignore] begin
     pats = Dendro.compile_ignores(["*.jl", "!keep.jl"])
     @test Dendro.is_ignored(pats, "a.jl", false)
     @test !Dendro.is_ignored(pats, "keep.jl", false)
 end
 
-@testset "analyze ignores a vendored path" begin
+@testitem "analyze ignores a vendored path" tags = [:ignore] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         mkpath(joinpath(dir, "vendor"))
         write(joinpath(dir, "vendor", "v.jl"), "function busy(a, b, c, d, e, f)\n    1\nend\n")
@@ -73,7 +75,9 @@ end
     end
 end
 
-@testset "ignore removes files from the corpus, not just the findings" begin
+@testitem "ignore removes files from the corpus, not just the findings" setup = [Fixtures] tags = [:ignore] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         # The duplicate exists only between the vendored file and the source file.
         # Ignoring vendor leaves the source function unique, so no clone remains.
@@ -82,11 +86,13 @@ end
         write(joinpath(dir, "s.jl"), "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
 
         @test any(f -> f.metric == :duplicate, analyze(dir; min_size = 1))
-        @test isempty(duplicates(analyze(dir; min_size = 1, ignore = ["vendor/"])))
+        @test isempty(Fixtures.duplicates(analyze(dir; min_size = 1, ignore = ["vendor/"])))
     end
 end
 
-@testset "analyze honours ignore negation" begin
+@testitem "analyze honours ignore negation" tags = [:ignore] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         write(joinpath(dir, "drop.jl"), "function busy(a, b, c, d, e, f)\n    1\nend\n")
         write(joinpath(dir, "keep.jl"), "function alsobusy(a, b, c, d, e, f)\n    1\nend\n")
@@ -97,7 +103,9 @@ end
     end
 end
 
-@testset "ignore is a no-op for a single named file" begin
+@testitem "ignore is a no-op for a single named file" tags = [:ignore] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         file = joinpath(dir, "v.jl")
         write(file, "function busy(a, b, c, d, e, f)\n    1\nend\n")

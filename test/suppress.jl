@@ -1,4 +1,4 @@
-@testset "is_suppressed" begin
+@testitem "is_suppressed" tags = [:suppress] begin
     Directive = Dendro.Directive
 
     # Same-line and preceding-line, all metrics.
@@ -25,57 +25,54 @@
     @test !Dendro.is_suppressed(Dendro.Directive[], 1, :cyclomatic)
 end
 
-@testset "suppressions parsing" begin
-
+@testitem "suppressions parsing" setup = [Fixtures] tags = [:suppress] begin
     src = "# dendro-ignore\nfunction f()\nend\n"
-    dirs = Dendro.suppressions(idx(:julia, src); file = "x.jl")
+    dirs = Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl")
     d = only(dirs)
     @test d.scope == 1
     @test d.metrics === nothing
 
     src = "# dendro-ignore: cyclomatic, parameter_count\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
+    d = only(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
     @test d.scope == 1
     @test d.metrics == Set([:cyclomatic, :parameter_count])
 
     src = "# dendro-ignore-file\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
+    d = only(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
     @test d.scope === :file
     @test d.metrics === nothing
 
     src = "# dendro-ignore-file: cyclomatic\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
+    d = only(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
     @test d.scope === :file
     @test d.metrics == Set([:cyclomatic])
 
     src = "# just a comment\nfunction f()\nend\n"
-    @test isempty(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
+    @test isempty(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
 end
 
-@testset "suppressions typo guard" begin
-
+@testitem "suppressions typo guard" setup = [Fixtures] tags = [:suppress] begin
     src = "# dendro-ignore: cyclomatc\nfunction f()\nend\n"
 
-    dirs = @test_logs (:warn,) Dendro.suppressions(idx(:julia, src); file = "x.jl")
+    dirs = @test_logs (:warn,) Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl")
     # The unknown token is dropped, leaving a directive that suppresses nothing.
     @test only(dirs).metrics == Set{Symbol}()
 end
 
-@testset "suppression directive with a reason" begin
-
+@testitem "suppression directive with a reason" setup = [Fixtures] tags = [:suppress] begin
     # A reason after a `--` delimiter is ignored, with no warning.
     src = "# dendro-ignore: cyclomatic -- it is a dispatch table\nfunction f()\nend\n"
-    d = only(Dendro.suppressions(idx(:julia, src); file = "x.jl"))
+    d = only(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
     @test d.metrics == Set([:cyclomatic])
 
     # A recognized metric still applies when followed by stray prose, rather
     # than silently suppressing nothing. The prose words warn.
     src = "# dendro-ignore: cyclomatic generated\nfunction f()\nend\n"
-    dirs = @test_logs (:warn,) Dendro.suppressions(idx(:julia, src); file = "x.jl")
+    dirs = @test_logs (:warn,) Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl")
     @test :cyclomatic in only(dirs).metrics
 end
 
-@testset "suppression integration (julia)" begin
+@testitem "suppression integration (julia)" tags = [:suppress] begin
     mktempdir() do dir
         # Preceding-line directive on a 6-parameter function suppresses only that
         # metric; other findings on the function survive.
@@ -103,7 +100,7 @@ end
     end
 end
 
-@testset "suppression is language-agnostic" begin
+@testitem "suppression is language-agnostic" tags = [:suppress] begin
     mktempdir() do dir
         # Python: a hash comment.
         py = joinpath(dir, "p.py")
@@ -119,7 +116,7 @@ end
     end
 end
 
-@testset "report suppression footer" begin
+@testitem "report suppression footer" tags = [:suppress] begin
     mktempdir() do dir
         path = joinpath(dir, "p.jl")
         write(path, "# dendro-ignore: parameter_count\nfunction f(a, b, c, d, e, f)\n    1\nend\n")

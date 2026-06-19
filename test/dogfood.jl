@@ -3,7 +3,9 @@
 # The assertions check absolute `:high` bands, presence flags, and duplicate
 # clusters, none of which depend on the corpus distribution, so the result is
 # deterministic.
-@testset "dogfood: Dendro's own source" begin
+@testitem "dogfood: Dendro's own source" tags = [:dogfood] begin
+    using Dendro: analyze, active
+
     srcdir = joinpath(pkgdir(Dendro), "src")
     @test !isempty(filter(f -> endswith(f, ".jl"), readdir(srcdir)))
 

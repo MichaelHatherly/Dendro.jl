@@ -1,13 +1,13 @@
-duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :duplicate, findings))
+@testitem "analyze clusters duplicates across files" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
 
-@testset "analyze clusters duplicates across files" begin
     mktempdir() do dir
         a = joinpath(dir, "a.jl")
         b = joinpath(dir, "b.jl")
         write(a, "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
         write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
 
-        hit = only(duplicates(analyze(dir; min_size = 1)))
+        hit = only(Fixtures.duplicates(analyze(dir; min_size = 1)))
         @test hit.metric == :duplicate
         @test hit.kind == :flag
         @test hit.value == 2
@@ -18,7 +18,9 @@ duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :duplicate, findi
     end
 end
 
-@testset "analyze scans multiple roots as one corpus" begin
+@testitem "analyze scans multiple roots as one corpus" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do root1
         mktempdir() do root2
             a = joinpath(root1, "a.jl")
@@ -26,7 +28,7 @@ end
             write(a, "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
             write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
 
-            hit = only(duplicates(analyze([root1, root2]; min_size = 1)))
+            hit = only(Fixtures.duplicates(analyze([root1, root2]; min_size = 1)))
             @test hit.value == 2
             @test sort([loc.file for loc in hit.locations]) == sort([a, b])
             @test Set(loc.unit for loc in hit.locations) == Set(["f", "g"])
@@ -34,7 +36,9 @@ end
     end
 end
 
-@testset "analyze clusters more than two duplicates" begin
+@testitem "analyze clusters more than two duplicates" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         a = joinpath(dir, "a.jl")
         b = joinpath(dir, "b.jl")
@@ -43,40 +47,46 @@ end
         write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
         write(c, "function h(n)\n    m = n + 5\n    return m * 3\nend\n")
 
-        hit = only(duplicates(analyze(dir; min_size = 1)))
+        hit = only(Fixtures.duplicates(analyze(dir; min_size = 1)))
         @test hit.value == 3
         @test length(hit.locations) == 3
         @test sort([loc.file for loc in hit.locations]) == sort([a, b, c])
     end
 end
 
-@testset "analyze size gate" begin
+@testitem "analyze size gate" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         write(joinpath(dir, "a.jl"), "function getx()\n    x\nend\n")
         write(joinpath(dir, "b.jl"), "function getx()\n    x\nend\n")
 
-        @test isempty(duplicates(analyze(dir)))
-        @test length(duplicates(analyze(dir; min_size = 1))) == 1
+        @test isempty(Fixtures.duplicates(analyze(dir)))
+        @test length(Fixtures.duplicates(analyze(dir; min_size = 1))) == 1
     end
 end
 
-@testset "analyze ignores lone functions" begin
+@testitem "analyze ignores lone functions" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
         write(joinpath(dir, "b.jl"), "function g(p, q)\n    while p > q\n        p -= 1\n    end\n    return p\nend\n")
 
-        @test isempty(duplicates(analyze(dir; min_size = 1)))
+        @test isempty(Fixtures.duplicates(analyze(dir; min_size = 1)))
     end
 end
 
-@testset "analyze does not cluster across languages" begin
+@testitem "analyze does not cluster across languages" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\nfunction f2(x)\n    y = x + 1\n    return y * 2\nend\n")
         write(joinpath(dir, "a.py"), "def f(x):\n    y = x + 1\n    return y * 2\ndef f2(x):\n    y = x + 1\n    return y * 2\n")
 
         # Each language has its own duplicate pair; the (language, hash) key keeps
         # them from merging into one cross-language cluster.
-        findings = duplicates(analyze(dir; min_size = 1))
+        findings = Fixtures.duplicates(analyze(dir; min_size = 1))
         @test length(findings) == 2
         for f in findings
             @test length(Set(last(splitext(loc.file)) for loc in f.locations)) == 1
@@ -84,30 +94,36 @@ end
     end
 end
 
-@testset "analyze detects duplicates within one file" begin
+@testitem "analyze detects duplicates within one file" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         file = joinpath(dir, "a.jl")
         write(file, "function f(x)\n    y = x + 1\n    return y * 2\nend\nfunction g(t)\n    z = t + 9\n    return z * 7\nend\n")
 
-        hit = only(duplicates(analyze(file; min_size = 1)))
+        hit = only(Fixtures.duplicates(analyze(file; min_size = 1)))
         @test hit.value == 2
         @test all(loc.file == file for loc in hit.locations)
         @test Set(loc.unit for loc in hit.locations) == Set(["f", "g"])
     end
 end
 
-@testset "analyze respects dendro-ignore: duplicate" begin
+@testitem "analyze respects dendro-ignore: duplicate" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze, active
+
     mktempdir() do dir
         write(joinpath(dir, "a.jl"), "# dendro-ignore: duplicate\nfunction f(x)\n    y = x + 1\n    return y * 2\nend\n")
         write(joinpath(dir, "b.jl"), "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
 
         findings = analyze(dir; min_size = 1)
         @test any(f -> f.metric == :duplicate && f.suppressed, findings)
-        @test isempty(duplicates(active(findings)))
+        @test isempty(Fixtures.duplicates(active(findings)))
     end
 end
 
-@testset "report renders a duplicate cluster" begin
+@testitem "report renders a duplicate cluster" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         a = joinpath(dir, "a.jl")
         b = joinpath(dir, "b.jl")
@@ -115,7 +131,7 @@ end
         write(b, "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
 
         io = IOBuffer()
-        show(io, MIME("text/plain"), duplicates(analyze(dir; min_size = 1)))
+        show(io, MIME("text/plain"), Fixtures.duplicates(analyze(dir; min_size = 1)))
         out = String(take!(io))
         @test occursin("duplicate", out)
         @test occursin("also at", out)
@@ -124,7 +140,9 @@ end
     end
 end
 
-@testset "analyze combines metrics and duplicates" begin
+@testitem "analyze combines metrics and duplicates" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         # a and b hold a duplicated pair; c is a separately complex function.
         write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
@@ -137,7 +155,9 @@ end
     end
 end
 
-@testset "analyze auto-builds a baseline for a folder" begin
+@testitem "analyze auto-builds a baseline for a folder" tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         # Nine flat functions and one with a branch: the outlier ranks at the top of
         # the corpus distribution, so relative scoring fires without a passed baseline.
@@ -151,7 +171,9 @@ end
     end
 end
 
-@testset "analyze auto-builds a baseline for a single file" begin
+@testitem "analyze auto-builds a baseline for a single file" tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         file = joinpath(dir, "g.jl")
         write(file, "function g(x)\n    if x > 0\n        1\n    end\nend\n")
@@ -160,23 +182,29 @@ end
     end
 end
 
-@testset "analyze gates trivial duplicates by default" begin
+@testitem "analyze gates trivial duplicates by default" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         write(joinpath(dir, "a.jl"), "function getx()\n    x\nend\n")
         write(joinpath(dir, "b.jl"), "function getx()\n    x\nend\n")
 
-        @test isempty(duplicates(analyze(dir)))
+        @test isempty(Fixtures.duplicates(analyze(dir)))
     end
 end
 
-@testset "analyze skips profileless files" begin
+@testitem "analyze skips profileless files" tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         write(joinpath(dir, "readme.md"), "# heading\n")
         @test analyze(dir) == Dendro.Finding[]
     end
 end
 
-@testset "analyze detects a duplicated block across functions" begin
+@testitem "analyze detects a duplicated block across functions" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         a = joinpath(dir, "a.jl")
         b = joinpath(dir, "b.jl")
@@ -185,7 +213,7 @@ end
         write(a, "function alpha(x)\n    seen = 0\n    while x > 0\n        seen += x\n        seen *= 2\n        x -= 1\n    end\n    return seen\nend\n")
         write(b, "function beta(p, q)\n    acc = 1\n    helper(q)\n    while p > 0\n        acc += p\n        acc *= 2\n        p -= 1\n    end\n    return acc + q\nend\n")
 
-        hit = only(duplicates(analyze(dir; min_size = 1)))
+        hit = only(Fixtures.duplicates(analyze(dir; min_size = 1)))
         @test hit.metric == :duplicate
         @test hit.value == 2
         @test Set(loc.unit for loc in hit.locations) == Set(["alpha", "beta"])
@@ -193,7 +221,9 @@ end
     end
 end
 
-@testset "maximality reports the function, not its blocks" begin
+@testitem "maximality reports the function, not its blocks" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
     mktempdir() do dir
         # Two renamed-clone functions, each with a nested if-block. The function, its
         # body, and the if-body all duplicate; only the maximal one, the function, is
@@ -202,7 +232,7 @@ end
         write(joinpath(dir, "a.jl"), src)
         write(joinpath(dir, "b.jl"), replace(src, "f(x)" => "g(w)"))
 
-        hits = duplicates(analyze(dir; min_size = 1))
+        hits = Fixtures.duplicates(analyze(dir; min_size = 1))
         @test length(hits) == 1
         @test first(hits).value == 2
         @test all(loc.line == 1 for loc in first(hits).locations)

@@ -339,9 +339,20 @@ unsuppressed findings for gating.
 ## Testing
 
 `Pkg.test()` runs under `test/Project.toml`, which carries the language JLLs the
-package environment omits, so parsing only works there. `test/dogfood.jl` runs
-Dendro on its own `src/`, gated on `active(...)`, and must stay clean: no `:high`
-complexity findings (cyclomatic, nesting, length, boolean), no stub markers, no
-swallowed errors, no empty bodies, no returns inside a finally clause, no
-duplicates exact or near. A change that makes Dendro trip its own metrics is a
-signal to fix the code.
+package environment omits, so parsing only works there. The suite is
+[TestItemRunner](https://github.com/julia-vscode/TestItemRunner.jl): `runtests.jl`
+is one `@run_package_tests` call, and each check is a self-contained `@testitem`
+tagged by area (`:metrics`, `:clones`, `:jet`, …). Items run in their own module,
+so each imports what it uses; `Dendro` and `Test` are auto-imported. Shared
+helpers and the language-fixture tables live in one `@testmodule Fixtures`
+(`test/setup.jl`), reached qualified, e.g. `Fixtures.idx(:julia, src)`.
+
+`test/dogfood.jl` runs Dendro on its own `src/`, gated on `active(...)`, and must
+stay clean: no `:high` complexity findings (cyclomatic, nesting, length, boolean),
+no stub markers, no swallowed errors, no empty bodies, no returns inside a finally
+clause, no duplicates exact or near. A change that makes Dendro trip its own
+metrics is a signal to fix the code.
+
+`test/jet.jl` is the `:jet` item: basic-mode JET is a zero-tolerance gate on every
+Julia version, sound mode and the optimization analyzer are ratcheted at
+`SOUND_LIMIT`/`OPT_LIMIT` (pinned to one Julia version, lowered when a count drops).

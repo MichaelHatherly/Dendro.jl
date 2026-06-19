@@ -1,4 +1,4 @@
-@testset "analyze absolute findings" begin
+@testitem "analyze absolute findings" tags = [:report] begin
     mktempdir() do dir
         path = joinpath(dir, "c.jl")
         write(path, "function f(a, b, c, d, e, f)\n    1\nend\n")
@@ -15,7 +15,7 @@
     end
 end
 
-@testset "analyze relative findings" begin
+@testitem "analyze relative findings" tags = [:report] begin
     mktempdir() do dir
         path = joinpath(dir, "g.jl")
         write(path, "function g(x)\n    if x > 0\n        1\n    end\nend\n")
@@ -30,7 +30,7 @@ end
     end
 end
 
-@testset "analyze flag findings" begin
+@testitem "analyze flag findings" tags = [:report] begin
     mktempdir() do dir
         swallow = joinpath(dir, "s.jl")
         write(swallow, "function f()\n    try\n        g()\n    catch\n    end\nend\n")
@@ -46,7 +46,7 @@ end
     end
 end
 
-@testset "analyze language argument forms" begin
+@testitem "analyze language argument forms" tags = [:report] begin
     mktempdir() do dir
         path = joinpath(dir, "snippet.txt")   # extension is not recognised
         write(path, "function f(a, b, c, d, e, f)\n    1\nend\n")
@@ -59,7 +59,7 @@ end
     end
 end
 
-@testset "report formatting" begin
+@testitem "report formatting" tags = [:report] begin
     mktempdir() do dir
         path = joinpath(dir, "c.jl")
         write(path, "function f(a, b, c, d, e, f)\n    1\nend\n")
@@ -73,7 +73,7 @@ end
     end
 end
 
-@testset "github annotations" begin
+@testitem "github annotations" tags = [:report] begin
     mktempdir() do dir
         # A warn-band scalar renders a ::warning line anchored at the unit, with a
         # title property whose colon is percent-escaped.
