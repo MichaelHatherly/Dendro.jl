@@ -8,15 +8,45 @@
     fixture(lang) = (Dendro.parser_for(lang), Dendro.PROFILES[lang])
 
     # Parse `src` and build its query index, the per-tree node identification every
-    # metric and flag reads from.
+    # metric and flag reads from. The scopes query is threaded through so the index
+    # carries bindings for languages that ship one.
     idx(lang, src) =
-        Dendro.build_index(TreeSitter.parse(Dendro.parser_for(lang), src), Symbol(lang), String(src), Dendro.query_for(lang))
+        Dendro.build_index(
+        TreeSitter.parse(Dendro.parser_for(lang), src), Symbol(lang), String(src),
+        Dendro.query_for(lang), Dendro.scopes_query_for(Symbol(lang))
+    )
 
     # A ParsedFile for one source, the corpus record clone and naturalness tests need.
     function parsedfile(lang, src; file = "f." * string(lang), directives = Dendro.Directive[])
         tree = TreeSitter.parse(Dendro.parser_for(lang), src)
-        index = Dendro.build_index(tree, Symbol(lang), String(src), Dendro.query_for(lang))
+        index = Dendro.build_index(
+            tree, Symbol(lang), String(src), Dendro.query_for(lang),
+            Dendro.scopes_query_for(Symbol(lang))
+        )
         return Dendro.ParsedFile(Symbol(lang), String(src), file, tree, index, directives)
+    end
+
+    # The bindings resolved for `src`, the type-stable entry the binding test asserts
+    # inference on. Narrows the scopes query past its `nothing` case before the call.
+    function resolve(lang, src)
+        tree = TreeSitter.parse(Dendro.parser_for(lang), src)
+        query = Dendro.scopes_query_for(Symbol(lang))
+        query === nothing && error("no scopes query for $lang")
+        return Dendro.resolve_bindings!(Dict{Dendro.NodeId, Dendro.NodeId}(), tree, query, String(src))
+    end
+
+    # Each resolved binding as `(ref_text, ref_line) => (def_text, def_line)`, the
+    # readable form the binding tests assert on.
+    function binding_pairs(index)
+        info = Dict{Dendro.NodeId, Tuple{String, Int}}()
+        for n in index.name.nodes
+            info[Dendro.nodeid(n)] = (String(strip(TreeSitter.slice(index.source, n))), Int(TreeSitter.start_point(n).row) + 1)
+        end
+        pairs = Pair{Tuple{String, Int}, Tuple{String, Int}}[]
+        for (r, d) in index.bindings
+            push!(pairs, info[r] => info[d])
+        end
+        return pairs
     end
 
     # Findings of one relational metric, the filters the clone and corpus items share.
@@ -89,6 +119,25 @@
             lang = :typescript, src = "function f(x: number, y: number): number {\n  if (x > 0 && y > 0) { }\n  try { g(); } catch (e) { }\n  return 0;\n}\n",
             cyclomatic = 4, cognitive = 4, params = 2, catches = 1, stubs = 0, nesting = 1, length = 5, boolean = 1, returns = 1,
         ),
+    ]
+
+    # One binding fixture per language: a two-function source where `f` calls
+    # `helper`. The cohesion edge is the call reference binding to the sibling
+    # definition. `ref`/`def` are the 1-based lines of the call and the definition,
+    # hand-read from each source. Proves the scopes query compiles and the core edge
+    # forms in every language Dendro parses.
+    const LANGUAGE_BINDING_CASES = [
+        (lang = :bash, src = "helper() {\n  echo \$1\n}\nf() {\n  helper \$1\n}\n", ref = 5, def = 1),
+        (lang = :c, src = "int helper(int x) { return x + 1; }\nint f(int a) { return helper(a); }\n", ref = 2, def = 1),
+        (lang = :cpp, src = "int helper(int x) { return x + 1; }\nint f(int a) { return helper(a); }\n", ref = 2, def = 1),
+        (lang = :go, src = "package m\nfunc helper(x int) int { return x + 1 }\nfunc f(a int) int { return helper(a) }\n", ref = 3, def = 2),
+        (lang = :java, src = "class C {\n  int helper(int x) { return x + 1; }\n  int f(int a) { return helper(a); }\n}\n", ref = 3, def = 2),
+        (lang = :javascript, src = "function helper(x) { return x + 1; }\nfunction f(a) { return helper(a); }\n", ref = 2, def = 1),
+        (lang = :php, src = "<?php\nfunction helper(\$x) { return \$x + 1; }\nfunction f(\$a) { return helper(\$a); }\n", ref = 3, def = 2),
+        (lang = :python, src = "def helper(x):\n    return x + 1\ndef f(a):\n    return helper(a)\n", ref = 4, def = 1),
+        (lang = :ruby, src = "def helper(x)\n  x + 1\nend\ndef f(a)\n  helper(a)\nend\n", ref = 5, def = 1),
+        (lang = :rust, src = "fn helper(x: i32) -> i32 { x + 1 }\nfn f(a: i32) -> i32 { helper(a) }\n", ref = 2, def = 1),
+        (lang = :typescript, src = "function helper(x: number): number { return x + 1; }\nfunction f(a: number): number { return helper(a); }\n", ref = 2, def = 1),
     ]
 
     # NPath per grammar: one construct per case, the value hand-derived from PMD's rules

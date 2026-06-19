@@ -14,11 +14,12 @@ function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothin
     files = ParsedFile[]
     for path in paths
         lang = forced === nothing ? language_for_path(path) : forced
-        (lang === nothing || !haskey(PROFILES, lang)) && continue
+        lang === nothing && continue
+        haskey(PROFILES, lang) || continue
         parser = get!(() -> parser_for(lang), parsers, lang)
         source = read(path, String)
         tree = parse(parser, source)
-        index = build_index(tree, lang, source, query_for(lang))
+        index = build_index(tree, lang, source, query_for(lang), scopes_query_for(lang))
         directives = suppressions(index; file = path, rules)
         push!(files, ParsedFile(lang, source, String(path), tree, index, directives))
     end
@@ -161,5 +162,6 @@ function analyze(
         )
     )
     append!(findings, scope_clusters(cluster_unnatural(files; cut), scope))
+    append!(findings, scope_clusters(cluster_low_cohesion(files; cut), scope))
     return Findings(findings)
 end

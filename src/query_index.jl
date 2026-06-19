@@ -99,6 +99,9 @@ struct QueryIndex
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
     # fields.
     by_name::Dict{String, Concept}
+    # Each reference identifier's identity mapped to the in-file definition it
+    # resolves to, filled by `resolve_bindings!` when a scopes query is supplied.
+    bindings::Dict{NodeId, NodeId}
 
     function QueryIndex(language::Symbol, source::String)
         short_function, decision, continuation, nesting = Concept(), Concept(), Concept(), Concept()
@@ -123,7 +126,7 @@ struct QueryIndex
             short_function, decision, continuation, nesting, short_circuit, parameter,
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
-            try_stmt, case, by_name,
+            try_stmt, case, by_name, Dict{NodeId, NodeId}(),
         )
     end
 end
@@ -147,13 +150,17 @@ function preorder_key(n::TreeSitter.Node)
 end
 
 """
-    build_index(tree, language, source, query) -> QueryIndex
+    build_index(tree, language, source, query, scopes_query = nothing) -> QueryIndex
 
 Run `query` over `tree` once and collect every capture into a [`QueryIndex`](@ref).
 `@function` captures become [`FunctionUnit`](@ref)s; every other capture is filed
-under its concept.
+under its concept. When `scopes_query` is given, a second pass resolves each
+reference to its in-file definition into `index.bindings`.
 """
-function build_index(tree::TreeSitter.Tree, language::Symbol, source::AbstractString, query::TreeSitter.Query)
+function build_index(
+        tree::TreeSitter.Tree, language::Symbol, source::AbstractString, query::TreeSitter.Query,
+        scopes_query::Union{TreeSitter.Query, Nothing} = nothing
+    )
     idx = QueryIndex(language, String(source))
     funcs = TreeSitter.Node[]
     for cap in TreeSitter.each_capture(tree, query, source)
@@ -169,6 +176,9 @@ function build_index(tree::TreeSitter.Tree, language::Symbol, source::AbstractSt
         sp = TreeSitter.start_point(n)
         ep = TreeSitter.end_point(n)
         Base.push!(idx.functions, FunctionUnit(n, Int(sp.row) + 1, Int(ep.row) + 1))
+    end
+    if scopes_query !== nothing
+        resolve_bindings!(idx.bindings, tree, scopes_query, idx.source)
     end
     return idx
 end

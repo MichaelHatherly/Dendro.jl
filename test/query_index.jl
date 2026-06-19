@@ -47,3 +47,25 @@ end
         @test setdiff(Set(capture_names(Dendro.query_for(lang))), valid) == Set{String}()
     end
 end
+
+@testitem "every scopes query uses only known capture names" tags = [:query_index] begin
+    using TreeSitter
+
+    function capture_names(q::TreeSitter.Query)
+        return [
+            unsafe_string(TreeSitter.API.ts_query_capture_name_for_id(q.ptr, UInt32(i), Ref{UInt32}()))
+                for i in 0:(TreeSitter.capture_count(q) - 1)
+        ]
+    end
+
+    # A scopes query routes captures by name: `scope`, `reference`, or `definition.*`.
+    # Any other capture mis-routes silently in the resolver. Catch a typo here, for
+    # every language that ships a scopes query.
+    fixed = Set{String}(["scope", "reference"])
+    @testset "$lang" for lang in sort!(collect(keys(Dendro.PROFILES)))
+        q = Dendro.scopes_query_for(lang)
+        q === nothing && continue
+        extra = filter(n -> !(n in fixed) && !startswith(n, "definition."), capture_names(q))
+        @test isempty(extra)
+    end
+end

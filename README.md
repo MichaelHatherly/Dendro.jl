@@ -108,15 +108,17 @@ operands (`x == x`, `a && a`), and a conditional whose branches are all identica
 Each metric is a [rule](#custom-rules). The set above is the default; a caller can
 add their own or opt into rules that are off by default.
 
-Relational (computed across the corpus, not per function): duplicates (below), and
-naturalness. Naturalness scores each function's token sequence against a per-language
-trigram model of the rest of the corpus, in bits per token. The corpus model is
-interpolated with a per-file cache model (after Tu et al., "On the Localness of
-Software"), so a function is read against its own file's idiom, not just the
-corpus's, which sharpens genuine outliers and quiets file-consistent patterns. A
-surprising, unidiomatic function scores high, and surprise correlates with bugs.
-Reported as `:unnatural` with both scores, the absolute cross-entropy band and the
-corpus percentile. A language with too few tokens to model is skipped.
+Relational (computed across the corpus, not per function): duplicates (below),
+naturalness, and within-file cohesion. Naturalness scores each function's token
+sequence against a per-language trigram model of the rest of the corpus, in bits per
+token. The corpus model is interpolated with a per-file cache model (after Tu et al.,
+"On the Localness of Software"), so a function is read against its own file's idiom,
+not just the corpus's, which sharpens genuine outliers and quiets file-consistent
+patterns. A surprising, unidiomatic function scores high, and surprise correlates
+with bugs. Reported as `:unnatural` with both scores, the absolute cross-entropy band
+and the corpus percentile. A language with too few tokens to model is skipped.
+
+Cohesion asks whether a file's functions group by usage (below).
 
 ## Duplicate detection
 
@@ -166,6 +168,42 @@ A near-miss stays syntactic and within one language, like exact detection. Pass
 `threshold` higher to demand closer matches, `radius_factor` to widen or narrow the
 candidate search.
 
+## Within-file cohesion
+
+`analyze` reports files whose functions split into independent concerns, as
+`:low_cohesion`. It builds a graph of a file's functions and links two when they
+reference a common file-local name, a helper, type, or constant defined in the same
+file. A file that breaks into several disconnected components holds that many
+concerns living together, the LCOM4 reading of low cohesion. The finding's value is
+the component count, and its locations are one representative function per component:
+
+```
+src/util.jl:1  parse_date  low_cohesion 3 (warn)
+    also at src/util.jl:40  render_html
+    also at src/util.jl:88  open_socket
+```
+
+To link on the name's binding rather than the bare string, Dendro resolves each
+reference to the definition it refers to within the file (tree-sitter `locals`-style
+scopes, `src/queries/<lang>.scopes.scm`). This drops the noise a string graph
+carries: a local `x` in one function and a same-named `x` in another are different
+bindings, and an imported or builtin name resolves to nothing. A binding referenced
+by most of the file's functions is a cross-cutting utility, not a shared concern, and
+links nothing. Reported with both scores, the absolute band on the component count
+and the corpus percentile.
+
+The resolution is lexical, never dispatch: an edge means two functions reference the
+same file-local name, not that they call the same method. The signal stays syntactic
+and within one file. Cohesion runs for every supported language; each ships a scopes
+query.
+
+The lexical line has a cost in class-based code. An edge is call linkage, two
+functions naming the same file-local definition, not shared-field cohesion: with no
+symbol or field resolution, methods that touch the same instance field through
+different names form no edge. The reading is weakest for a file that is one class,
+where field-sharing is the main cohesion and Dendro sees only method-to-method calls.
+Java is the extreme, since every file is one class.
+
 ## Suppressing findings
 
 Some flagged code is fine in context. A comment directive accepts a specific
@@ -190,9 +228,10 @@ Metric names are the active rules' names plus the relational `duplicate` and
 `function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
 `empty_catch`, `stub_marker`, `empty_body`, `return_in_finally`,
 `identical_operands`, `duplicate_branches`, `duplicate`, `near_duplicate`,
-`unnatural`. A custom rule's
+`unnatural`, `low_cohesion`. A custom rule's
 name is accepted too. An unknown name warns, so a typo does not silently disable a
-check.
+check. `dendro-ignore-file: low_cohesion` is the usual way to accept a file that is
+meant to be a grab-bag.
 
 Suppression marks a finding rather than dropping it. Printing a findings vector
 lists the active findings and a footer counting the suppressed ones, and
