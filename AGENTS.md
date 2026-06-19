@@ -89,7 +89,8 @@ not the test.
   (`test/setup.jl`), reached qualified as `Fixtures.idx(...)`. Items run in any
   order, each in its own module.
   The `:jet` item runs [JET](https://github.com/aviatesk/JET.jl) static analysis
-  (`test/jet.jl`): basic mode is a zero-tolerance gate on every Julia version, so a
+  (`test/jet.jl`): basic mode is a zero-tolerance gate on every stable Julia version
+  (JET ships only a stub on pre-release Julia, so the item skips there), so a
   type-level regression fails the run. Sound mode and the optimization analyzer are
   ratcheted instead: their report counts are capped at the current value and may only
   fall. Lower a limit (`SOUND_LIMIT`, `OPT_LIMIT`) when reports are trimmed; the suite

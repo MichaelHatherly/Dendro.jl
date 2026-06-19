@@ -64,17 +64,15 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - 'lts'
+          # Dendro uses the `public` keyword, so the floor is Julia 1.11. `min`
+          # resolves the compat floor; `lts` (1.10) is below it.
+          - 'min'
           - '1'
           - 'nightly'
         os:
           - ubuntu-latest
           - macos-latest
           - windows-latest
-        include:
-          # Minimum version (Linux only)
-          - version: 'min'
-            os: ubuntu-latest
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
