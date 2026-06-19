@@ -83,7 +83,7 @@ Every scalar metric reports two scores, and a function is flagged when either
 fires:
 
 - **Absolute**: the value against a fixed band (cyclomatic warn >10 / high >20,
-  nesting >4, parameters >5). A fixed target a codebase can improve toward.
+  nesting >3, parameters >4). A fixed target a codebase can improve toward.
 - **Relative**: the value's percentile against the corpus. Catches functions
   worse than the codebase's own norm, the signal that matters in review.
 

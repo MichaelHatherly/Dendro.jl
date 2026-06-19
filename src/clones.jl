@@ -20,7 +20,7 @@ struct Subtree
 end
 
 """
-    subtrees(unit, profile) -> Vector{Subtree}
+    subtrees(unit, index) -> Vector{Subtree}
 
 Every named subtree of a function unit, bottom-up, stopping at nested callables so
 each is its own unit. The last entry is the unit's own node, the whole-function

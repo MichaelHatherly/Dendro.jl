@@ -79,7 +79,7 @@ function source_files(dir::AbstractString, ignore = String[])
 end
 
 """
-    analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, threshold=$DEFAULT_THRESHOLD, language=nothing, rules=BUILTIN_RULES) -> Findings
+    analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, threshold=$DEFAULT_THRESHOLD, radius_factor=$DEFAULT_RADIUS_FACTOR, language=nothing, rules=BUILTIN_RULES, ignore=String[]) -> Findings
     analyze(paths::AbstractVector; ...) -> Findings
 
 Analyze the file or folder at `path`. Every function gets scalar and flag metrics;
@@ -95,7 +95,7 @@ of the tree. The baseline, duplicate detection, and naturalness span the roots, 
 a function copied from one into another is caught. With `base`, all roots resolve
 to the one git toplevel and the repo-wide diff scopes them.
 
-`threshold` is the Dice cutoff for a near-miss, `radius_factor` scales the
+`threshold` is the LCS-similarity cutoff for a near-miss, `radius_factor` scales the
 candidate-search radius to a function's size.
 
 `rules` is the active rule set, defaulting to [`BUILTIN_RULES`]. Append your own
