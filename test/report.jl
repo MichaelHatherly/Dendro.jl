@@ -84,7 +84,7 @@ end
         out = String(take!(io))
         line = only(filter(l -> occursin("parameter_count", l), split(strip(out), "\n")))
         @test startswith(line, "::warning ")
-        @test occursin("file=$warnpath", line)
+        @test occursin("file=$(Dendro.escape_prop(warnpath))", line)
         @test occursin("line=1", line)
         @test occursin("title=Dendro%3A parameter_count", line)
         @test occursin("parameter_count 6", line)
