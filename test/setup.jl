@@ -144,6 +144,96 @@
     # (sequences multiply, branches add, each `&&`/`||` in a condition adds one, a switch
     # sums its case bodies). Ruby and Bash are absent: their branch bodies are not block
     # nodes, so the construct families are not wired.
+    # --- Real-file corpus -----------------------------------------------------
+    # A hand-written per-language corpus under `test/corpus/<lang>/`, run end to end
+    # through `analyze`. Each planted finding is tagged inline with a `dendro-expect`
+    # marker (mirroring `dendro-ignore`); the corpus test asserts the findings match
+    # the markers exactly. Scoring is absolute-band only (cut > 1), as the dogfood
+    # gate is, so the result does not depend on the corpus distribution.
+
+    corpus_root() = joinpath(pkgdir(Dendro), "test", "corpus")
+    corpus_langs() = sort([d for d in readdir(corpus_root()) if isdir(joinpath(corpus_root(), d))])
+
+    # Metrics the corpus assertion tracks. `:unnatural` is excluded: it is a corpus
+    # statistic, not a structural smell with a fixed site to mark.
+    const TRACKED_METRICS = Set{Symbol}(
+        [
+            :cyclomatic, :cognitive_complexity, :function_length, :nesting_depth,
+            :parameter_count, :boolean_complexity,
+            :identical_operands, :duplicate_branches, :empty_body, :empty_catch,
+            :stub_marker, :return_in_finally,
+            :duplicate, :near_duplicate, :low_cohesion,
+        ]
+    )
+
+    # Metrics reported per file, not at a code line. Their marker is file-scoped
+    # (`dendro-expect-file:`), matched when the file carries the metric at all.
+    const FILE_METRICS = Set{Symbol}([:low_cohesion])
+
+    const EXPECT_RE = r"\bdendro-expect(-file)?\s*:\s*([\w,\s]+)"i
+
+    # Parse `dendro-expect` markers from one source's comments, reusing the comment
+    # walk and metric-list split `suppressions` uses. Returns line-scoped markers as
+    # `(line, metric)` and file-scoped markers as `metric`, validated against
+    # `TRACKED_METRICS`.
+    function expect_markers(lang, source)
+        i = idx(lang, source)
+        line = Set{Tuple{Int, Symbol}}()
+        file = Set{Symbol}()
+        for n in i.comment.nodes
+            for m in eachmatch(EXPECT_RE, String(TreeSitter.slice(i.source, n)))
+                for tok in split(m.captures[2], r"[,\s]+"; keepempty = false)
+                    sym = Symbol(strip(tok))
+                    sym in TRACKED_METRICS || error("corpus marker names unknown metric: $sym")
+                    m.captures[1] === nothing ? push!(line, (Dendro.line_of(n), sym)) : push!(file, sym)
+                end
+            end
+        end
+        return (; line, file)
+    end
+
+    # Compare a language corpus's findings against its inline markers. Returns
+    # `(unexpected, missing)` as sorted strings; both empty means the corpus matched.
+    # A line marker matches a finding on its own line or the line below (the
+    # `is_suppressed` tolerance); duplicate and near-duplicate findings are matched
+    # per member location, low cohesion per file.
+    function corpus_mismatch(lang)
+        dir = joinpath(corpus_root(), string(lang))
+        findings = Dendro.active(Dendro.analyze(dir; cut = 2.0))
+
+        line_exp = Set{Tuple{String, Int, Symbol}}()
+        file_exp = Set{Tuple{String, Symbol}}()
+        for path in Dendro.source_files(dir)
+            mk = expect_markers(Dendro.language_for_path(path), read(path, String))
+            for (ln, mt) in mk.line
+                push!(line_exp, (path, ln, mt))
+            end
+            for mt in mk.file
+                push!(file_exp, (path, mt))
+            end
+        end
+
+        line_site = Set{Tuple{String, Int, Symbol}}()
+        file_site = Set{Tuple{String, Symbol}}()
+        for f in findings
+            f.metric in TRACKED_METRICS || continue
+            for loc in f.locations
+                f.metric in FILE_METRICS ? push!(file_site, (loc.file, f.metric)) :
+                    push!(line_site, (loc.file, loc.line, f.metric))
+            end
+        end
+
+        # A site at line F is expected by a marker at F (trailing) or F - 1 (above).
+        site_ok(p, l, mt) = (p, l, mt) in line_exp || (p, l - 1, mt) in line_exp
+        mark_ok(p, c, mt) = (p, c, mt) in line_site || (p, c + 1, mt) in line_site
+
+        unexpected = sort([string(p, ":", l, " ", mt) for (p, l, mt) in line_site if !site_ok(p, l, mt)])
+        append!(unexpected, sort([string(p, " ", mt, " (file)") for (p, mt) in file_site if !((p, mt) in file_exp)]))
+        missing = sort([string(p, ":", c, " ", mt) for (p, c, mt) in line_exp if !mark_ok(p, c, mt)])
+        append!(missing, sort([string(p, " ", mt, " (file)") for (p, mt) in file_exp if !((p, mt) in file_site)]))
+        return (; unexpected, missing)
+    end
+
     const NPATH_CASES = [
         (lang = :c, name = "if", src = "int f(int x){ if(x>0){a();} }", npath = 2),
         (lang = :c, name = "ifelse", src = "int f(int x){ if(x>0){a();}else{b();} }", npath = 2),
