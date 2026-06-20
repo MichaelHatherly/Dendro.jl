@@ -28,7 +28,7 @@ corpus (every profile-resolvable file under each folder, or a named file), parse
 each once, builds a baseline from that corpus, runs the per-file path above
 against it for each file,
 and appends the corpus-relational findings: cross-file duplicates, naturalness
-outliers, low-cohesion files, and misplaced units. The active rule set is a value it carries: the
+outliers, low-cohesion files, misplaced units, and scattered files. The active rule set is a value it carries: the
 `rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
 per-file scoring, and suppression validation, so a caller extends the checks
 without touching the pipeline. The baseline-from-the-corpus step is what makes
@@ -192,6 +192,14 @@ Reporting:
   coupling landing in the one other file it leans toward most, carrying the absolute
   `MISPLACED_BAND` and the corpus percentile, gated by the community anchor. Included
   before `corpus.jl`, which calls it.
+- `scattered.jl` defines cross-file scattering, the fifth corpus-relational pass and the
+  file-level companion to `:low_cohesion`. `combined_adjacency` folds each file's
+  within-file binding edges (`binding_groups`, shared with `cohesion.jl`) into the corpus
+  graph's cross-file adjacency, so `communities` sees a file's own cohesion; a file's
+  units then land in communities. `cluster_scattered` emits a `:scattered` finding per
+  file, scored by the count of distinct communities its units occupy whose plurality
+  anchor is another file, carrying the absolute `SCATTERED_BAND` and the corpus
+  percentile. Included after `placement.jl` and before `corpus.jl`, which calls it.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
@@ -202,9 +210,10 @@ Reporting:
   `baseline_from`, `scope_clusters` (the shared diff filter for the relational
   passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
   per-file findings, exact and near duplicates, naturalness, low cohesion, cross-file
-  placement, and optional diff scoping). It is included after `report.jl`, `diff.jl`,
-  `clones.jl`, `naturalness.jl`, `cohesion.jl`, `linkage.jl`, `corpus_graph.jl`, and
-  `placement.jl` so everything it calls is defined first.
+  placement, scattering, and optional diff scoping). It is included after `report.jl`,
+  `diff.jl`, `clones.jl`, `naturalness.jl`, `cohesion.jl`, `linkage.jl`,
+  `corpus_graph.jl`, `placement.jl`, and `scattered.jl` so everything it calls is
+  defined first.
 
 ## Core types
 

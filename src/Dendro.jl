@@ -28,6 +28,7 @@ include("cohesion.jl")
 include("linkage.jl")
 include("corpus_graph.jl")
 include("placement.jl")
+include("scattered.jl")
 include("ignore.jl")
 include("corpus.jl")
 

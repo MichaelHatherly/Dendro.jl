@@ -1,8 +1,8 @@
 # TODO
 
-Two deferred items from the corpus-binding-graph work (branch `mh/corpus-binding-graph`,
-7 commits off `main` at `26ec2bf`). Both are self-contained. Read the orientation and
-test-loop sections first; they are the non-obvious parts of working in this repo.
+Deferred items from the corpus-binding-graph work (branch `mh/corpus-binding-graph`).
+Each is self-contained. Read the orientation and test-loop sections first; they are the
+non-obvious parts of working in this repo.
 
 ## Orientation: what the branch added
 
@@ -25,6 +25,11 @@ files, in `include` order in `src/Dendro.jl` (after `cohesion.jl`):
   unit's whole coupling (own-file plus cross-file) landing in the single other file it
   leans toward most; `own_affinity` reads same-file coupling from `index.bindings`. The
   community anchor (`community_plurality`) gates candidacy.
+- `src/scattered.jl` — `cluster_scattered` emits `:scattered`, the file-level companion to
+  `:low_cohesion`. `combined_adjacency` folds each file's within-file binding edges
+  (`binding_groups`, shared with `cohesion.jl`) into the corpus graph before `communities`
+  runs, so a cohesive file's units cluster; the score counts the communities a file's units
+  occupy that are anchored elsewhere.
 
 Per-language linkage queries live in `src/queries/<lang>.imports.scm` (Go ships none; it
 groups by directory). The capture vocabulary is `@module`/`@module.name`,
@@ -33,7 +38,8 @@ groups by directory). The capture vocabulary is `@module`/`@module.name`,
 
 Docs describing the redrawn boundary (lexical name resolution across files is in scope;
 types and dispatch are not): `AGENTS.md`, `README.md` ("Cross-file placement" section),
-`ARCHITECTURE.md` (the `linkage.jl`/`corpus_graph.jl`/`placement.jl` layer entries).
+`ARCHITECTURE.md` (the `linkage.jl`/`corpus_graph.jl`/`placement.jl`/`scattered.jl` layer
+entries).
 
 ## Test loop (read before running anything)
 
@@ -122,7 +128,7 @@ EOF
 ### Next steps
 
 1. Bisect to the offending definition. The new methods are in `src/linkage.jl`,
-   `src/corpus_graph.jl`, `src/placement.jl`, plus the `bindings.jl` refactor
+   `src/corpus_graph.jl`, `src/placement.jl`, `src/scattered.jl`, plus the `bindings.jl` refactor
    (`collect_scopes`/`assign_defs!`/`def_kind`/`ScopeCaptures`) and `resolve.jl`. Comment
    out includes / definitions in halves, clearing the precompile cache between runs, until
    the minimal trigger is found. `analyze_from_definitions!` analyzes every method by its
@@ -138,65 +144,14 @@ EOF
    reproducer demands.
 4. Restore the commented-out `@testitem "JET"` body and re-run on a stable Julia.
 
-## Add a file-level `:scattered` metric
+## `:misplaced` is not suppressible by name
 
-Status: deferred, not started. The corpus graph and `communities` are in place and already
-power `:misplaced`; this would be the file-level companion, "this file's units belong to
-several different modules", the cross-file analog of within-file `:low_cohesion`.
-
-### Why the obvious version does not work
-
-First sketch: for each file, count the distinct communities its units fall into that are
-anchored in another file. Measured on Dendro's own `src/` it flags everything (linkage.jl
-6, several files 4), because **the corpus graph holds only cross-file edges**. A file's own
-units are never connected to each other in that graph, so they never share a community by
-construction, and any layered file looks scattered. The measurement:
-
-```julia
-julia --startup-file=no --project=. <<'EOF'
-using TestEnv; TestEnv.activate()
-import Dendro
-files = Dendro.parse_corpus(Dendro.source_files(joinpath(pkgdir(Dendro), "src")))
-table = Dendro.corpus_symbols(files); graph = Dendro.build_corpus_graph(files, table)
-comm = Dendro.communities(graph); plur = Dendro.community_plurality(graph, comm)
-byfile = Dict{String, Set{Int}}()
-for (i, c) in enumerate(comm)
-    f = graph.units[i].file
-    plur[c] == f || push!(get!(Set{Int}, byfile, f), c)
-end
-for (f, cs) in sort(collect(byfile); by = p -> -length(p[2]))
-    println(lpad(length(cs), 3), "  ", basename(f))
-end
-EOF
-```
-
-### What a real version needs
-
-Fold the within-file binding edges into the same graph the communities run on, so a
-cohesive file's units cluster together and only a genuine grab-bag splits:
-
-1. Add within-file unit edges to `CorpusGraph` (or a graph variant the metric builds): two
-   units in one file linked when one references a binding the other defines, exactly the
-   edge `file_components` in `src/cohesion.jl:55` already computes from `index.bindings`.
-   Reuse that logic rather than re-deriving it.
-2. Run `communities` over the combined graph. Now a normal file's units land in one
-   community; a file whose units split across communities anchored elsewhere is scattered.
-3. Score `:scattered` per file on the count of distinct communities its units occupy (or
-   the share not in the file's dominant community), two-score model like `:low_cohesion`
-   and `:misplaced`: an absolute band plus the corpus percentile. Mirror the guards in
-   `cohesion.jl` (`MIN_COHESION_UNITS`, `MIN_COHESION_FILES`).
-
-### Watch for
-
-- Overlap with `:low_cohesion` (within-file connected components) and `:misplaced`
-  (per-unit). Decide whether `:scattered` is a distinct signal worth a separate finding or
-  whether the value is already covered. If kept, articulate what it catches that the other
-  two miss (a file each of whose units individually belongs to a different other file).
-- It must keep Dendro's own `src/` clean at the absolute band (add `:scattered` to the
-  `test/dogfood.jl` smell filter and tune the band above the dogfood spread, as
-  `LOW_COHESION_BAND` and `MISPLACED_BAND` were).
-- Wire it into `analyze` (`src/corpus.jl`, beside the other relational passes, through
-  `scope_clusters` for diff scoping) and add it to `TRACKED_METRICS` in `test/setup.jl`.
-- If it carries a suggested-target location like `:misplaced`, add it to
-  `FIRST_LOCATION_METRICS` in `test/setup.jl` so the corpus harness matches the primary
-  site.
+`RELATIONAL_METRICS` in `src/rules.jl` lists `:duplicate`, `:near_duplicate`,
+`:unnatural`, `:low_cohesion`, `:scattered`, but not `:misplaced`, though
+`cluster_misplaced` calls `is_suppressed(..., :misplaced)`. So `dendro-ignore: misplaced`
+fails validation (`parse_metrics` warns "unknown metric in suppression directive" and
+drops it); only a bare `dendro-ignore`, which mutes every metric, suppresses a misplaced
+finding. The other relational metrics each accept their own name. Add `:misplaced` to
+`RELATIONAL_METRICS` and cover it with a placement suppression test mirroring the
+`:scattered`/`:low_cohesion` ignore-file tests. Found while wiring `:scattered`'s
+suppression; left out to keep that change scoped.

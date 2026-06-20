@@ -55,7 +55,7 @@ const OPTIONAL_RULES = Rule[
 rules_of_kind(rules, kind::Symbol) = Iterators.filter(r -> r.kind == kind, rules)
 
 # Metrics produced by corpus clustering rather than a rule.
-const RELATIONAL_METRICS = (:duplicate, :near_duplicate, :unnatural, :low_cohesion)
+const RELATIONAL_METRICS = (:duplicate, :near_duplicate, :unnatural, :low_cohesion, :scattered)
 
 # Metric names a directive may name: the active rules plus the relational clone
 # metrics. An inline `dendro-ignore` naming anything else warns.

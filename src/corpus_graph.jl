@@ -117,8 +117,11 @@ moving) over the undirected unit graph. Units that couple end up in one communit
 module the references say they belong to; a unit with no cross-file edge is its own
 community. Labels are contiguous from 1, assigned in first-seen order for determinism.
 """
-function communities(graph::CorpusGraph)
-    adj = adjacency(graph)
+communities(graph::CorpusGraph) = communities(adjacency(graph))
+
+# The community labels for a prebuilt undirected adjacency, the shape `:scattered`
+# reuses with within-file edges folded in.
+function communities(adj::Vector{Dict{Int, Float64}})
     n = length(adj)
     degree = Float64[sum(values(adj[i]); init = 0.0) for i in 1:n]
     twom = sum(degree)

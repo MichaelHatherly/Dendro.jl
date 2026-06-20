@@ -167,5 +167,6 @@ function analyze(
     table = corpus_symbols(files)
     graph = build_corpus_graph(files, table)
     append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut), scope))
+    append!(findings, scope_clusters(cluster_scattered(files, graph; cut), scope))
     return Findings(findings)
 end

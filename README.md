@@ -233,6 +233,19 @@ one by dispatch. A definition many units reach for is discounted as infrastructu
 shared helper does not pull every caller toward its file, the corpus analog of the
 cohesion ubiquity cut. A language with no linkage query contributes no cross-file edges.
 
+Reported as `:scattered`: a file whose units belong to several different modules, the
+cross-file companion to within-file `:low_cohesion`. The corpus graph holds only
+cross-file edges, so its communities alone would split every layered file. Folding each
+file's within-file binding edges, the same edges cohesion links on, into the graph first
+lets a cohesive file's units settle into one community, so only a file whose units are
+each drawn toward a different other file scatters. The score is the count of distinct
+communities the file's units occupy whose plurality anchor is another file: a file that
+stays home scores zero. A bag of unrelated functions is low-cohesion but not scattered,
+each its own self-anchored community; what scatters is a file each of whose units belongs
+with a different other file. Two scores, like cohesion: the absolute band and the corpus
+percentile. The finding's locations are one representative unit per elsewhere-anchored
+community.
+
 ## Suppressing findings
 
 Some flagged code is fine in context. A comment directive accepts a specific
@@ -257,7 +270,7 @@ Metric names are the active rules' names plus the relational `duplicate` and
 `function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
 `empty_catch`, `stub_marker`, `empty_body`, `return_in_finally`,
 `identical_operands`, `duplicate_branches`, `duplicate`, `near_duplicate`,
-`unnatural`, `low_cohesion`. A custom rule's
+`unnatural`, `low_cohesion`, `scattered`. A custom rule's
 name is accepted too. An unknown name warns, so a typo does not silently disable a
 check. `dendro-ignore-file: low_cohesion` is the usual way to accept a file that is
 meant to be a grab-bag.

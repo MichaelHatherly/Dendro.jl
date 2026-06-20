@@ -42,6 +42,32 @@ function containing_unit(ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
     return best
 end
 
+# The within-file links a file's bindings imply: each entry lists the local unit indices
+# that share one definition, the units referencing it plus, when it lives in a unit, its
+# owner. A binding referenced by more than `ubiquity` of the units links nothing, a
+# cross-cutting utility rather than a shared concern. The connectivity `:low_cohesion`
+# reads as components and `:scattered` folds into the corpus graph.
+function binding_groups(index::QueryIndex, ubiquity::Real)
+    units = functions(index)
+    n = length(units)
+    ranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    # Units referencing one definition, keyed by the definition's identity.
+    groups = Dict{NodeId, Vector{Int}}()
+    for (refid, defid) in index.bindings
+        ui = containing_unit(ranges, refid[1], refid[2])
+        ui == 0 && continue
+        push!(get!(() -> Int[], groups, defid), ui)
+    end
+    out = Vector{Int}[]
+    threshold = ubiquity * n
+    for (defid, members) in groups
+        length(unique(members)) > threshold && continue
+        owner = containing_unit(ranges, defid[1], defid[2])
+        push!(out, owner == 0 ? members : push!(copy(members), owner))
+    end
+    return out
+end
+
 """
     file_components(index, ubiquity=$COHESION_UBIQUITY) -> Union{Tuple{Int, Vector{Int}}, Nothing}
 
@@ -56,25 +82,12 @@ function file_components(index::QueryIndex, ubiquity::Real = COHESION_UBIQUITY)
     units = functions(index)
     n = length(units)
     n < MIN_COHESION_UNITS && return nothing
-    ranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
-    # Units referencing one definition, keyed by the definition's identity.
-    groups = Dict{NodeId, Vector{Int}}()
-    for (refid, defid) in index.bindings
-        ui = containing_unit(ranges, refid[1], refid[2])
-        ui == 0 && continue
-        push!(get!(() -> Int[], groups, defid), ui)
-    end
     parent = collect(1:n)
-    threshold = ubiquity * n
-    for (defid, members) in groups
-        length(unique(members)) > threshold && continue
+    for members in binding_groups(index, ubiquity)
         base = members[1]
         for m in members
             parent[uf_find(parent, m)] = uf_find(parent, base)
         end
-        # The unit defining this name, if any, joins the units that reference it.
-        owner = containing_unit(ranges, defid[1], defid[2])
-        owner == 0 || (parent[uf_find(parent, owner)] = uf_find(parent, base))
     end
     rep = Dict{Int, Int}()
     for i in 1:n

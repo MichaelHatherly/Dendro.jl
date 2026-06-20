@@ -162,13 +162,13 @@
             :parameter_count, :boolean_complexity,
             :identical_operands, :duplicate_branches, :empty_body, :empty_catch,
             :stub_marker, :return_in_finally,
-            :duplicate, :near_duplicate, :low_cohesion, :misplaced,
+            :duplicate, :near_duplicate, :low_cohesion, :misplaced, :scattered,
         ]
     )
 
     # Metrics reported per file, not at a code line. Their marker is file-scoped
     # (`dendro-expect-file:`), matched when the file carries the metric at all.
-    const FILE_METRICS = Set{Symbol}([:low_cohesion])
+    const FILE_METRICS = Set{Symbol}([:low_cohesion, :scattered])
 
     # Metrics whose finding carries a suggested target as a second location. Only the
     # first location, the flagged unit, is the marked site; the target is a hint.
