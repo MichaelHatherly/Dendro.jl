@@ -1,0 +1,4 @@
+# Local scratch benchmark results; history lives on the gh-pages branch.
+*.json
+*.md
+!.gitignore
