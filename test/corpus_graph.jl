@@ -63,6 +63,35 @@ end
     @test !haskey(graph.edges, (uidx, other_idx))
 end
 
+@testitem "corpus graph resolves a JavaScript named import" setup = [Fixtures] tags = [:corpus_graph] begin
+    util = Fixtures.parsedfile(:javascript, "export function helper(x) { return x; }\n"; file = "util.js")
+    main = Fixtures.parsedfile(:javascript, "import { helper } from './util';\nfunction use(a) { return helper(a); }\n"; file = "main.js")
+    files = [util, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # `use` calls `helper`, brought in by the named import from './util'. The relative
+    # specifier resolves to util.js, so the reference crosses the file boundary.
+    uidx = graph.unit_index[("main.js", 1)]
+    hidx = graph.unit_index[("util.js", 1)]
+    @test haskey(graph.edges, (uidx, hidx))
+end
+
+@testitem "corpus graph hides a JavaScript name that is not exported" setup = [Fixtures] tags = [:corpus_graph] begin
+    util = Fixtures.parsedfile(:javascript, "export function helper(x) { return x; }\nfunction secret(y) { return y; }\n"; file = "u.js")
+    main = Fixtures.parsedfile(:javascript, "import { helper, secret } from './u';\nfunction use(a) { return helper(a) + secret(a); }\n"; file = "m.js")
+    files = [util, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    uidx = graph.unit_index[("m.js", 1)]
+    helper_idx = graph.unit_index[("u.js", 1)]
+    secret_idx = graph.unit_index[("u.js", 2)]
+    # `secret` is imported by name but never exported, so it is not visible: no edge.
+    @test haskey(graph.edges, (uidx, helper_idx))
+    @test !haskey(graph.edges, (uidx, secret_idx))
+end
+
 @testitem "corpus graph resolves a real cross-file edge in Dendro's own source" tags = [:corpus_graph] begin
     src = joinpath(pkgdir(Dendro), "src")
     files = Dendro.parse_corpus(Dendro.source_files(src))

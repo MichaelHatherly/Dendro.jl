@@ -240,14 +240,51 @@ function python_resolve(target::AbstractString, fromfile::AbstractString, corpus
     return unique(found)
 end
 
-# An imported top-level name is visible; the import list does the gating, so no separate
-# export marker.
+# Python has no export marker: an imported top-level name is visible, the import list
+# does the gating.
 import_exported(::CorpusDef, ::Set{String}) = true
+
+# Resolve a JavaScript module specifier to corpus files. Only a relative specifier
+# (`./mod`, `../lib/mod`) names a corpus file; a bare specifier is a package. The path
+# resolves against the importing file's directory, trying each module extension and an
+# `index` file in a directory.
+function js_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
+    spec = strip(target, ['"', '\'', '`'])
+    startswith(spec, ".") || return String[]
+    base = normpath(joinpath(dirname(fromfile), spec))
+    found = String[]
+    base in corpus && push!(found, base)
+    for ext in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
+        (base * ext) in corpus && push!(found, base * ext)
+        index = normpath(joinpath(base, "index" * ext))
+        index in corpus && push!(found, index)
+    end
+    return unique(found)
+end
+
+# JavaScript exports by name: only a name the module marks `export` is visible to an
+# importer, so the def's file must list it.
+js_exported(def::CorpusDef, exports::Set{String}) = def.name in exports
 
 const LINKAGES = Dict{Symbol, Linkage}(
     :julia => Linkage(:splice, splice_resolve, splice_exported),
     :python => Linkage(:import, python_resolve, import_exported),
+    :javascript => Linkage(:import, js_resolve, js_exported),
+    :typescript => Linkage(:import, js_resolve, js_exported),
 )
+
+# The names a file marks for export, from the `@export` captures of its linkage query.
+# Empty for a language with no export marker, where every top-level name is importable.
+function file_exports(file::ParsedFile)
+    query = imports_query_for(file.language)
+    query === nothing && return Set{String}()
+    exports = Set{String}()
+    for cap in TreeSitter.each_capture(file.tree, query, file.source)
+        TreeSitter.capture_name(query, cap) == "export" || continue
+        push!(exports, String(strip(TreeSitter.slice(file.source, cap.node))))
+    end
+    return exports
+end
 
 # The `from <module> import <names>` statements in one file, each as the module string
 # and the set of names it brings into scope. A name is paired to the statement whose
@@ -335,18 +372,19 @@ function splice_visible(f::ParsedFile, table::SymbolTable, link::Linkage, member
     return names
 end
 
-# The cross-file names an import file sees: for each `from <module> import <names>`, the
-# definitions in the resolved module file whose name the import brings in.
+# The cross-file names an import file sees: for each import statement, the definitions
+# in the resolved module file whose name the import brings in and the module exports.
 function import_visible(
-        f::ParsedFile, table::SymbolTable, link::Linkage,
-        corpus::Set{String}, defs_by_file::Dict{String, Vector{Int}}
+        f::ParsedFile, table::SymbolTable, link::Linkage, corpus::Set{String},
+        defs_by_file::Dict{String, Vector{Int}}, exports_by_file::Dict{String, Set{String}}
     )
     names = Dict{String, Vector{Int}}()
     for (module_name, imported) in file_imports(f)
         for path in link.resolve_target(module_name, f.file, corpus)
+            exports = get(() -> Set{String}(), exports_by_file, path)
             for di in get(defs_by_file, path, Int[])
                 d = table.defs[di]
-                link.is_exported(d, imported) || continue
+                link.is_exported(d, exports) || continue
                 (isempty(imported) || d.name in imported) || continue
                 push!(get!(() -> String[], names, d.name), di)
             end
@@ -373,6 +411,7 @@ function visible_defs(files::AbstractVector{ParsedFile}, table::SymbolTable, cor
         root == 0 || push!(get!(() -> Int[], bycomp, root), di)
         push!(get!(() -> Int[], defs_by_file, d.file), di)
     end
+    exports_by_file = Dict{String, Set{String}}(f.file => file_exports(f) for f in files)
     visible = Dict{String, Dict{String, Vector{Int}}}()
     for f in files
         link = get(LINKAGES, f.language, nothing)
@@ -381,7 +420,7 @@ function visible_defs(files::AbstractVector{ParsedFile}, table::SymbolTable, cor
         elseif link.model === :splice
             splice_visible(f, table, link, get(bycomp, roots[f.file], Int[]))
         else
-            import_visible(f, table, link, corpus, defs_by_file)
+            import_visible(f, table, link, corpus, defs_by_file, exports_by_file)
         end
     end
     return visible
