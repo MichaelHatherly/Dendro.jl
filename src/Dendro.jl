@@ -27,6 +27,7 @@ include("naturalness.jl")
 include("cohesion.jl")
 include("linkage.jl")
 include("corpus_graph.jl")
+include("placement.jl")
 include("ignore.jl")
 include("corpus.jl")
 

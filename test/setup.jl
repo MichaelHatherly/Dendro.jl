@@ -162,7 +162,7 @@
             :parameter_count, :boolean_complexity,
             :identical_operands, :duplicate_branches, :empty_body, :empty_catch,
             :stub_marker, :return_in_finally,
-            :duplicate, :near_duplicate, :low_cohesion,
+            :duplicate, :near_duplicate, :low_cohesion, :misplaced,
         ]
     )
 

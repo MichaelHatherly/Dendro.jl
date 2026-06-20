@@ -24,6 +24,15 @@ struct CorpusGraph
     file_mass::Dict{Int, Dict{String, Float64}}
 end
 
+# A definition referenced from more than this fraction of the corpus's units is
+# cross-cutting, infrastructure every concern reaches for rather than a placement pull,
+# the corpus analog of `COHESION_UBIQUITY`. Edges to it are dropped, so a unit is not
+# judged to belong wherever a shared helper happens to live, and communities are not
+# collapsed by hub nodes. A floor keeps a small corpus from marking ordinary names as
+# cross-cutting.
+const CORPUS_UBIQUITY = 0.05
+const CORPUS_UBIQUITY_FLOOR = 3
+
 """
     build_corpus_graph(files, table) -> CorpusGraph
 
@@ -32,7 +41,8 @@ weighted edge. A reference matching `k` visible definitions splits its weight `1
 across them, so each reference contributes mass 1 regardless of how many same-named
 definitions it could mean, and a large file does not dominate by holding more
 overloads. Visibility comes from [`visible_defs`](@ref): a reference reaches only the
-names its file's linkage exposes.
+names its file's linkage exposes. References to a cross-cutting definition, one many
+units reach for, are dropped so a shared helper does not pull a unit toward its file.
 """
 function build_corpus_graph(files::AbstractVector{ParsedFile}, table::SymbolTable)
     corpus = Set{String}(f.file for f in files)
@@ -47,8 +57,10 @@ function build_corpus_graph(files::AbstractVector{ParsedFile}, table::SymbolTabl
         end
     end
 
-    edges = Dict{Tuple{Int, Int}, Float64}()
-    file_mass = Dict{Int, Dict{String, Float64}}()
+    # Resolve references first, counting the distinct units that reach each definition,
+    # so cross-cutting names can be dropped before the weighted edges are built.
+    resolved = Tuple{Int, Vector{Int}}[]
+    breadth = Dict{Int, Set{Int}}()
     for f in files
         names = visible[f.file]
         for ref in unbound_references(f)
@@ -56,16 +68,29 @@ function build_corpus_graph(files::AbstractVector{ParsedFile}, table::SymbolTabl
             candidates = get(names, ref.name, nothing)
             candidates === nothing && continue
             src = unit_index[(f.file, ref.unit)]
-            weight = 1.0 / length(candidates)
-            mass = get!(() -> Dict{String, Float64}(), file_mass, src)
+            push!(resolved, (src, candidates))
             for di in candidates
-                d = table.defs[di]
-                mass[d.file] = get(mass, d.file, 0.0) + weight
-                d.unit == 0 && continue
-                dst = get(unit_index, (d.file, d.unit), 0)
-                dst == 0 && continue
-                edges[(src, dst)] = get(edges, (src, dst), 0.0) + weight
+                push!(get!(() -> Set{Int}(), breadth, di), src)
             end
+        end
+    end
+    threshold = max(CORPUS_UBIQUITY_FLOOR, ceil(Int, CORPUS_UBIQUITY * length(units)))
+    utility = Set{Int}(di for (di, srcs) in breadth if length(srcs) > threshold)
+
+    edges = Dict{Tuple{Int, Int}, Float64}()
+    file_mass = Dict{Int, Dict{String, Float64}}()
+    for (src, candidates) in resolved
+        keep = Int[di for di in candidates if !(di in utility)]
+        isempty(keep) && continue
+        weight = 1.0 / length(keep)
+        mass = get!(() -> Dict{String, Float64}(), file_mass, src)
+        for di in keep
+            d = table.defs[di]
+            mass[d.file] = get(mass, d.file, 0.0) + weight
+            d.unit == 0 && continue
+            dst = get(unit_index, (d.file, d.unit), 0)
+            dst == 0 && continue
+            edges[(src, dst)] = get(edges, (src, dst), 0.0) + weight
         end
     end
     return CorpusGraph(units, unit_index, edges, file_mass)

@@ -163,5 +163,9 @@ function analyze(
     )
     append!(findings, scope_clusters(cluster_unnatural(files; cut), scope))
     append!(findings, scope_clusters(cluster_low_cohesion(files; cut), scope))
+
+    table = corpus_symbols(files)
+    graph = build_corpus_graph(files, table)
+    append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut), scope))
     return Findings(findings)
 end
