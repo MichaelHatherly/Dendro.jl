@@ -1,0 +1,248 @@
+{
+  "arch": "x86_64",
+  "benchmarks": {
+    "analyze/corpus": {
+      "time_ns": {
+        "minimum": 9.3781986e7,
+        "median": 9.492787e7,
+        "mean": 9.978071280392157e7,
+        "maximum": 2.09711342e8,
+        "std": 1.675074087976645e7
+      },
+      "memory_bytes": 19961528,
+      "allocations": 164072,
+      "gc_time_ns": 3.4216961960784313e6,
+      "samples": 51
+    },
+    "parse/bash": {
+      "time_ns": {
+        "minimum": 813662.0,
+        "median": 850916.5,
+        "mean": 914851.1585499817,
+        "maximum": 1.67745508e8,
+        "std": 3.1001715835371413e6
+      },
+      "memory_bytes": 66896,
+      "allocations": 845,
+      "gc_time_ns": 7555.538813621384,
+      "samples": 5462
+    },
+    "parse/c": {
+      "time_ns": {
+        "minimum": 913249.0,
+        "median": 947933.0,
+        "mean": 1.0132739792171106e6,
+        "maximum": 7.3640598e7,
+        "std": 1.719032727842763e6
+      },
+      "memory_bytes": 157376,
+      "allocations": 1790,
+      "gc_time_ns": 13979.374495560936,
+      "samples": 4956
+    },
+    "parse/cpp": {
+      "time_ns": {
+        "minimum": 1.001914e6,
+        "median": 1.0208495e6,
+        "mean": 1.1110273975100045e6,
+        "maximum": 1.28122729e8,
+        "std": 2.4302910286593777e6
+      },
+      "memory_bytes": 159568,
+      "allocations": 1829,
+      "gc_time_ns": 39468.22965762561,
+      "samples": 4498
+    },
+    "parse/go": {
+      "time_ns": {
+        "minimum": 871079.0,
+        "median": 907188.0,
+        "mean": 994090.0153172866,
+        "maximum": 1.26368667e8,
+        "std": 2.382073363981637e6
+      },
+      "memory_bytes": 162000,
+      "allocations": 1871,
+      "gc_time_ns": 35265.7053908892,
+      "samples": 5027
+    },
+    "parse/java": {
+      "time_ns": {
+        "minimum": 967561.0,
+        "median": 1.000247e6,
+        "mean": 1.0860583441981748e6,
+        "maximum": 1.26404752e8,
+        "std": 2.3312255533356485e6
+      },
+      "memory_bytes": 160384,
+      "allocations": 1800,
+      "gc_time_ns": 38493.89613211647,
+      "samples": 4602
+    },
+    "parse/javascript": {
+      "time_ns": {
+        "minimum": 1.011051e6,
+        "median": 1.0288155e6,
+        "mean": 1.1179892409395974e6,
+        "maximum": 1.37608005e8,
+        "std": 2.606159332396842e6
+      },
+      "memory_bytes": 177344,
+      "allocations": 1943,
+      "gc_time_ns": 41753.64653243848,
+      "samples": 4470
+    },
+    "parse/julia": {
+      "time_ns": {
+        "minimum": 1.08468e6,
+        "median": 1.105728e6,
+        "mean": 1.2187379285540113e6,
+        "maximum": 1.24825171e8,
+        "std": 2.491856347041946e6
+      },
+      "memory_bytes": 350080,
+      "allocations": 4984,
+      "gc_time_ns": 52191.631065593756,
+      "samples": 4101
+    },
+    "parse/php": {
+      "time_ns": {
+        "minimum": 1.14906e6,
+        "median": 1.166922e6,
+        "mean": 1.264441064760941e6,
+        "maximum": 1.33278373e8,
+        "std": 2.712284935921985e6
+      },
+      "memory_bytes": 165056,
+      "allocations": 1823,
+      "gc_time_ns": 42702.38932456362,
+      "samples": 3953
+    },
+    "parse/python": {
+      "time_ns": {
+        "minimum": 887460.0,
+        "median": 922967.0,
+        "mean": 1.0110377011936071e6,
+        "maximum": 1.24386209e8,
+        "std": 2.3466612008599862e6
+      },
+      "memory_bytes": 163696,
+      "allocations": 1824,
+      "gc_time_ns": 36056.88063928788,
+      "samples": 4943
+    },
+    "parse/ruby": {
+      "time_ns": {
+        "minimum": 1.105438e6,
+        "median": 1.123742e6,
+        "mean": 1.239157506074882e6,
+        "maximum": 1.48579125e8,
+        "std": 3.30538716917496e6
+      },
+      "memory_bytes": 150232,
+      "allocations": 1629,
+      "gc_time_ns": 41955.95140094223,
+      "samples": 4033
+    },
+    "parse/rust": {
+      "time_ns": {
+        "minimum": 1.023435e6,
+        "median": 1.043222e6,
+        "mean": 1.1370445911778081e6,
+        "maximum": 1.282887e8,
+        "std": 2.588371539027384e6
+      },
+      "memory_bytes": 166256,
+      "allocations": 1818,
+      "gc_time_ns": 39371.77080491132,
+      "samples": 4398
+    },
+    "parse/typescript": {
+      "time_ns": {
+        "minimum": 1.050355e6,
+        "median": 1.072156e6,
+        "mean": 1.144484849324479e6,
+        "maximum": 6.4918686e7,
+        "std": 1.6276313793183563e6
+      },
+      "memory_bytes": 158560,
+      "allocations": 1829,
+      "gc_time_ns": 15081.281886878864,
+      "samples": 4367
+    },
+    "stages/baseline": {
+      "time_ns": {
+        "minimum": 2.9412391e7,
+        "median": 2.9776481e7,
+        "mean": 2.990975851190476e7,
+        "maximum": 4.1404897e7,
+        "std": 999416.3158991478
+      },
+      "memory_bytes": 976056,
+      "allocations": 3951,
+      "gc_time_ns": 66756.42857142857,
+      "samples": 168
+    },
+    "stages/clones_exact": {
+      "time_ns": {
+        "minimum": 2.1526991e7,
+        "median": 2.3082693e7,
+        "mean": 2.333135053023256e7,
+        "maximum": 3.3623381e7,
+        "std": 1.4060165263219147e6
+      },
+      "memory_bytes": 12183976,
+      "allocations": 62205,
+      "gc_time_ns": 562131.6325581395,
+      "samples": 215
+    },
+    "stages/clones_near": {
+      "time_ns": {
+        "minimum": 6.02640439e8,
+        "median": 6.06477209e8,
+        "mean": 6.059012066666666e8,
+        "maximum": 6.08917084e8,
+        "std": 2.3441103439242677e6
+      },
+      "memory_bytes": 57896120,
+      "allocations": 169043,
+      "gc_time_ns": 2.7086996666666665e6,
+      "samples": 9
+    },
+    "stages/cohesion": {
+      "time_ns": {
+        "minimum": 14667.0,
+        "median": 14828.0,
+        "mean": 15148.9651,
+        "maximum": 41598.0,
+        "std": 1746.506754314531
+      },
+      "memory_bytes": 64,
+      "allocations": 2,
+      "gc_time_ns": 0.0,
+      "samples": 10000
+    },
+    "stages/naturalness": {
+      "time_ns": {
+        "minimum": 4.5046311e7,
+        "median": 4.61982925e7,
+        "mean": 4.661964315740741e7,
+        "maximum": 6.0404322e7,
+        "std": 2.0275050772848104e6
+      },
+      "memory_bytes": 5640648,
+      "allocations": 56677,
+      "gc_time_ns": 351947.14814814815,
+      "samples": 108
+    }
+  },
+  "cpu_threads": 4,
+  "git": {
+    "branch": "main",
+    "commit": "26ec2bf74bd5d88d049fef8d21903c90d5a49f99",
+    "dirty": false
+  },
+  "julia_version": "1.12.6",
+  "os": "Linux",
+  "timestamp": "2026-06-20T09:44:10Z"
+}
