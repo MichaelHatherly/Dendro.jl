@@ -28,7 +28,7 @@ corpus (every profile-resolvable file under each folder, or a named file), parse
 each once, builds a baseline from that corpus, runs the per-file path above
 against it for each file,
 and appends the corpus-relational findings: cross-file duplicates, naturalness
-outliers, and low-cohesion files. The active rule set is a value it carries: the
+outliers, low-cohesion files, and misplaced units. The active rule set is a value it carries: the
 `rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
 per-file scoring, and suppression validation, so a caller extends the checks
 without touching the pipeline. The baseline-from-the-corpus step is what makes
@@ -169,6 +169,29 @@ Reporting:
   `MIN_COHESION_FILES` for the percentile. The LCOM4 reading of independent concerns
   cohabiting. Binding-keyed but still syntactic, within one file. Included before
   `corpus.jl`, which calls it.
+- `linkage.jl` defines corpus-wide symbol resolution. `corpus_symbols` builds a
+  `SymbolTable` of every top-level definition across the corpus, keyed by language,
+  module path, and name (module paths from a per-language `@module` capture, so a
+  nested module never collides with the file root); `unbound_references` collects the
+  references the per-file resolver left unbound. `Linkage`/`LINKAGES` carry how a
+  language lets one file see another's names: `splice_resolve` maps a Julia `include`
+  to a corpus file, `visible_defs` groups files into shared namespaces by an inclusion
+  union-find and returns each file's cross-file candidates. Reuses the `bindings.jl`
+  capture walk and the `cohesion.jl` union-find. Included after `cohesion.jl`.
+- `corpus_graph.jl` defines the corpus unit graph. `build_corpus_graph` resolves every
+  unbound reference against the symbol table through `visible_defs`, recording weighted
+  unit-to-unit edges and per-unit file mass; a reference matching `k` definitions splits
+  `1/k`, and a definition referenced by more than `CORPUS_UBIQUITY` of the units is
+  dropped as cross-cutting. `communities` runs one level of modularity optimisation
+  (Louvain local moving) over the undirected graph for the neighbourhoods. Included
+  after `linkage.jl`.
+- `placement.jl` defines cross-file placement, the fourth corpus-relational pass.
+  `own_affinity` reads each unit's same-file coupling from `index.bindings`;
+  `community_plurality` finds the file each community is anchored in; `cluster_misplaced`
+  emits a `:misplaced` finding per envious unit, scored by the share of its whole
+  coupling landing in the one other file it leans toward most, carrying the absolute
+  `MISPLACED_BAND` and the corpus percentile, gated by the community anchor. Included
+  before `corpus.jl`, which calls it.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
@@ -178,9 +201,10 @@ Reporting:
   path once and build its query index into a `Vector{ParsedFile}`),
   `baseline_from`, `scope_clusters` (the shared diff filter for the relational
   passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
-  per-file findings, exact and near duplicates, naturalness, low cohesion, and
-  optional diff scoping). It is included after `report.jl`, `diff.jl`, `clones.jl`,
-  `naturalness.jl`, and `cohesion.jl` so everything it calls is defined first.
+  per-file findings, exact and near duplicates, naturalness, low cohesion, cross-file
+  placement, and optional diff scoping). It is included after `report.jl`, `diff.jl`,
+  `clones.jl`, `naturalness.jl`, `cohesion.jl`, `linkage.jl`, `corpus_graph.jl`, and
+  `placement.jl` so everything it calls is defined first.
 
 ## Core types
 

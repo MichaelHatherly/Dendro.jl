@@ -34,12 +34,16 @@ toward rather than only its own median to match. They are opinions, and opinions
 can be retuned, but they are never derived from the corpus. The corpus is what the
 percentile score is for.
 
-Syntactic and shallow, on purpose. Dendro reads tree shape with no symbol
-resolution. That is what keeps it cheap and language-agnostic. Concerns that need
-to know what a name refers to, dead code, real coupling, unused exports, are out of
-scope by design. The line is symbol resolution, not the file boundary: comparing
-structure across files is fine, resolving what a name points at is not. Resist
-requests to make a metric smarter by reaching for meaning instead of shape.
+Syntactic and shallow, on purpose. Dendro reads tree shape and resolves names
+lexically, never types. It matches a reference to the definition it lexically names,
+within a file and, along declared `include`/`import`/`export` edges, across files, but
+it never works out a name's type or which method a call dispatches to. That is what
+keeps it cheap and language-agnostic. Concerns that need type or dispatch resolution,
+real call graphs, overload resolution, dead code across files, are out of scope by
+design. The line is type and dispatch resolution, not the file boundary and not name
+resolution: matching a name to a declared definition is fine, working out its type is
+not. Resist requests to make a metric smarter by reaching for types or dispatch instead
+of shape and name.
 
 Languages are data. A tree-sitter query (`src/queries/<lang>.scm`) maps abstract
 concepts (decision points, nesting, comments, catch clauses) to a language's
@@ -64,6 +68,21 @@ the LCS similarity is the verdict, order-aware where a multiset overlap is not. 
 that split, keep clone detection within one language, and keep the block size floor
 above the function floor: small blocks of boilerplate coincide and turn into noise.
 The moment clone detection reaches for types or call graphs, it has left the bargain.
+
+Placement is structure across files, still not meaning. Dendro resolves a reference
+that leaves its file to the definition it names in another file, along declared
+`include`/`import`/`export` edges, and builds a corpus-wide graph of which unit
+references which. A reference is matched by name and gated by what its file can see; a
+name that matches several visible definitions splits its weight, never picking one by
+type or dispatch. A unit whose coupling lands mostly in one other file is flagged
+`:misplaced`, with that file as its suggested home, and the graph's communities
+(neighbourhoods, by modularity) are the deciding gate. A definition many units reach
+for is discounted as infrastructure rather than chased into a call graph, the corpus
+analog of the cohesion ubiquity cut. Keep the resolution name-based, keep it gated by
+declared visibility, keep the cross-cutting discount, and add a language's linkage as a
+query (`src/queries/<lang>.imports.scm`) plus a `LINKAGES` entry, never a special case
+in the graph code. The moment placement resolves a name by its type, it has left the
+bargain.
 
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never

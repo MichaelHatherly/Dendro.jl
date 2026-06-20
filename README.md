@@ -109,7 +109,7 @@ Each metric is a [rule](#custom-rules). The set above is the default; a caller c
 add their own or opt into rules that are off by default.
 
 Relational (computed across the corpus, not per function): duplicates (below),
-naturalness, and within-file cohesion. Naturalness scores each function's token
+naturalness, within-file cohesion, and cross-file placement. Naturalness scores each function's token
 sequence against a per-language trigram model of the rest of the corpus, in bits per
 token. The corpus model is interpolated with a per-file cache model (after Tu et al.,
 "On the Localness of Software"), so a function is read against its own file's idiom,
@@ -118,7 +118,8 @@ patterns. A surprising, unidiomatic function scores high, and surprise correlate
 with bugs. Reported as `:unnatural` with both scores, the absolute cross-entropy band
 and the corpus percentile. A language with too few tokens to model is skipped.
 
-Cohesion asks whether a file's functions group by usage (below).
+Cohesion asks whether a file's functions group by usage (below). Placement asks whether
+a unit sits in the right file (below).
 
 ## Duplicate detection
 
@@ -203,6 +204,32 @@ symbol or field resolution, methods that touch the same instance field through
 different names form no edge. The reading is weakest for a file that is one class,
 where field-sharing is the main cohesion and Dendro sees only method-to-method calls.
 Java is the extreme, since every file is one class.
+
+## Cross-file placement
+
+Reported as `:misplaced`: a unit that couples more to another file than to its own. The
+within-file binding resolver leaves a reference unbound when its definition lives in
+another file. Placement resolves those references corpus-wide. A per-language linkage
+query (`src/queries/<lang>.imports.scm`) tags how files see each other's names: a Julia
+`include` splices files into one namespace, an `import`/`export` brings named or
+whole-module names in. A reference that leaves its file resolves to the definition it
+names in a file its linkage exposes, and the result is a corpus-wide graph of which unit
+references which.
+
+The score is the envy percent, the share of a unit's whole coupling, own-file and
+cross-file, that lands in the single other file it leans toward most. A unit devoted to
+one other file scores near 100; a coordinator that reaches into several files spreads
+its mass and stays low. The finding's first location is the unit, its second the
+suggested home. Two scores, like cohesion: the absolute band and the corpus percentile,
+fired when either trips. The deciding gate is the graph's communities (neighbourhoods,
+by modularity optimisation): a unit is a candidate only when its community is anchored
+in a file other than its own, the module the references say it belongs to.
+
+Resolution is name-based and gated by declared visibility, never typed. A reference
+matching several visible definitions splits its weight across them rather than picking
+one by dispatch. A definition many units reach for is discounted as infrastructure, so a
+shared helper does not pull every caller toward its file, the corpus analog of the
+cohesion ubiquity cut. A language with no linkage query contributes no cross-file edges.
 
 ## Suppressing findings
 
@@ -307,6 +334,11 @@ do not apply.
   own node).
 - Go empty-body detection is weak: a Go function body always wraps a statement
   list, so empty bodies do not register.
-- Metrics are syntactic. Dendro reads one file's tree with no symbol resolution,
-  so cross-file concerns (unused exports, dead code across files, real coupling)
-  are out of scope.
+- Metrics are syntactic. Dendro resolves names lexically, within a file and across
+  declared `include`/`import`/`export` edges, but never types or dispatch. Concerns
+  that need type or dispatch resolution (overload resolution, real call graphs, dead
+  code across files) are out of scope.
+- Cross-file placement sees only the linkage a language ships a query for, and only
+  the include/import edges present in the scanned corpus. A name matching several
+  visible definitions is resolved by name, not dispatch, so its weight is split across
+  them. Dynamic imports and re-exports are not followed.
