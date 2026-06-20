@@ -4,6 +4,11 @@
 # by language, enclosing module path, and name. Name-based and lexical, never typed: it
 # records what a name is declared as, not what a call dispatches to. The file boundary
 # is crossed; the symbol-resolution one is not.
+#
+# This file is a registry of per-language resolvers: one independent `*_resolve` and
+# visibility rule per language, with nothing to connect them, so it reads as low
+# cohesion by design.
+# dendro-ignore-file: low_cohesion
 
 # A namespace region: its byte span and name, a Julia `module`, a Rust `mod`, a C++
 # `namespace`. The scopes query cannot tell one from an ordinary block scope (both are
@@ -221,11 +226,7 @@ function python_resolve(target::AbstractString, fromfile::AbstractString, corpus
     found = String[]
     if level == 0
         rel = join(parts, '/')
-        for option in (rel * ".py", rel * "/__init__.py")
-            for path in corpus
-                (path == option || endswith(path, "/" * option)) && push!(found, path)
-            end
-        end
+        append!(found, suffix_match(corpus, (rel * ".py", rel * "/__init__.py")))
     else
         base = dirname(fromfile)
         for _ in 1:(level - 1)
@@ -266,11 +267,66 @@ end
 # importer, so the def's file must list it.
 js_exported(def::CorpusDef, exports::Set{String}) = def.name in exports
 
+# Ruby `require_relative` names a file without its `.rb` extension, relative to the
+# requiring file. The required file's top-level definitions splice into scope.
+function ruby_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
+    rel = strip(target, ['"', '\''])
+    endswith(rel, ".rb") || (rel = rel * ".rb")
+    path = normpath(joinpath(dirname(fromfile), rel))
+    return path in corpus ? [path] : String[]
+end
+
+# Corpus files whose path ends in one of `options`, the suffix-match the import-model
+# languages with absolute module paths share (Rust, Java, PHP), where a build system,
+# not the source, fixes the real root.
+function suffix_match(corpus::Set{String}, options)
+    found = String[]
+    for option in options, path in corpus
+        (path == option || endswith(path, "/" * option)) && push!(found, path)
+    end
+    return unique(found)
+end
+
+# Rust `use a::b::c` brings item `c` from module `a::b`. Drop the path roots and the
+# final item to leave the module, resolved to `a/b.rs` or `a/b/mod.rs`.
+function rust_resolve(target::AbstractString, ::AbstractString, corpus::Set{String})
+    parts = [p for p in split(target, "::"; keepempty = false) if !(p in ("crate", "self", "super"))]
+    length(parts) > 1 && (parts = parts[1:(end - 1)])
+    isempty(parts) && return String[]
+    rel = join(parts, '/')
+    return suffix_match(corpus, (rel * ".rs", rel * "/mod.rs"))
+end
+
+# Java `import com.foo.Bar` names class `Bar` in file `com/foo/Bar.java`: the qualified
+# name is the file path, one public class per file.
+function java_resolve(target::AbstractString, ::AbstractString, corpus::Set{String})
+    rel = replace(target, "." => "/")
+    return suffix_match(corpus, (rel * ".java",))
+end
+
+# PHP `use App\Foo` names `Foo` in file `App/Foo.php`, the PSR-4 convention mapping a
+# namespace to a directory.
+function php_resolve(target::AbstractString, ::AbstractString, corpus::Set{String})
+    rel = replace(strip(target, '\\'), "\\" => "/")
+    return suffix_match(corpus, (rel * ".php",))
+end
+
+# Go and similar package-by-directory models do not resolve a target string; visibility
+# is by shared directory.
+no_resolve(::AbstractString, ::AbstractString, ::Set{String}) = String[]
+
 const LINKAGES = Dict{Symbol, Linkage}(
     :julia => Linkage(:splice, splice_resolve, splice_exported),
+    :c => Linkage(:splice, splice_resolve, splice_exported),
+    :cpp => Linkage(:splice, splice_resolve, splice_exported),
+    :ruby => Linkage(:splice, ruby_resolve, splice_exported),
+    :go => Linkage(:directory, no_resolve, import_exported),
     :python => Linkage(:import, python_resolve, import_exported),
     :javascript => Linkage(:import, js_resolve, js_exported),
     :typescript => Linkage(:import, js_resolve, js_exported),
+    :rust => Linkage(:import, rust_resolve, import_exported),
+    :java => Linkage(:import, java_resolve, import_exported),
+    :php => Linkage(:import, php_resolve, import_exported),
 )
 
 # The names a file marks for export, from the `@export` captures of its linkage query.
@@ -359,9 +415,10 @@ function inclusion_components(files::AbstractVector{ParsedFile}, corpus::Set{Str
     return roots
 end
 
-# The cross-file names a splice file sees: every file-scope definition in its inclusion
-# component, its own excluded. A name a nested module keeps private is dropped.
-function splice_visible(f::ParsedFile, table::SymbolTable, link::Linkage, members::Vector{Int})
+# The cross-file names a file sees from a set of candidate definitions: every member's
+# name, its own file's excluded. Shared by the splice model, whose members are an
+# inclusion component, and the directory model, whose members are a package directory.
+function member_visible(f::ParsedFile, table::SymbolTable, link::Linkage, members::Vector{Int})
     names = Dict{String, Vector{Int}}()
     for di in members
         d = table.defs[di]
@@ -406,10 +463,12 @@ function visible_defs(files::AbstractVector{ParsedFile}, table::SymbolTable, cor
     roots = inclusion_components(files, corpus)
     bycomp = Dict{Int, Vector{Int}}()
     defs_by_file = Dict{String, Vector{Int}}()
+    defs_by_dir = Dict{String, Vector{Int}}()
     for (di, d) in enumerate(table.defs)
         root = get(roots, d.file, 0)
         root == 0 || push!(get!(() -> Int[], bycomp, root), di)
         push!(get!(() -> Int[], defs_by_file, d.file), di)
+        push!(get!(() -> Int[], defs_by_dir, dirname(d.file)), di)
     end
     exports_by_file = Dict{String, Set{String}}(f.file => file_exports(f) for f in files)
     visible = Dict{String, Dict{String, Vector{Int}}}()
@@ -418,7 +477,9 @@ function visible_defs(files::AbstractVector{ParsedFile}, table::SymbolTable, cor
         visible[f.file] = if link === nothing
             Dict{String, Vector{Int}}()
         elseif link.model === :splice
-            splice_visible(f, table, link, get(bycomp, roots[f.file], Int[]))
+            member_visible(f, table, link, get(bycomp, roots[f.file], Int[]))
+        elseif link.model === :directory
+            member_visible(f, table, link, get(defs_by_dir, dirname(f.file), Int[]))
         else
             import_visible(f, table, link, corpus, defs_by_file, exports_by_file)
         end

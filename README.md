@@ -210,11 +210,13 @@ Java is the extreme, since every file is one class.
 Reported as `:misplaced`: a unit that couples more to another file than to its own. The
 within-file binding resolver leaves a reference unbound when its definition lives in
 another file. Placement resolves those references corpus-wide. A per-language linkage
-query (`src/queries/<lang>.imports.scm`) tags how files see each other's names: a Julia
-`include` splices files into one namespace, an `import`/`export` brings named or
-whole-module names in. A reference that leaves its file resolves to the definition it
-names in a file its linkage exposes, and the result is a corpus-wide graph of which unit
-references which.
+query (`src/queries/<lang>.imports.scm`) tags how files see each other's names across
+three models: a splice joins included files into one namespace (Julia `include`, C
+`#include`, Ruby `require_relative`); an import brings named definitions of a resolved
+module in (Python, JavaScript, TypeScript, Rust, Java, PHP); a directory shares a
+package's names across its files (Go). A reference that leaves its file resolves to the
+definition it names in a file its linkage exposes, and the result is a corpus-wide graph
+of which unit references which.
 
 The score is the envy percent, the share of a unit's whole coupling, own-file and
 cross-file, that lands in the single other file it leans toward most. A unit devoted to

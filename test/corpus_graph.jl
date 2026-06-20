@@ -92,6 +92,51 @@ end
     @test !haskey(graph.edges, (uidx, secret_idx))
 end
 
+@testitem "corpus graph resolves a C include splice" setup = [Fixtures] tags = [:corpus_graph] begin
+    header = Fixtures.parsedfile(:c, "int helper(int x) { return x; }\n"; file = "a.h")
+    main = Fixtures.parsedfile(:c, "#include \"a.h\"\nint use(int a) { return helper(a); }\n"; file = "b.c")
+    files = [header, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # b.c includes a.h, splicing `helper` into scope; the call resolves across files.
+    @test haskey(graph.edges, (graph.unit_index[("b.c", 1)], graph.unit_index[("a.h", 1)]))
+end
+
+@testitem "corpus graph resolves a Ruby require_relative splice" setup = [Fixtures] tags = [:corpus_graph] begin
+    helper = Fixtures.parsedfile(:ruby, "def helper(x)\n  x\nend\n"; file = "helper.rb")
+    main = Fixtures.parsedfile(:ruby, "require_relative 'helper'\ndef use(a)\n  helper(a)\nend\n"; file = "main.rb")
+    files = [helper, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # require_relative 'helper' loads helper.rb's top-level methods; the call resolves.
+    @test haskey(graph.edges, (graph.unit_index[("main.rb", 1)], graph.unit_index[("helper.rb", 1)]))
+end
+
+@testitem "corpus graph shares names within a Go package directory" setup = [Fixtures] tags = [:corpus_graph] begin
+    a = Fixtures.parsedfile(:go, "package m\nfunc Helper(x int) int { return x }\n"; file = "m/a.go")
+    b = Fixtures.parsedfile(:go, "package m\nfunc Use(a int) int { return Helper(a) }\n"; file = "m/b.go")
+    files = [a, b]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # Files in one package directory share a namespace, so b.go's call to `Helper`
+    # resolves to a.go with no import.
+    @test haskey(graph.edges, (graph.unit_index[("m/b.go", 1)], graph.unit_index[("m/a.go", 1)]))
+end
+
+@testitem "corpus graph resolves a Rust use import" setup = [Fixtures] tags = [:corpus_graph] begin
+    foo = Fixtures.parsedfile(:rust, "pub fn helper() -> i32 { 1 }\n"; file = "foo.rs")
+    main = Fixtures.parsedfile(:rust, "use crate::foo::helper;\nfn run() -> i32 { helper() }\n"; file = "main.rs")
+    files = [foo, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # `use crate::foo::helper` resolves module `foo` to foo.rs and brings `helper` in.
+    @test haskey(graph.edges, (graph.unit_index[("main.rs", 1)], graph.unit_index[("foo.rs", 1)]))
+end
+
 @testitem "corpus graph resolves a real cross-file edge in Dendro's own source" tags = [:corpus_graph] begin
     src = joinpath(pkgdir(Dendro), "src")
     files = Dendro.parse_corpus(Dendro.source_files(src))
