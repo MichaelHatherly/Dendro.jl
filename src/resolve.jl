@@ -106,3 +106,23 @@ function scopes_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
         TreeSitter.Query(language_module(name), read(path, String))
     end
 end
+
+# Compiled linkage queries cached per language, `nothing` for a language that ships
+# none. Same lazy, cache-once shape as `scopes_query_for`.
+const IMPORTS_QUERY_CACHE = Dict{Symbol, Union{TreeSitter.Query, Nothing}}()
+
+"""
+    imports_query_for(language) -> Union{TreeSitter.Query, Nothing}
+
+The compiled linkage query for `language`, read from `src/queries/<language>.imports.scm`,
+or `nothing` when the language ships none. It tags namespace regions (`@module`), import
+and export statements, and `include`/`require` path strings, the captures the corpus
+binding graph reads to resolve a reference across files.
+"""
+function imports_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
+    return get!(IMPORTS_QUERY_CACHE, name) do
+        path = joinpath(QUERIES_DIR, "$(name).imports.scm")
+        isfile(path) || return nothing
+        TreeSitter.Query(language_module(name), read(path, String))
+    end
+end
