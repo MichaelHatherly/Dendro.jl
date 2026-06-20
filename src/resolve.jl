@@ -119,6 +119,9 @@ or `nothing` when the language ships none. It tags namespace regions (`@module`)
 and export statements, and `include`/`require` path strings, the captures the corpus
 binding graph reads to resolve a reference across files.
 """
+# Same lazy load and cache as `scopes_query_for`, differing only in the file kind, so
+# the two share a shape with nothing left to extract.
+# dendro-ignore: duplicate
 function imports_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
     return get!(IMPORTS_QUERY_CACHE, name) do
         path = joinpath(QUERIES_DIR, "$(name).imports.scm")

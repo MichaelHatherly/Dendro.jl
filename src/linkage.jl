@@ -183,3 +183,101 @@ function corpus_symbols(files::AbstractVector{ParsedFile})
     end
     return table
 end
+
+# How a language lets one file see another's names. `model` picks the resolver:
+# `:splice` joins included files into one namespace (Julia `include`, C `#include`);
+# `:import` brings named or whole-module names in (Python, JS). `resolve_target` maps a
+# captured include/import string to corpus file paths; `is_exported` decides whether a
+# definition is visible outside its file.
+struct Linkage
+    model::Symbol
+    resolve_target::Function
+    is_exported::Function
+end
+
+# Resolve a splice target (`include("path")`) to a corpus file: the path is relative to
+# the including file's directory. Returns the one corpus path it names, or none when the
+# target is outside the corpus (a stdlib or generated file).
+function splice_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
+    rel = strip(target, ['"', '\''])
+    path = normpath(joinpath(dirname(fromfile), rel))
+    return path in corpus ? [path] : String[]
+end
+
+# A spliced file's top-level names join the includer's namespace; a name inside a nested
+# module does not, so only file-scope definitions are visible across the splice.
+splice_exported(def::CorpusDef, ::Set{String}) = isempty(def.module_path)
+
+const LINKAGES = Dict{Symbol, Linkage}(
+    :julia => Linkage(:splice, splice_resolve, splice_exported),
+)
+
+# The splice target strings an imports query tags in one file (`@include.path`), quotes
+# and all, for the linkage resolver to map to corpus paths.
+function include_targets(tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString)
+    targets = String[]
+    for cap in TreeSitter.each_capture(tree, query, source)
+        TreeSitter.capture_name(query, cap) == "include.path" || continue
+        push!(targets, String(TreeSitter.slice(source, cap.node)))
+    end
+    return targets
+end
+
+# Group files into shared namespaces by following splice edges: an `include` joins two
+# files into one module, so a reference in either resolves to the other's names. Returns
+# a file path to component-root map (union-find over the file index).
+function inclusion_components(files::AbstractVector{ParsedFile}, corpus::Set{String})
+    index = Dict{String, Int}(f.file => i for (i, f) in enumerate(files))
+    parent = collect(1:length(files))
+    for f in files
+        link = get(LINKAGES, f.language, nothing)
+        (link === nothing || link.model !== :splice) && continue
+        query = imports_query_for(f.language)
+        query === nothing && continue
+        for target in include_targets(f.tree, query, f.source)
+            for path in link.resolve_target(target, f.file, corpus)
+                j = get(index, path, 0)
+                j == 0 && continue
+                parent[uf_find(parent, j)] = uf_find(parent, index[f.file])
+            end
+        end
+    end
+    roots = Dict{String, Int}()
+    for f in files
+        roots[f.file] = uf_find(parent, index[f.file])
+    end
+    return roots
+end
+
+"""
+    visible_defs(files, table, corpus) -> Dict{String, Dict{String, Vector{Int}}}
+
+For each file, the corpus definitions it can reference from another file, indexed by
+name. A splice makes every file in one inclusion component share its members'
+file-scope names; `is_exported` drops names a nested module keeps private. A file's own
+definitions are excluded, so the map carries only cross-file candidates.
+"""
+function visible_defs(files::AbstractVector{ParsedFile}, table::SymbolTable, corpus::Set{String})
+    roots = inclusion_components(files, corpus)
+    bycomp = Dict{Int, Vector{Int}}()
+    for (di, d) in enumerate(table.defs)
+        root = get(roots, d.file, 0)
+        root == 0 && continue
+        push!(get!(() -> Int[], bycomp, root), di)
+    end
+    langof = Dict{String, Symbol}(f.file => f.language for f in files)
+    visible = Dict{String, Dict{String, Vector{Int}}}()
+    for f in files
+        members = get(bycomp, roots[f.file], Int[])
+        names = Dict{String, Vector{Int}}()
+        link = get(LINKAGES, f.language, nothing)
+        for di in members
+            d = table.defs[di]
+            d.file == f.file && continue
+            link === nothing || link.is_exported(d, Set{String}()) || continue
+            push!(get!(() -> String[], names, d.name), di)
+        end
+        visible[f.file] = names
+    end
+    return visible
+end

@@ -1,0 +1,47 @@
+@testitem "corpus graph resolves a cross-file call through an include splice" setup = [Fixtures] tags = [:corpus_graph] begin
+    main = Fixtures.parsedfile(:julia, "include(\"util.jl\")\nf(x) = helper(x) + 1\n"; file = "main.jl")
+    util = Fixtures.parsedfile(:julia, "helper(y) = y * 2\n"; file = "util.jl")
+    files = [main, util]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # `f` in main.jl calls `helper`, defined in util.jl, which main.jl splices in via
+    # `include`. The reference resolves across the file boundary to helper's unit, the
+    # whole point of the corpus graph.
+    fidx = graph.unit_index[("main.jl", 1)]
+    hidx = graph.unit_index[("util.jl", 1)]
+    @test haskey(graph.edges, (fidx, hidx))
+    @test graph.edges[(fidx, hidx)] ≈ 1.0
+    # The placement signal: all of f's cross-file reference mass lands in util.jl.
+    @test graph.file_mass[fidx]["util.jl"] ≈ 1.0
+    # f and helper couple, so community detection puts them together.
+    comm = Dendro.communities(graph)
+    @test comm[fidx] == comm[hidx]
+end
+
+@testitem "corpus graph leaves files with no include link unconnected" setup = [Fixtures] tags = [:corpus_graph] begin
+    a = Fixtures.parsedfile(:julia, "f(x) = helper(x)\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "helper(y) = y\n"; file = "b.jl")
+    files = [a, b]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # No `include` connects a.jl and b.jl, so `helper` is not visible across the
+    # boundary. The reference stays unresolved: no cross-file edge, no invented link.
+    @test isempty(graph.edges)
+end
+
+@testitem "corpus graph resolves a real cross-file edge in Dendro's own source" tags = [:corpus_graph] begin
+    src = joinpath(pkgdir(Dendro), "src")
+    files = Dendro.parse_corpus(Dendro.source_files(src))
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # corpus.jl calls `cluster_low_cohesion`, defined in cohesion.jl. The include splice
+    # in Dendro.jl puts both files in one module, so the call resolves across files. The
+    # realistic integration test for Julia splice resolution.
+    found = any(graph.edges) do ((s, d), _)
+        endswith(graph.units[s].file, "corpus.jl") && endswith(graph.units[d].file, "cohesion.jl")
+    end
+    @test found
+end
