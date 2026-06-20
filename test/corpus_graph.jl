@@ -31,6 +31,38 @@ end
     @test isempty(graph.edges)
 end
 
+@testitem "corpus graph resolves a Python from-import across files" setup = [Fixtures] tags = [:corpus_graph] begin
+    util = Fixtures.parsedfile(:python, "def helper(x):\n    return x\n"; file = "pkg/util.py")
+    main = Fixtures.parsedfile(:python, "from .util import helper\ndef use(a):\n    return helper(a)\n"; file = "pkg/main.py")
+    files = [util, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # `use` in main.py calls `helper`, brought into scope by `from .util import helper`.
+    # The relative import resolves to pkg/util.py, so the reference crosses the file
+    # boundary to helper's unit.
+    uidx = graph.unit_index[("pkg/main.py", 1)]
+    hidx = graph.unit_index[("pkg/util.py", 1)]
+    @test haskey(graph.edges, (uidx, hidx))
+    @test graph.file_mass[uidx]["pkg/util.py"] ≈ 1.0
+end
+
+@testitem "corpus graph honours a Python import's name list" setup = [Fixtures] tags = [:corpus_graph] begin
+    util = Fixtures.parsedfile(:python, "def helper(x):\n    return x\ndef other(y):\n    return y\n"; file = "u.py")
+    # `main` imports only `helper`; its call to `other` is not in scope, so it stays
+    # unresolved. The import list gates visibility, name by name.
+    main = Fixtures.parsedfile(:python, "from .u import helper\ndef use(a):\n    return helper(a) + other(a)\n"; file = "m.py")
+    files = [util, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    uidx = graph.unit_index[("m.py", 1)]
+    helper_idx = graph.unit_index[("u.py", 1)]
+    other_idx = graph.unit_index[("u.py", 2)]
+    @test haskey(graph.edges, (uidx, helper_idx))
+    @test !haskey(graph.edges, (uidx, other_idx))
+end
+
 @testitem "corpus graph resolves a real cross-file edge in Dendro's own source" tags = [:corpus_graph] begin
     src = joinpath(pkgdir(Dendro), "src")
     files = Dendro.parse_corpus(Dendro.source_files(src))
