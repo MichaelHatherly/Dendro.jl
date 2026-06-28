@@ -164,7 +164,7 @@ function naturalness_units(files::AbstractVector{ParsedFile})
         for unit in functions(f.index)
             tokens = token_stream(unit, f.index)
             loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
-            sup = is_suppressed(f.directives, unit.firstline, :unnatural)
+            sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.unnatural)
             push!(get!(() -> NaturalnessUnit[], bylang, f.language), NaturalnessUnit(tokens, loc, sup))
         end
     end
@@ -213,7 +213,7 @@ function unnatural_in_language!(
         absolute = severity(value, band)
         pct = searchsortedlast(sorted, h) / length(sorted)
         (absolute != :ok || pct >= cut) || continue
-        push!(findings, Finding(:unnatural, [u.location], value, absolute, pct, :scalar, u.suppressed))
+        push!(findings, Finding(RELATIONAL.unnatural, [u.location], value, absolute, pct, :scalar, u.suppressed))
     end
     return findings
 end

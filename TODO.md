@@ -143,15 +143,3 @@ EOF
    with a documented version/JET exclusion. Do not weaken the gate more than the minimal
    reproducer demands.
 4. Restore the commented-out `@testitem "JET"` body and re-run on a stable Julia.
-
-## `:misplaced` is not suppressible by name
-
-`RELATIONAL_METRICS` in `src/rules.jl` lists `:duplicate`, `:near_duplicate`,
-`:unnatural`, `:low_cohesion`, `:scattered`, but not `:misplaced`, though
-`cluster_misplaced` calls `is_suppressed(..., :misplaced)`. So `dendro-ignore: misplaced`
-fails validation (`parse_metrics` warns "unknown metric in suppression directive" and
-drops it); only a bare `dendro-ignore`, which mutes every metric, suppresses a misplaced
-finding. The other relational metrics each accept their own name. Add `:misplaced` to
-`RELATIONAL_METRICS` and cover it with a placement suppression test mirroring the
-`:scattered`/`:low_cohesion` ignore-file tests. Found while wiring `:scattered`'s
-suppression; left out to keep that change scoped.

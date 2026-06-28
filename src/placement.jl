@@ -130,8 +130,8 @@ function cluster_misplaced(
         (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
         unit = graph.units[src]
         locations = [Location(unit.file, unit.line, unit.name), target]
-        sup = is_suppressed(get(() -> Directive[], directives, unit.file), unit.line, :misplaced)
-        push!(findings, Finding(:misplaced, locations, score, absolute, pct, :scalar, sup))
+        sup = is_suppressed(get(() -> Directive[], directives, unit.file), unit.line, RELATIONAL.misplaced)
+        push!(findings, Finding(RELATIONAL.misplaced, locations, score, absolute, pct, :scalar, sup))
     end
     sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
     return findings

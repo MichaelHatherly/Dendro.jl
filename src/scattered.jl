@@ -96,8 +96,8 @@ function cluster_scattered(
         pct = enough ? searchsortedlast(counts, score) / length(counts) : nothing
         (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
         locations = [Location(f.file, graph.units[nd].line, graph.units[nd].name) for nd in nodes]
-        sup = is_suppressed(f.directives, locations[1].line, :scattered)
-        push!(findings, Finding(:scattered, locations, score, absolute, pct, :scalar, sup))
+        sup = is_suppressed(f.directives, locations[1].line, RELATIONAL.scattered)
+        push!(findings, Finding(RELATIONAL.scattered, locations, score, absolute, pct, :scalar, sup))
     end
     sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
     return findings

@@ -20,6 +20,20 @@
     @test any(loc -> loc.file == "b.jl", f.locations)
 end
 
+@testitem ":misplaced respects dendro-ignore-file" setup = [Fixtures] tags = [:placement] begin
+    asrc = "# dendro-ignore-file: misplaced\nfoo() = bar()\nbar() = foo()\nstray() = baz() + qux() + baz()\n"
+    i = Fixtures.idx(:julia, asrc)
+    directives = Dendro.suppressions(i; file = "a.jl")
+    mod = Fixtures.parsedfile(:julia, "include(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
+    a = Fixtures.parsedfile(:julia, asrc; file = "a.jl", directives = directives)
+    b = Fixtures.parsedfile(:julia, "baz() = qux()\nqux() = baz()\n"; file = "b.jl")
+    files = [mod, a, b]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+    hit = only(Dendro.cluster_misplaced(files, graph, table; min_refs = 2))
+    @test hit.suppressed
+end
+
 @testitem ":misplaced leaves a well-placed unit alone" setup = [Fixtures] tags = [:placement] begin
     mod = Fixtures.parsedfile(:julia, "include(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
     # `mix` references its own file's `helper` twice and b.jl's `ext` once: mostly home,

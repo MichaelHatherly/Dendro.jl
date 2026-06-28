@@ -170,7 +170,7 @@ function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer
                 floor = anchor_floor(s.node, f.index, min_size)
                 (floor === nothing || s.size < floor) && continue
                 line = Int(TreeSitter.start_point(s.node).row) + 1
-                sup = is_suppressed(f.directives, line, :duplicate)
+                sup = is_suppressed(f.directives, line, RELATIONAL.duplicate)
                 push!(
                     entries, AnchorEntry(
                         f.language, s.hash, s.node,
@@ -191,7 +191,7 @@ function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer
         length(maximal) < 2 && continue
         locations = [Location(entries[i].file, entries[i].line, entries[i].unit) for i in maximal]
         suppressed = any(entries[i].suppressed for i in maximal)
-        push!(findings, Finding(:duplicate, locations, length(locations), :high, nothing, :flag, suppressed))
+        push!(findings, Finding(RELATIONAL.duplicate, locations, length(locations), :high, nothing, :flag, suppressed))
     end
     sort!(findings; by = f -> (-length(f.locations), first(f.locations).file, first(f.locations).line))
     return findings
@@ -340,7 +340,7 @@ function cluster_near_duplicates(
             sequence, histogram, digest, size = clone_features(unit, f.index)
             size < min_size && continue
             loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
-            sup = is_suppressed(f.directives, unit.firstline, :near_duplicate)
+            sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.near_duplicate)
             push!(units, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
         end
     end
@@ -376,7 +376,7 @@ function cluster_near_duplicates(
         suppressed = any(units[i].suppressed for i in idxs)
         push!(
             findings, Finding(
-                :near_duplicate, locations, round(Int, 100 * weakest[r]),
+                RELATIONAL.near_duplicate, locations, round(Int, 100 * weakest[r]),
                 :high, nothing, :flag, suppressed
             )
         )

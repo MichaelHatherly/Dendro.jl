@@ -129,8 +129,8 @@ function cluster_low_cohesion(
         (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
         units = functions(f.index)
         locations = [Location(f.file, units[i].firstline, unit_name(units[i], f.index)) for i in reps]
-        sup = is_suppressed(f.directives, units[reps[1]].firstline, :low_cohesion)
-        push!(findings, Finding(:low_cohesion, locations, components, absolute, pct, :scalar, sup))
+        sup = is_suppressed(f.directives, units[reps[1]].firstline, RELATIONAL.low_cohesion)
+        push!(findings, Finding(RELATIONAL.low_cohesion, locations, components, absolute, pct, :scalar, sup))
     end
     sort!(findings; by = f -> (-something(f.value), first(f.locations).file, first(f.locations).line))
     return findings
