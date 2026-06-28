@@ -202,10 +202,19 @@ end
 
 # Resolve a splice target (`include("path")`) to a corpus file: the path is relative to
 # the including file's directory. Returns the one corpus path it names, or none when the
+# Corpus resolution works in POSIX-separated path space: the corpus key set and the paths
+# the resolvers build are compared with `/`, so a match never depends on the host OS
+# separator that `joinpath`/`normpath` would emit. Display paths keep their original form.
+to_posix(path::AbstractString) = replace(path, '\\' => '/')
+
+# Join and normalize a relative path, then force `/` separators, so a constructed candidate
+# matches a POSIX-normalized corpus key on any OS.
+corpus_join(parts::AbstractString...) = to_posix(normpath(joinpath(parts...)))
+
 # target is outside the corpus (a stdlib or generated file).
 function splice_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
     rel = strip(target, ['"', '\''])
-    path = normpath(joinpath(dirname(fromfile), rel))
+    path = corpus_join(dirname(fromfile), rel)
     return path in corpus ? [path] : String[]
 end
 
@@ -232,9 +241,10 @@ function python_resolve(target::AbstractString, fromfile::AbstractString, corpus
         for _ in 1:(level - 1)
             base = dirname(base)
         end
-        rel = isempty(parts) ? "" : joinpath(parts...)
-        for suffix in (rel * ".py", joinpath(rel, "__init__.py"))
-            path = normpath(joinpath(base, suffix))
+        rel = join(parts, '/')
+        initpkg = isempty(rel) ? "__init__.py" : rel * "/__init__.py"
+        for suffix in (rel * ".py", initpkg)
+            path = corpus_join(base, suffix)
             path in corpus && push!(found, path)
         end
     end
@@ -252,12 +262,12 @@ import_exported(::CorpusDef, ::Set{String}) = true
 function js_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
     spec = strip(target, ['"', '\'', '`'])
     startswith(spec, ".") || return String[]
-    base = normpath(joinpath(dirname(fromfile), spec))
+    base = corpus_join(dirname(fromfile), spec)
     found = String[]
     base in corpus && push!(found, base)
     for ext in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
         (base * ext) in corpus && push!(found, base * ext)
-        index = normpath(joinpath(base, "index" * ext))
+        index = corpus_join(base, "index" * ext)
         index in corpus && push!(found, index)
     end
     return unique(found)
@@ -272,7 +282,7 @@ js_exported(def::CorpusDef, exports::Set{String}) = def.name in exports
 function ruby_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
     rel = strip(target, ['"', '\''])
     endswith(rel, ".rb") || (rel = rel * ".rb")
-    path = normpath(joinpath(dirname(fromfile), rel))
+    path = corpus_join(dirname(fromfile), rel)
     return path in corpus ? [path] : String[]
 end
 
@@ -393,9 +403,9 @@ end
 # files into one module, so a reference in either resolves to the other's names. Returns
 # a file path to component-root map (union-find over the file index).
 function inclusion_components(files::Vector{ParsedFile}, corpus::Set{String})
-    index = Dict{String, Int}(f.file => i for (i, f) in enumerate(files))
+    index = Dict{String, Int}(to_posix(f.file) => i for (i, f) in enumerate(files))
     parent = collect(1:length(files))
-    for f in files
+    for (i, f) in enumerate(files)
         link = get(LINKAGES, f.language, nothing)
         (link === nothing || link.model !== :splice) && continue
         query = imports_query_for(f.language)
@@ -404,13 +414,13 @@ function inclusion_components(files::Vector{ParsedFile}, corpus::Set{String})
             for path in link.resolve_target(target, f.file, corpus)::Vector{String}
                 j = get(index, path, 0)
                 j == 0 && continue
-                parent[uf_find(parent, j)] = uf_find(parent, index[f.file])
+                parent[uf_find(parent, j)] = uf_find(parent, i)
             end
         end
     end
     roots = Dict{String, Int}()
-    for f in files
-        roots[f.file] = uf_find(parent, index[f.file])
+    for (i, f) in enumerate(files)
+        roots[f.file] = uf_find(parent, i)
     end
     return roots
 end
@@ -467,10 +477,10 @@ function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Set
     for (di, d) in enumerate(table.defs)
         root = get(roots, d.file, 0)
         root == 0 || push!(get!(() -> Int[], bycomp, root), di)
-        push!(get!(() -> Int[], defs_by_file, d.file), di)
+        push!(get!(() -> Int[], defs_by_file, to_posix(d.file)), di)
         push!(get!(() -> Int[], defs_by_dir, dirname(d.file)), di)
     end
-    exports_by_file = Dict{String, Set{String}}(f.file => file_exports(f) for f in files)
+    exports_by_file = Dict{String, Set{String}}(to_posix(f.file) => file_exports(f) for f in files)
     visible = Dict{String, Dict{String, Vector{Int}}}()
     for f in files
         link = get(LINKAGES, f.language, nothing)

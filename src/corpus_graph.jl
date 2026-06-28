@@ -45,7 +45,7 @@ names its file's linkage exposes. References to a cross-cutting definition, one 
 units reach for, are dropped so a shared helper does not pull a unit toward its file.
 """
 function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable)
-    corpus = Set{String}(f.file for f in files)
+    corpus = Set{String}(to_posix(f.file) for f in files)
     visible = visible_defs(files, table, corpus)
 
     units = CorpusUnit[]
