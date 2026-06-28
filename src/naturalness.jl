@@ -158,7 +158,7 @@ end
 
 # Collect every function in the corpus as a NaturalnessUnit, grouped by language so a
 # model never mixes grammars.
-function naturalness_units(files::AbstractVector{ParsedFile})
+function naturalness_units(files::Vector{ParsedFile})
     bylang = Dict{Symbol, Vector{NaturalnessUnit}}()
     for f in files
         for unit in functions(f.index)
@@ -227,7 +227,7 @@ in centibits, and the corpus percentile, fired when either trips. A language wit
 fewer than `min_tokens` tokens is skipped, its model too sparse to rank against.
 """
 function cluster_unnatural(
-        files::AbstractVector{ParsedFile}; band::Tuple{Int, Int} = UNNATURAL_BAND, cut::Real = 0.95,
+        files::Vector{ParsedFile}; band::Tuple{Int, Int} = UNNATURAL_BAND, cut::Real = 0.95,
         min_tokens::Integer = MIN_CORPUS_TOKENS
     )
     findings = Finding[]

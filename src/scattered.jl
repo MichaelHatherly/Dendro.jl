@@ -30,7 +30,7 @@ const MIN_SCATTERED_FILES = 5
 # (the `binding_groups` `:low_cohesion` reads) lets a cohesive file cluster into one
 # community. Each group is star-linked to its first member, the same connectivity
 # `file_components` builds, mapped from local unit indices to graph nodes.
-function combined_adjacency(files::AbstractVector{ParsedFile}, graph::CorpusGraph, ubiquity::Real)
+function combined_adjacency(files::Vector{ParsedFile}, graph::CorpusGraph, ubiquity::Float64)
     adj = adjacency(graph)
     for f in files
         scopes_query_for(f.language) === nothing && continue
@@ -60,9 +60,9 @@ unit per elsewhere-anchored community, earliest line first. A language with no s
 query is skipped, its functions carrying no bindings to fold in.
 """
 function cluster_scattered(
-        files::AbstractVector{ParsedFile}, graph::CorpusGraph;
+        files::Vector{ParsedFile}, graph::CorpusGraph;
         band::Tuple{Int, Int} = SCATTERED_BAND, cut::Real = 0.95,
-        min_files::Integer = MIN_SCATTERED_FILES, ubiquity::Real = COHESION_UBIQUITY
+        min_files::Integer = MIN_SCATTERED_FILES, ubiquity::Float64 = COHESION_UBIQUITY
     )
     findings = Finding[]
     comm = communities(combined_adjacency(files, graph, ubiquity))

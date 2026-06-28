@@ -47,7 +47,7 @@ end
 # owner. A binding referenced by more than `ubiquity` of the units links nothing, a
 # cross-cutting utility rather than a shared concern. The connectivity `:low_cohesion`
 # reads as components and `:scattered` folds into the corpus graph.
-function binding_groups(index::QueryIndex, ubiquity::Real)
+function binding_groups(index::QueryIndex, ubiquity::Float64)
     units = functions(index)
     n = length(units)
     ranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
@@ -78,7 +78,7 @@ other defines or references, by the resolved `index.bindings`. A binding referen
 by more than `ubiquity` of the units links nothing, a cross-cutting utility rather
 than a shared concern.
 """
-function file_components(index::QueryIndex, ubiquity::Real = COHESION_UBIQUITY)
+function file_components(index::QueryIndex, ubiquity::Float64 = COHESION_UBIQUITY)
     units = functions(index)
     n = length(units)
     n < MIN_COHESION_UNITS && return nothing
@@ -109,8 +109,8 @@ are one representative function per component. A language with no scopes query i
 skipped, its functions carrying no bindings to link.
 """
 function cluster_low_cohesion(
-        files::AbstractVector{ParsedFile}; band::Tuple{Int, Int} = LOW_COHESION_BAND,
-        cut::Real = 0.95, min_files::Integer = MIN_COHESION_FILES, ubiquity::Real = COHESION_UBIQUITY
+        files::Vector{ParsedFile}; band::Tuple{Int, Int} = LOW_COHESION_BAND,
+        cut::Real = 0.95, min_files::Integer = MIN_COHESION_FILES, ubiquity::Float64 = COHESION_UBIQUITY
     )
     findings = Finding[]
     scored = Tuple{ParsedFile, Int, Vector{Int}}[]

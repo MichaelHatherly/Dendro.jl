@@ -181,7 +181,7 @@ and name. The table a cross-file reference resolves against: each file contribut
 functions, types, macros, and consts visible at its module scope, skipping locals and
 languages with no scopes query.
 """
-function corpus_symbols(files::AbstractVector{ParsedFile})
+function corpus_symbols(files::Vector{ParsedFile})
     table = SymbolTable()
     for file in files
         file_symbols!(table, file)
@@ -279,7 +279,7 @@ end
 # Corpus files whose path ends in one of `options`, the suffix-match the import-model
 # languages with absolute module paths share (Rust, Java, PHP), where a build system,
 # not the source, fixes the real root.
-function suffix_match(corpus::Set{String}, options)
+function suffix_match(corpus::Set{String}, options::Tuple{Vararg{AbstractString}})
     found = String[]
     for option in options, path in corpus
         (path == option || endswith(path, "/" * option)) && push!(found, path)
@@ -392,7 +392,7 @@ end
 # Group files into shared namespaces by following splice edges: an `include` joins two
 # files into one module, so a reference in either resolves to the other's names. Returns
 # a file path to component-root map (union-find over the file index).
-function inclusion_components(files::AbstractVector{ParsedFile}, corpus::Set{String})
+function inclusion_components(files::Vector{ParsedFile}, corpus::Set{String})
     index = Dict{String, Int}(f.file => i for (i, f) in enumerate(files))
     parent = collect(1:length(files))
     for f in files
@@ -401,7 +401,7 @@ function inclusion_components(files::AbstractVector{ParsedFile}, corpus::Set{Str
         query = imports_query_for(f.language)
         query === nothing && continue
         for target in include_targets(f.tree, query, f.source)
-            for path in link.resolve_target(target, f.file, corpus)
+            for path in link.resolve_target(target, f.file, corpus)::Vector{String}
                 j = get(index, path, 0)
                 j == 0 && continue
                 parent[uf_find(parent, j)] = uf_find(parent, index[f.file])
@@ -423,7 +423,7 @@ function member_visible(f::ParsedFile, table::SymbolTable, link::Linkage, member
     for di in members
         d = table.defs[di]
         d.file == f.file && continue
-        link.is_exported(d, Set{String}()) || continue
+        link.is_exported(d, Set{String}())::Bool || continue
         push!(get!(() -> String[], names, d.name), di)
     end
     return names
@@ -437,11 +437,11 @@ function import_visible(
     )
     names = Dict{String, Vector{Int}}()
     for (module_name, imported) in file_imports(f)
-        for path in link.resolve_target(module_name, f.file, corpus)
+        for path in link.resolve_target(module_name, f.file, corpus)::Vector{String}
             exports = get(() -> Set{String}(), exports_by_file, path)
             for di in get(defs_by_file, path, Int[])
                 d = table.defs[di]
-                link.is_exported(d, exports) || continue
+                link.is_exported(d, exports)::Bool || continue
                 (isempty(imported) || d.name in imported) || continue
                 push!(get!(() -> String[], names, d.name), di)
             end
@@ -459,7 +459,7 @@ inclusion component, an import brings the named definitions of a resolved module
 file's own definitions are excluded, and a file whose language has no linkage sees
 nothing across the boundary.
 """
-function visible_defs(files::AbstractVector{ParsedFile}, table::SymbolTable, corpus::Set{String})
+function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Set{String})
     roots = inclusion_components(files, corpus)
     bycomp = Dict{Int, Vector{Int}}()
     defs_by_file = Dict{String, Vector{Int}}()

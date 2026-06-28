@@ -25,7 +25,7 @@ const MIN_MISPLACED_FILES = 5
 # definition outside the unit, another function, a file-local type or const. Local
 # variables bind inside the unit and are excluded; they say nothing about where the unit
 # belongs. Read from the lexical bindings, keyed by graph unit index.
-function own_affinity(files::AbstractVector{ParsedFile}, graph::CorpusGraph)
+function own_affinity(files::Vector{ParsedFile}, graph::CorpusGraph)
     own = Dict{Int, Float64}()
     for f in files
         units = f.index.functions
@@ -45,7 +45,7 @@ end
 
 # The key carrying the greatest value, ties broken by sorted key order so the choice is
 # deterministic. Returns `nothing` for an empty mapping.
-function dominant(counts::AbstractDict{K}) where {K}
+function dominant(counts::Dict{K}) where {K}
     best, best_val = nothing, nothing
     for k in sort!(collect(keys(counts)))
         v = counts[k]
@@ -97,7 +97,7 @@ graph community is anchored in a file other than its own. Each finding carries t
 absolute `band` and the corpus percentile, fired when either trips.
 """
 function cluster_misplaced(
-        files::AbstractVector{ParsedFile}, graph::CorpusGraph, table::SymbolTable;
+        files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable;
         band::Tuple{Int, Int} = MISPLACED_BAND, cut::Real = 0.95,
         min_files::Integer = MIN_MISPLACED_FILES, min_refs::Real = MIN_MISPLACED_REFS
     )

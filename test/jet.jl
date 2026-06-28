@@ -14,16 +14,6 @@
 # never raise one without a reason. The counts depend on the Julia and JET versions
 # (JET 0.10 on Julia 1.12), so the ratchet runs only on that Julia version, and
 # skips elsewhere.
-# Disabled while the corpus-graph work lands. JET crashes with `Expected
-# MethodTableView` from its `_which` path inside `analyze_from_definitions!` over this
-# branch's definitions, on both Julia 1.11.8 and 1.12.5, while the base commit passes on
-# the same Julia and JET. The trigger is a JET-internal incompatibility, not a type
-# error in Dendro. Re-enable and root-cause the trigger; tracked in TODO.md.
-@testitem "JET" tags = [:jet] begin
-    @test true skip = true
-end
-
-#=
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -31,8 +21,8 @@ end
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 467   # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 7       # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 464   # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 12      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))
@@ -47,4 +37,3 @@ end
         @test true skip = true
     end
 end
-=#

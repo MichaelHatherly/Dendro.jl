@@ -27,7 +27,7 @@ function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothin
 end
 
 # Baseline over already-parsed corpus records.
-function baseline_from(files::AbstractVector{ParsedFile}, rules = BUILTIN_RULES)
+function baseline_from(files::Vector{ParsedFile}, rules = BUILTIN_RULES)
     baseline = Baseline()
     for f in files
         add_samples!(baseline, f.index, rules)

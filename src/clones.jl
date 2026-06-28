@@ -155,7 +155,7 @@ maximality filter keeps only the largest clone, so a duplicated function is repo
 once, not again for every block nested inside it. Suppressed when any member carries
 a `dendro-ignore: duplicate` directive.
 """
-function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE)
+function cluster_duplicates(files::Vector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE)
     entries = AnchorEntry[]
     buckets = Dict{Tuple{Symbol, UInt64}, Vector{Int}}()
     # Locate an anchor by its file and node identity. A node's identity is its byte
@@ -330,7 +330,7 @@ end
 # `value` the weakest pairwise similarity in the cluster as a percent, suppressed when
 # any member carries a `dendro-ignore: near_duplicate` directive.
 function cluster_near_duplicates(
-        files::AbstractVector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE,
+        files::Vector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE,
         threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR
     )
