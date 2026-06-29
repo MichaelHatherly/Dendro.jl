@@ -12,12 +12,15 @@
     findings = active(analyze(srcdir))
 
     # No genuine complexity smell, no function so structurally surprising it trips the
-    # absolute naturalness floor, and no file split into enough disconnected concerns
-    # to trip the absolute cohesion band. `:unnatural` and `:low_cohesion` are checked
-    # on their absolute band only; their percentile flags the top of any distribution
-    # and so is not part of this deterministic gate.
+    # absolute naturalness floor, no file split into enough disconnected concerns to trip
+    # the absolute cohesion band, no unit coupled enough to another file to trip the
+    # absolute misplacement band, and no file whose units scatter across enough other
+    # modules to trip the absolute scattering band. `:unnatural`, `:low_cohesion`,
+    # `:misplaced`, and `:scattered` are checked on their absolute band only; their
+    # percentile flags the top of any distribution and so is not part of this
+    # deterministic gate.
     smells = filter(findings) do f
-        f.absolute == :high && f.metric in (:cyclomatic, :cognitive_complexity, :nesting_depth, :function_length, :boolean_complexity, :unnatural, :low_cohesion)
+        f.absolute == :high && f.metric in (:cyclomatic, :cognitive_complexity, :nesting_depth, :function_length, :boolean_complexity, :unnatural, :low_cohesion, :misplaced, :scattered)
     end
     @test isempty(smells)
 

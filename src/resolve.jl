@@ -1,5 +1,11 @@
 # Language identification and lazy parser resolution.
 
+# Stable identity of a node within one tree: its byte span and grammar symbol. A
+# node has no exposed id and is not hashable, so this stands in as a `Set` key. Lives
+# here, the first include, so every later file can key nodes by identity.
+const NodeId = Tuple{Int, Int, UInt16}
+nodeid(n::TreeSitter.Node) = (TreeSitter.byte_range(n)..., TreeSitter.node_symbol(n))
+
 # File extension to language name. Languages match TreeSitter.jl's supported set.
 const EXTENSIONS = Dict{String, Symbol}(
     "jl" => :julia,
@@ -102,6 +108,29 @@ it rather than treating every function as isolated.
 function scopes_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
     return get!(SCOPES_QUERY_CACHE, name) do
         path = joinpath(QUERIES_DIR, "$(name).scopes.scm")
+        isfile(path) || return nothing
+        TreeSitter.Query(language_module(name), read(path, String))
+    end
+end
+
+# Compiled linkage queries cached per language, `nothing` for a language that ships
+# none. Same lazy, cache-once shape as `scopes_query_for`.
+const IMPORTS_QUERY_CACHE = Dict{Symbol, Union{TreeSitter.Query, Nothing}}()
+
+"""
+    imports_query_for(language) -> Union{TreeSitter.Query, Nothing}
+
+The compiled linkage query for `language`, read from `src/queries/<language>.imports.scm`,
+or `nothing` when the language ships none. It tags namespace regions (`@module`), import
+and export statements, and `include`/`require` path strings, the captures the corpus
+binding graph reads to resolve a reference across files.
+"""
+# Same lazy load and cache as `scopes_query_for`, differing only in the file kind, so
+# the two share a shape with nothing left to extract.
+# dendro-ignore: duplicate
+function imports_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
+    return get!(IMPORTS_QUERY_CACHE, name) do
+        path = joinpath(QUERIES_DIR, "$(name).imports.scm")
         isfile(path) || return nothing
         TreeSitter.Query(language_module(name), read(path, String))
     end

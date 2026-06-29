@@ -32,6 +32,71 @@ function is_hoisted(capture::AbstractString)
     return false
 end
 
+# The kind of a `definition.<kind>` capture as a symbol, e.g. "definition.function"
+# becomes `:function`. The corpus symbol table reads it to tell a function from a type
+# from a const.
+function def_kind(capture::AbstractString)
+    i = findlast('.', capture)
+    return Symbol(i === nothing ? capture : capture[nextind(capture, i):end])
+end
+
+# The scope, definition, and reference nodes a scopes query tags over one tree. The
+# binding resolver and the corpus symbol table both read it, so the capture walk runs
+# once per consumer. `defhoist` and `defkinds` are parallel to `defnodes`.
+struct ScopeCaptures
+    scopes::Vector{ScopeEntry}
+    defnodes::Vector{TreeSitter.Node}
+    defhoist::Vector{Bool}
+    defkinds::Vector{Symbol}
+    refnodes::Vector{TreeSitter.Node}
+    defids::Set{NodeId}
+end
+
+# An empty captures set, the value a `QueryIndex` carries for a file with no scopes
+# query or no scope regions, so the field stays concretely typed rather than nullable.
+ScopeCaptures() = ScopeCaptures(ScopeEntry[], TreeSitter.Node[], Bool[], Symbol[], TreeSitter.Node[], Set{NodeId}())
+
+# Walk a scopes query's captures once: scope regions, name-introducing definitions
+# with their hoist flag and kind, and references. The second pass that assigns
+# definitions to scopes lives in `assign_defs!`, since the symbol table places them
+# differently.
+function collect_scopes(tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString)
+    scopes = ScopeEntry[]
+    defnodes = TreeSitter.Node[]
+    defhoist = Bool[]
+    defkinds = Symbol[]
+    refnodes = TreeSitter.Node[]
+    defids = Set{NodeId}()
+    for cap in TreeSitter.each_capture(tree, query, source)
+        name = TreeSitter.capture_name(query, cap)
+        if name == "scope"
+            from, to = TreeSitter.byte_range(cap.node)
+            push!(scopes, ScopeEntry(from, to, Dict{String, TreeSitter.Node}()))
+        elseif name == "reference"
+            push!(refnodes, cap.node)
+        else
+            push!(defnodes, cap.node)
+            push!(defhoist, is_hoisted(name))
+            push!(defkinds, def_kind(name))
+            push!(defids, nodeid(cap.node))
+        end
+    end
+    return ScopeCaptures(scopes, defnodes, defhoist, defkinds, refnodes, defids)
+end
+
+# Assign each definition to its owning scope, hoisting functions, types, and macros to
+# the enclosing scope so siblings resolve to them. First name in a scope wins.
+function assign_defs!(caps::ScopeCaptures, source::AbstractString)
+    for (i, d) in enumerate(caps.defnodes)
+        from, to = TreeSitter.byte_range(d)
+        owner = owning_scope(caps.scopes, from, to, caps.defhoist[i])
+        owner === nothing && continue
+        name = String(strip(TreeSitter.slice(source, d)))
+        get!(owner.defs, name, d)
+    end
+    return caps
+end
+
 # The scope a definition belongs to: the innermost scope containing it, or, when
 # the definition is hoisted, the scope enclosing that one. `nothing` when no scope
 # contains it, or when a hoisted definition has no enclosing scope (it keeps the
@@ -96,39 +161,23 @@ function resolve_bindings!(
         bindings::Dict{NodeId, NodeId}, tree::TreeSitter.Tree,
         query::TreeSitter.Query, source::AbstractString
     )
-    scopes = ScopeEntry[]
-    defnodes = TreeSitter.Node[]
-    defhoist = Bool[]
-    refnodes = TreeSitter.Node[]
-    defids = Set{NodeId}()
-    for cap in TreeSitter.each_capture(tree, query, source)
-        name = TreeSitter.capture_name(query, cap)
-        if name == "scope"
-            from, to = TreeSitter.byte_range(cap.node)
-            push!(scopes, ScopeEntry(from, to, Dict{String, TreeSitter.Node}()))
-        elseif name == "reference"
-            push!(refnodes, cap.node)
-        else
-            push!(defnodes, cap.node)
-            push!(defhoist, is_hoisted(name))
-            push!(defids, nodeid(cap.node))
-        end
-    end
-    isempty(scopes) && return bindings
-    for (i, d) in enumerate(defnodes)
-        from, to = TreeSitter.byte_range(d)
-        owner = owning_scope(scopes, from, to, defhoist[i])
-        owner === nothing && continue
-        name = String(strip(TreeSitter.slice(source, d)))
-        get!(owner.defs, name, d)
-    end
-    sizehint!(bindings, length(refnodes))
-    for r in refnodes
+    caps = collect_scopes(tree, query, source)
+    isempty(caps.scopes) && return bindings
+    assign_defs!(caps, source)
+    return resolve_bindings!(bindings, caps, source)
+end
+
+# Resolve references against an already-collected, scope-assigned captures set, the
+# path that reuses the cached `ScopeCaptures` on a `QueryIndex` so the capture walk and
+# scope assignment are not repeated.
+function resolve_bindings!(bindings::Dict{NodeId, NodeId}, caps::ScopeCaptures, source::AbstractString)
+    sizehint!(bindings, length(caps.refnodes))
+    for r in caps.refnodes
         rid = nodeid(r)
-        rid in defids && continue
+        rid in caps.defids && continue
         from, to = TreeSitter.byte_range(r)
         name = String(strip(TreeSitter.slice(source, r)))
-        d = lookup_definition(scopes, from, to, name)
+        d = lookup_definition(caps.scopes, from, to, name)
         d === nothing && continue
         bindings[rid] = nodeid(d)
     end

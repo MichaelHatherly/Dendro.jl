@@ -78,6 +78,8 @@ const SYNTH_DIR = let dir = mktempdir()
 end
 
 const SYNTH_FILES = Dendro.parse_corpus(Dendro.source_files(SYNTH_DIR))
+const SYNTH_TABLE = Dendro.corpus_symbols(SYNTH_FILES)
+const SYNTH_GRAPH = Dendro.build_corpus_graph(SYNTH_FILES, SYNTH_TABLE)
 
 # === Clustering passes over the synthetic corpus ===
 SUITE["stages"] = BenchmarkTools.BenchmarkGroup()
@@ -89,5 +91,7 @@ SUITE["stages"]["clones_near"] =
     BenchmarkTools.@benchmarkable Dendro.cluster_near_duplicates($SYNTH_FILES)
 SUITE["stages"]["naturalness"] =
     BenchmarkTools.@benchmarkable Dendro.cluster_unnatural($SYNTH_FILES)
+SUITE["stages"]["corpus_graph"] =
+    BenchmarkTools.@benchmarkable Dendro.build_corpus_graph($SYNTH_FILES, $SYNTH_TABLE)
 SUITE["stages"]["cohesion"] =
-    BenchmarkTools.@benchmarkable Dendro.cluster_low_cohesion($SYNTH_FILES)
+    BenchmarkTools.@benchmarkable Dendro.cluster_low_cohesion($SYNTH_FILES, $SYNTH_GRAPH)

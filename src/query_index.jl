@@ -17,11 +17,6 @@ struct FunctionUnit
     lastline::Int
 end
 
-# Stable identity of a node within one tree: its byte span and grammar symbol. A
-# node has no exposed id and is not hashable, so this stands in as a `Set` key.
-const NodeId = Tuple{Int, Int, UInt16}
-nodeid(n::TreeSitter.Node) = (TreeSitter.byte_range(n)..., TreeSitter.node_symbol(n))
-
 # Nodes captured for one concept: the nodes in capture order, and their ids for
 # O(1) membership. Both are filled together as the query's captures are walked.
 struct Concept
@@ -102,8 +97,13 @@ struct QueryIndex
     # Each reference identifier's identity mapped to the in-file definition it
     # resolves to, filled by `resolve_bindings!` when a scopes query is supplied.
     bindings::Dict{NodeId, NodeId}
+    # The lexical scope captures, walked once when a scopes query is supplied and
+    # shared by the binding resolver, the corpus symbol table, and unbound-reference
+    # collection, so the capture walk runs once per file. Empty for a file with no
+    # scopes query or no scope regions.
+    scope_captures::ScopeCaptures
 
-    function QueryIndex(language::Symbol, source::String)
+    function QueryIndex(language::Symbol, source::String, scope_captures::ScopeCaptures = ScopeCaptures())
         short_function, decision, continuation, nesting = Concept(), Concept(), Concept(), Concept()
         short_circuit, parameter, body, catch_clause = Concept(), Concept(), Concept(), Concept()
         comment, name, trivial_body, return_stmt = Concept(), Concept(), Concept(), Concept()
@@ -126,7 +126,7 @@ struct QueryIndex
             short_function, decision, continuation, nesting, short_circuit, parameter,
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
-            try_stmt, case, by_name, Dict{NodeId, NodeId}(),
+            try_stmt, case, by_name, Dict{NodeId, NodeId}(), scope_captures,
         )
     end
 end
@@ -158,10 +158,18 @@ under its concept. When `scopes_query` is given, a second pass resolves each
 reference to its in-file definition into `index.bindings`.
 """
 function build_index(
-        tree::TreeSitter.Tree, language::Symbol, source::AbstractString, query::TreeSitter.Query,
+        tree::TreeSitter.Tree, language::Symbol, source::String, query::TreeSitter.Query,
         scopes_query::Union{TreeSitter.Query, Nothing} = nothing
     )
-    idx = QueryIndex(language, String(source))
+    caps = ScopeCaptures()
+    if scopes_query !== nothing
+        c = collect_scopes(tree, scopes_query, source)
+        if !isempty(c.scopes)
+            assign_defs!(c, source)
+            caps = c
+        end
+    end
+    idx = QueryIndex(language, source, caps)
     funcs = TreeSitter.Node[]
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)
@@ -177,9 +185,7 @@ function build_index(
         ep = TreeSitter.end_point(n)
         Base.push!(idx.functions, FunctionUnit(n, Int(sp.row) + 1, Int(ep.row) + 1))
     end
-    if scopes_query !== nothing
-        resolve_bindings!(idx.bindings, tree, scopes_query, idx.source)
-    end
+    isempty(caps.scopes) || resolve_bindings!(idx.bindings, caps, source)
     return idx
 end
 

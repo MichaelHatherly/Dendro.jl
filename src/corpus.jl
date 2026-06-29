@@ -27,7 +27,7 @@ function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothin
 end
 
 # Baseline over already-parsed corpus records.
-function baseline_from(files::AbstractVector{ParsedFile}, rules = BUILTIN_RULES)
+function baseline_from(files::Vector{ParsedFile}, rules = BUILTIN_RULES)
     baseline = Baseline()
     for f in files
         add_samples!(baseline, f.index, rules)
@@ -162,6 +162,11 @@ function analyze(
         )
     )
     append!(findings, scope_clusters(cluster_unnatural(files; cut), scope))
-    append!(findings, scope_clusters(cluster_low_cohesion(files; cut), scope))
+
+    table = corpus_symbols(files)
+    graph = build_corpus_graph(files, table)
+    append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut), scope))
+    append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut), scope))
+    append!(findings, scope_clusters(cluster_scattered(files, graph; cut), scope))
     return Findings(findings)
 end

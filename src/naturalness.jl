@@ -158,13 +158,13 @@ end
 
 # Collect every function in the corpus as a NaturalnessUnit, grouped by language so a
 # model never mixes grammars.
-function naturalness_units(files::AbstractVector{ParsedFile})
+function naturalness_units(files::Vector{ParsedFile})
     bylang = Dict{Symbol, Vector{NaturalnessUnit}}()
     for f in files
         for unit in functions(f.index)
             tokens = token_stream(unit, f.index)
             loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
-            sup = is_suppressed(f.directives, unit.firstline, :unnatural)
+            sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.unnatural)
             push!(get!(() -> NaturalnessUnit[], bylang, f.language), NaturalnessUnit(tokens, loc, sup))
         end
     end
@@ -213,7 +213,7 @@ function unnatural_in_language!(
         absolute = severity(value, band)
         pct = searchsortedlast(sorted, h) / length(sorted)
         (absolute != :ok || pct >= cut) || continue
-        push!(findings, Finding(:unnatural, [u.location], value, absolute, pct, :scalar, u.suppressed))
+        push!(findings, Finding(RELATIONAL.unnatural, [u.location], value, absolute, pct, :scalar, u.suppressed))
     end
     return findings
 end
@@ -227,7 +227,7 @@ in centibits, and the corpus percentile, fired when either trips. A language wit
 fewer than `min_tokens` tokens is skipped, its model too sparse to rank against.
 """
 function cluster_unnatural(
-        files::AbstractVector{ParsedFile}; band::Tuple{Int, Int} = UNNATURAL_BAND, cut::Real = 0.95,
+        files::Vector{ParsedFile}; band::Tuple{Int, Int} = UNNATURAL_BAND, cut::Real = 0.95,
         min_tokens::Integer = MIN_CORPUS_TOKENS
     )
     findings = Finding[]

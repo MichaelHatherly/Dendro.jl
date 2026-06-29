@@ -69,3 +69,28 @@ end
         @test isempty(extra)
     end
 end
+
+@testitem "every imports query uses only known capture names" tags = [:query_index] begin
+    using TreeSitter
+
+    function capture_names(q::TreeSitter.Query)
+        return [
+            unsafe_string(TreeSitter.API.ts_query_capture_name_for_id(q.ptr, UInt32(i), Ref{UInt32}()))
+                for i in 0:(TreeSitter.capture_count(q) - 1)
+        ]
+    end
+
+    # An imports query routes captures by name: `module`/`module.name` mark a namespace,
+    # `import`/`import.*` an import, `export` a visibility marker, `include.path` a splice
+    # target. Underscore captures are predicate helpers, never read. Any other capture is
+    # a typo that mis-routes silently. Catch it, for every language that ships one.
+    fixed = Set{String}(["module", "module.name", "export", "import", "include.path"])
+    @testset "$lang" for lang in sort!(collect(keys(Dendro.PROFILES)))
+        q = Dendro.imports_query_for(lang)
+        q === nothing && continue
+        extra = filter(capture_names(q)) do n
+            !(n in fixed) && !startswith(n, "import.") && !startswith(n, "_")
+        end
+        @test isempty(extra)
+    end
+end

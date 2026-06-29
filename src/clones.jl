@@ -155,7 +155,7 @@ maximality filter keeps only the largest clone, so a duplicated function is repo
 once, not again for every block nested inside it. Suppressed when any member carries
 a `dendro-ignore: duplicate` directive.
 """
-function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE)
+function cluster_duplicates(files::Vector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE)
     entries = AnchorEntry[]
     buckets = Dict{Tuple{Symbol, UInt64}, Vector{Int}}()
     # Locate an anchor by its file and node identity. A node's identity is its byte
@@ -170,7 +170,7 @@ function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer
                 floor = anchor_floor(s.node, f.index, min_size)
                 (floor === nothing || s.size < floor) && continue
                 line = Int(TreeSitter.start_point(s.node).row) + 1
-                sup = is_suppressed(f.directives, line, :duplicate)
+                sup = is_suppressed(f.directives, line, RELATIONAL.duplicate)
                 push!(
                     entries, AnchorEntry(
                         f.language, s.hash, s.node,
@@ -191,7 +191,7 @@ function cluster_duplicates(files::AbstractVector{ParsedFile}; min_size::Integer
         length(maximal) < 2 && continue
         locations = [Location(entries[i].file, entries[i].line, entries[i].unit) for i in maximal]
         suppressed = any(entries[i].suppressed for i in maximal)
-        push!(findings, Finding(:duplicate, locations, length(locations), :high, nothing, :flag, suppressed))
+        push!(findings, Finding(RELATIONAL.duplicate, locations, length(locations), :high, nothing, :flag, suppressed))
     end
     sort!(findings; by = f -> (-length(f.locations), first(f.locations).file, first(f.locations).line))
     return findings
@@ -330,7 +330,7 @@ end
 # `value` the weakest pairwise similarity in the cluster as a percent, suppressed when
 # any member carries a `dendro-ignore: near_duplicate` directive.
 function cluster_near_duplicates(
-        files::AbstractVector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE,
+        files::Vector{ParsedFile}; min_size::Integer = DEFAULT_MIN_SIZE,
         threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR
     )
@@ -340,7 +340,7 @@ function cluster_near_duplicates(
             sequence, histogram, digest, size = clone_features(unit, f.index)
             size < min_size && continue
             loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
-            sup = is_suppressed(f.directives, unit.firstline, :near_duplicate)
+            sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.near_duplicate)
             push!(units, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
         end
     end
@@ -376,7 +376,7 @@ function cluster_near_duplicates(
         suppressed = any(units[i].suppressed for i in idxs)
         push!(
             findings, Finding(
-                :near_duplicate, locations, round(Int, 100 * weakest[r]),
+                RELATIONAL.near_duplicate, locations, round(Int, 100 * weakest[r]),
                 :high, nothing, :flag, suppressed
             )
         )

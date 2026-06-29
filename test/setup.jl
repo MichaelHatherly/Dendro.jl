@@ -162,13 +162,17 @@
             :parameter_count, :boolean_complexity,
             :identical_operands, :duplicate_branches, :empty_body, :empty_catch,
             :stub_marker, :return_in_finally,
-            :duplicate, :near_duplicate, :low_cohesion,
+            :duplicate, :near_duplicate, :low_cohesion, :misplaced, :scattered,
         ]
     )
 
     # Metrics reported per file, not at a code line. Their marker is file-scoped
     # (`dendro-expect-file:`), matched when the file carries the metric at all.
-    const FILE_METRICS = Set{Symbol}([:low_cohesion])
+    const FILE_METRICS = Set{Symbol}([:low_cohesion, :scattered])
+
+    # Metrics whose finding carries a suggested target as a second location. Only the
+    # first location, the flagged unit, is the marked site; the target is a hint.
+    const FIRST_LOCATION_METRICS = Set{Symbol}([:misplaced])
 
     const EXPECT_RE = r"\bdendro-expect(-file)?\s*:\s*([\w,\s]+)"i
 
@@ -217,7 +221,8 @@
         file_site = Set{Tuple{String, Symbol}}()
         for f in findings
             f.metric in TRACKED_METRICS || continue
-            for loc in f.locations
+            locs = f.metric in FIRST_LOCATION_METRICS ? f.locations[1:1] : f.locations
+            for loc in locs
                 f.metric in FILE_METRICS ? push!(file_site, (loc.file, f.metric)) :
                     push!(line_site, (loc.file, loc.line, f.metric))
             end

@@ -9,7 +9,8 @@
     b2(q) = hb(q) + 1
     """
     files = [Fixtures.parsedfile(:julia, src; file = "c.jl")]
-    hit = only(Dendro.cluster_low_cohesion(files; band = (2, 3)))
+    graph = Dendro.build_corpus_graph(files, Dendro.corpus_symbols(files))
+    hit = only(Dendro.cluster_low_cohesion(files, graph; band = (2, 3)))
     @test hit.metric == :low_cohesion
     @test hit.kind == :scalar
     @test hit.value == 2
@@ -36,7 +37,8 @@ end
         return hb(q) + 1
     """
     files = [Fixtures.parsedfile(:python, src; file = "c.py")]
-    hit = only(Dendro.cluster_low_cohesion(files; band = (2, 3)))
+    graph = Dendro.build_corpus_graph(files, Dendro.corpus_symbols(files))
+    hit = only(Dendro.cluster_low_cohesion(files, graph; band = (2, 3)))
     @test hit.metric == :low_cohesion
     @test hit.value == 2
     @test hit.absolute == :warn
@@ -52,7 +54,8 @@ end
     f3(p) = h(f1(p))
     """
     files = [Fixtures.parsedfile(:julia, src; file = "c.jl")]
-    @test isempty(Dendro.cluster_low_cohesion(files; band = (2, 3)))
+    graph = Dendro.build_corpus_graph(files, Dendro.corpus_symbols(files))
+    @test isempty(Dendro.cluster_low_cohesion(files, graph; band = (2, 3)))
 end
 
 @testitem "cluster_low_cohesion ubiquity drop separates concerns sharing a utility" setup = [Fixtures] tags = [:cohesion] begin
@@ -66,8 +69,11 @@ end
     b1(q) = hb(q) + FOO
     """
     files = [Fixtures.parsedfile(:julia, src; file = "c.jl")]
-    @test isempty(Dendro.cluster_low_cohesion(files; band = (2, 3), ubiquity = 1.0))
-    hit = only(Dendro.cluster_low_cohesion(files; band = (2, 3), ubiquity = 0.5))
+    table = Dendro.corpus_symbols(files)
+    keep = Dendro.build_corpus_graph(files, table; within_ubiquity = 1.0)
+    @test isempty(Dendro.cluster_low_cohesion(files, keep; band = (2, 3)))
+    drop = Dendro.build_corpus_graph(files, table; within_ubiquity = 0.5)
+    hit = only(Dendro.cluster_low_cohesion(files, drop; band = (2, 3)))
     @test hit.value == 2
 end
 
@@ -82,6 +88,7 @@ end
     i = Fixtures.idx(:julia, src)
     directives = Dendro.suppressions(i; file = "c.jl")
     files = [Fixtures.parsedfile(:julia, src; file = "c.jl", directives = directives)]
-    hit = only(Dendro.cluster_low_cohesion(files; band = (2, 3)))
+    graph = Dendro.build_corpus_graph(files, Dendro.corpus_symbols(files))
+    hit = only(Dendro.cluster_low_cohesion(files, graph; band = (2, 3)))
     @test hit.suppressed
 end
