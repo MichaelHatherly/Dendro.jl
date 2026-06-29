@@ -39,14 +39,37 @@ Number of source lines the function spans, inclusive.
 """
 function_length(unit::FunctionUnit) = unit.lastline - unit.firstline + 1
 
+# Node types that open a function's keyword-argument region, the boundary past which a
+# parameter is named at the call site and so is a different concern than the positional
+# count: Julia's `;` separator, and Python's `*args`, `**kwargs`, and bare-`*`
+# keyword-only marker. Matching by node type keeps the rule shape-based, so a grammar
+# without these shapes counts every parameter as before.
+const KEYWORD_BOUNDARY = Set{String}(
+    [";", "list_splat_pattern", "dictionary_splat_pattern", "keyword_separator"]
+)
+
+# True when a parameter-list child opens the keyword-argument region. The marker is
+# either the child itself or, for an annotated splat (`*args: T`, `**kwargs: T`), the
+# splat wrapped in its first named child.
+function opens_keyword_region(node::TreeSitter.Node)
+    TreeSitter.node_type(node) in KEYWORD_BOUNDARY && return true
+    for c in TreeSitter.children(node)
+        TreeSitter.is_named(c) || continue
+        return TreeSitter.node_type(c) in KEYWORD_BOUNDARY
+    end
+    return false
+end
+
 """
     parameter_count(node, index) -> Int
 
 Number of positional parameters in the function's signature, taken as the named
-children of the first parameter-list node the query tagged. A keyword separator
-(`;` in Julia) ends the positional list: keyword arguments are named at the call
-site, so a long keyword list is a different concern than a long positional one and
-does not count. Languages with no such separator count every named child.
+children of the first parameter-list node the query tagged. A keyword boundary ends
+the positional list: keyword arguments are named at the call site, so a long keyword
+list is a different concern than a long positional one and does not count. The
+boundary is Julia's `;` or Python's `*args`/`**kwargs`/bare-`*`. A receiver
+parameter (`self`/`cls`) is positional and counts. Languages with no such boundary
+count every named child.
 """
 # First parameter-list node in pre-order, or `nothing`. Descends the whole tree, so
 # the outer function's signature is found before any nested callable's.
@@ -64,7 +87,7 @@ function parameter_count(node::TreeSitter.Node, index::QueryIndex)
     container === nothing && return 0
     n = 0
     for c in TreeSitter.children(container)
-        TreeSitter.node_type(c) == ";" && break
+        opens_keyword_region(c) && break
         TreeSitter.is_named(c) && (n += 1)
     end
     return n
