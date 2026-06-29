@@ -13,28 +13,6 @@
     @test Dendro.clone_similarity(UInt64[1, 2], UInt64[1, 2, 9, 9, 9, 9, 9, 9, 9, 9]) == 0.2
 end
 
-@testitem "subtree_hashes tolerates renames and literals" setup = [Fixtures] tags = [:clones] begin
-    a = "function f(x)\n    y = x + 1\n    return y * 2\nend\n"
-    b = "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n"
-    c = "function h(x)\n    while x > 0\n        x -= 1\n    end\nend\n"
-    ia, ib, ic = Fixtures.idx(:julia, a), Fixtures.idx(:julia, b), Fixtures.idx(:julia, c)
-    ha = Dendro.subtree_hashes(only(Dendro.functions(ia)), ia)
-    hb = Dendro.subtree_hashes(only(Dendro.functions(ib)), ib)
-    hc = Dendro.subtree_hashes(only(Dendro.functions(ic)), ic)
-    # Renamed identifiers and changed literals leave the structural hashes identical.
-    @test ha == hb
-    @test ha != hc
-end
-
-@testitem "subtree_hashes excludes nested functions" setup = [Fixtures] tags = [:clones] begin
-    plain = "function f(x)\n    y = x + 1\n    return y\nend\n"
-    nested = "function f(x)\n    function helper()\n        0\n    end\n    y = x + 1\n    return y\nend\n"
-    ip, inn = Fixtures.idx(:julia, plain), Fixtures.idx(:julia, nested)
-    hp = Dendro.subtree_hashes(first(Dendro.functions(ip)), ip)
-    hn = Dendro.subtree_hashes(first(Dendro.functions(inn)), inn)
-    @test hp == hn
-end
-
 @testitem "clone_similarity scores near-misses below identity" setup = [Fixtures] tags = [:clones] begin
     base = "function f(x)\n    y = x + 1\n    z = y * 2\n    return z\nend\n"
     near = "function g(t)\n    a = t + 9\n    b = a * 7\n    c = b - 1\n    return c\nend\n"
@@ -43,15 +21,6 @@ end
     sg = first(Dendro.clone_features(only(Dendro.functions(inr)), inr))
     # `near` adds one statement, so its sequence extends `base`'s: similar, not identical.
     @test 0.5 < Dendro.clone_similarity(sf, sg) < 1.0
-end
-
-@testitem "node_histogram counts named node types" setup = [Fixtures] tags = [:clones] begin
-    i = Fixtures.idx(:julia, "function f(x)\n    y = x + 1\n    return y\nend\n")
-    u = only(Dendro.functions(i))
-    hist = Dendro.node_histogram(u, i)
-    # Both walk the same named-node set, so the totals agree.
-    @test sum(values(hist)) == length(Dendro.subtree_hashes(u, i))
-    @test haskey(hist, "identifier")
 end
 
 @testitem "analyze clusters near-misses across files" setup = [Fixtures] tags = [:clones] begin

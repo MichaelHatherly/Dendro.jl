@@ -80,3 +80,33 @@ each its own self-anchored community; what scatters is a file each of whose unit
 with a different other file. Two scores, like cohesion: the absolute band and the corpus
 percentile. The finding's locations are one representative unit per elsewhere-anchored
 community.
+
+## Unreferenced definitions
+
+Reported as `:unreferenced`: a private top-level definition no path reaches from the
+corpus's public surface. Dead code needs reachability, not a caller count, so a private
+cluster that only calls itself is still dead. The pass builds a reference graph over every
+top-level definition and walks forward from the roots. A definition is a root when it is
+declared public or referenced from top-level code, which runs unconditionally. The edges
+come from two sources, neither discounted: each file's within-file bindings, the same data
+cohesion reads, and the cross-file references placement resolves. A definition many units
+reach for is maximally alive, so unlike placement this graph drops no cross-cutting
+utility and keeps definitions that are not functions.
+
+The public surface is per language. A name in a file's `export`/`public` list is public
+in Julia and JavaScript/TypeScript; a Python name is public unless it leads with an
+underscore; a Go name is public when it is capitalised. A reference is attributed to its
+enclosing top-level definition by byte range, so a call inside a nested helper or a lambda
+still keeps the enclosing function alive. A name matching several definitions keeps all of
+them alive, since name resolution cannot tell a type from its constructor or one method
+from its overload.
+
+The reading is name-based and lexical, like the rest of placement: it matches a name to a
+declared definition, never resolving a type or a dispatch. Two limits follow. It is sound
+only over a whole module, so a private definition called from a same-module file outside
+the scan is falsely flagged. Runtime-only entry points (a test function, a dispatch-table
+callback, a string-dispatched name) carry no syntactic reference, so they are flagged
+unless declared public or referenced from top level; accept one with
+`dendro-ignore: unreferenced`. Languages with a per-definition visibility modifier (Rust,
+Java, C/C++, PHP, Ruby) have no public-surface marker yet, so every definition defaults to
+public and nothing is flagged there.

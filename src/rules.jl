@@ -75,6 +75,7 @@ const RELATIONAL = (
     low_cohesion = :low_cohesion,
     scattered = :scattered,
     misplaced = :misplaced,
+    unreferenced = :unreferenced,
 )
 const RELATIONAL_METRICS = values(RELATIONAL)
 

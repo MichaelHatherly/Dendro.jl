@@ -48,4 +48,6 @@ corpus percentile. A language with too few tokens to model is skipped.
 
 Cohesion asks whether a file's functions group by usage
 ([below](@ref "Cohesion and placement")). Placement asks whether a unit sits in the
-right file ([below](@ref "Cohesion and placement")).
+right file, scattering whether a file's units belong to one module, and reachability
+whether a private definition is dead, reported as `:unreferenced`
+([below](@ref "Cohesion and placement")).

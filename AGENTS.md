@@ -39,8 +39,11 @@ lexically, never types. It matches a reference to the definition it lexically na
 within a file and, along declared `include`/`import`/`export` edges, across files, but
 it never works out a name's type or which method a call dispatches to. That is what
 keeps it cheap and language-agnostic. Concerns that need type or dispatch resolution,
-real call graphs, overload resolution, dead code across files, are out of scope by
-design. The line is type and dispatch resolution, not the file boundary and not name
+real call graphs, overload resolution, are out of scope by design. Dead code is out of
+scope for declared-public symbols, where reachability would need a real call graph;
+unreferenced private definitions are flagged via reachability from the public surface,
+name-based and lexical, no types or dispatch. The line is type and dispatch resolution,
+not the file boundary and not name
 resolution: matching a name to a declared definition is fine, working out its type is
 not. Resist requests to make a metric smarter by reaching for types or dispatch instead
 of shape and name.

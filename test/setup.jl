@@ -53,6 +53,11 @@
     duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :duplicate, findings))
     near_duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :near_duplicate, findings))
 
+    # The (file, unit) sites the dead-code pass flags over a corpus, the readable form the
+    # unreferenced items assert on.
+    unref_sites(files) =
+        Set((loc.file, loc.unit) for f in Dendro.cluster_unreferenced(files, Dendro.corpus_symbols(files)) for loc in f.locations)
+
     # A Julia function whose body is `n` chained assignments. Two such with different
     # names are renamed clones; with different `n` they are near-misses. Each statement
     # adds 7 named nodes, so `n` controls the size band.

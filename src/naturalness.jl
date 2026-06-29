@@ -139,15 +139,6 @@ function interpolated_cross_entropy(tokens::Vector{String}, global_model::NGramM
     return total / length(tokens)
 end
 
-"""
-    cross_entropy(tokens, model) -> Float64
-
-Mean bits per token to encode `tokens` under `model` alone, the global-only case of
-[`interpolated_cross_entropy`](@ref) at `λ = 1`.
-"""
-cross_entropy(tokens::Vector{String}, model::NGramModel) =
-    interpolated_cross_entropy(tokens, model, model, 1.0)
-
 # One function carried through naturalness scoring: its token stream, where it is, and
 # whether an author accepted the finding.
 struct NaturalnessUnit

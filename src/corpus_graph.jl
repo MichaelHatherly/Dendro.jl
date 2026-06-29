@@ -54,9 +54,6 @@ more than `within_ubiquity` of a file's units; a language with no scopes query c
 none.
 """
 function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; within_ubiquity::Float64 = COHESION_UBIQUITY)
-    corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
-    visible = visible_defs(files, table, corpus)
-
     units = CorpusUnit[]
     unit_index = Dict{Tuple{String, Int}, Int}()
     for f in files
@@ -67,20 +64,16 @@ function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; withi
     end
 
     # Resolve references first, counting the distinct units that reach each definition,
-    # so cross-cutting names can be dropped before the weighted edges are built.
+    # so cross-cutting names can be dropped before the weighted edges are built. A
+    # reference in top-level code couples no unit, so it is skipped here.
     resolved = Tuple{Int, Vector{Int}}[]
     breadth = Dict{Int, Set{Int}}()
-    for f in files
-        names = visible[f.file]
-        for ref in unbound_references(f)
-            ref.unit == 0 && continue
-            candidates = get(names, ref.name, nothing)
-            candidates === nothing && continue
-            src = unit_index[(f.file, ref.unit)]
-            push!(resolved, (src, candidates))
-            for di in candidates
-                push!(get!(() -> Set{Int}(), breadth, di), src)
-            end
+    for (f, ref, candidates) in corpus_references(files, table)
+        ref.unit == 0 && continue
+        src = unit_index[(f.file, ref.unit)]
+        push!(resolved, (src, candidates))
+        for di in candidates
+            push!(get!(() -> Set{Int}(), breadth, di), src)
         end
     end
     threshold = max(CORPUS_UBIQUITY_FLOOR, ceil(Int, CORPUS_UBIQUITY * length(units)))

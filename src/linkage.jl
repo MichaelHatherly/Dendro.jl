@@ -185,11 +185,16 @@ end
 # `:splice` joins included files into one namespace (Julia `include`, C `#include`);
 # `:import` brings named or whole-module names in (Python, JS). `resolve_target` maps a
 # captured include/import string to corpus file paths; `is_exported` decides whether a
-# definition is visible outside its file.
+# definition is visible outside its file; `is_public` decides whether it is part of the
+# corpus's public API, the surface reachability roots a dead-code search from. Visibility
+# to another file and membership of the public API are different questions: a Julia name
+# is visible across an `include` splice without being exported, so `:unreferenced` reads
+# `is_public`, not `is_exported`.
 struct Linkage
     model::Symbol
     resolve_target::Function
     is_exported::Function
+    is_public::Function
 end
 
 # Resolution works in POSIX-separated path space: the corpus key set and the paths the
@@ -342,18 +347,40 @@ end
 # is by shared directory.
 no_resolve(::AbstractString, ::AbstractString, ::Corpus) = String[]
 
+# A definition is public when its file's export list names it, the surface for a
+# language that marks its API by name (Julia `export`/`public`, a JS/TS `export`). The
+# export set is the file's own for an import model, the inclusion component's for a
+# splice, so a Julia name exported from the module file counts as public for the spliced
+# file that defines it. The body coincides with `js_exported`, a distinct visibility rule.
+# dendro-ignore: duplicate
+export_public(def::CorpusDef, exports::Set{String}) = def.name in exports
+
+# A Python definition is public unless its name leads with an underscore, the
+# convention that marks a module-private name.
+underscore_public(def::CorpusDef, ::Set{String}) = !startswith(def.name, "_")
+
+# A Go definition is exported, and so public, when its name starts with an uppercase
+# letter, the language's only visibility rule.
+capitalized_public(def::CorpusDef, ::Set{String}) = !isempty(def.name) && isuppercase(first(def.name))
+
+# Every definition is public: the safe default for a language with no public-surface
+# marker yet, so `:unreferenced` never fires there rather than flagging on a guess. The
+# body coincides with `import_exported`, a distinct visibility rule.
+# dendro-ignore: duplicate
+always_public(::CorpusDef, ::Set{String}) = true
+
 const LINKAGES = Dict{Symbol, Linkage}(
-    :julia => Linkage(:splice, splice_resolve, splice_exported),
-    :c => Linkage(:splice, splice_resolve, splice_exported),
-    :cpp => Linkage(:splice, splice_resolve, splice_exported),
-    :ruby => Linkage(:splice, ruby_resolve, splice_exported),
-    :go => Linkage(:directory, no_resolve, import_exported),
-    :python => Linkage(:import, python_resolve, import_exported),
-    :javascript => Linkage(:import, js_resolve, js_exported),
-    :typescript => Linkage(:import, js_resolve, js_exported),
-    :rust => Linkage(:import, rust_resolve, import_exported),
-    :java => Linkage(:import, java_resolve, import_exported),
-    :php => Linkage(:import, php_resolve, import_exported),
+    :julia => Linkage(:splice, splice_resolve, splice_exported, export_public),
+    :c => Linkage(:splice, splice_resolve, splice_exported, always_public),
+    :cpp => Linkage(:splice, splice_resolve, splice_exported, always_public),
+    :ruby => Linkage(:splice, ruby_resolve, splice_exported, always_public),
+    :go => Linkage(:directory, no_resolve, import_exported, capitalized_public),
+    :python => Linkage(:import, python_resolve, import_exported, underscore_public),
+    :javascript => Linkage(:import, js_resolve, js_exported, export_public),
+    :typescript => Linkage(:import, js_resolve, js_exported, export_public),
+    :rust => Linkage(:import, rust_resolve, import_exported, always_public),
+    :java => Linkage(:import, java_resolve, import_exported, always_public),
+    :php => Linkage(:import, php_resolve, import_exported, always_public),
 )
 
 # The names a file marks for export, from the `@export` captures of its linkage query.
@@ -513,4 +540,60 @@ function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Cor
         end
     end
     return visible
+end
+
+"""
+    corpus_references(files, table) -> Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}
+
+Every cross-file reference in `files` that resolves against `table`, paired with the
+file it sits in and the candidate definition indices its name reaches through
+[`visible_defs`](@ref). Unlike the corpus graph, this keeps a reference sitting in
+top-level code (`ref.unit == 0`): the reachability pass attributes a reference to its
+enclosing definition by byte range, not by unit, and a top-level reference is a root
+edge. A name matching several visible definitions yields all of them.
+"""
+function corpus_references(files::Vector{ParsedFile}, table::SymbolTable)
+    corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
+    visible = visible_defs(files, table, corpus)
+    out = Tuple{ParsedFile, UnboundRef, Vector{Int}}[]
+    for f in files
+        names = visible[f.file]
+        for ref in unbound_references(f)
+            candidates = get(names, ref.name, nothing)
+            candidates === nothing && continue
+            push!(out, (f, ref, candidates))
+        end
+    end
+    return out
+end
+
+"""
+    public_surface(files) -> Dict{String, Set{String}}
+
+The export names that gate each file's public definitions. For an import model the set
+is the file's own [`file_exports`](@ref); for a splice model it is the union across the
+file's inclusion component, so a Julia name exported from the module file counts as
+public for the spliced file that defines it. A language with no linkage maps to an empty
+set, which its `always_public` predicate ignores.
+"""
+function public_surface(files::Vector{ParsedFile})
+    corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
+    own = Dict{String, Set{String}}(f.file => file_exports(f) for f in files)
+    components = inclusion_components(files, corpus)
+    by_component = Dict{Int, Set{String}}()
+    for f in files
+        link = get(LINKAGES, f.language, nothing)
+        (link === nothing || link.model !== :splice) && continue
+        union!(get!(() -> Set{String}(), by_component, components[f.file]), own[f.file])
+    end
+    surface = Dict{String, Set{String}}()
+    for f in files
+        link = get(LINKAGES, f.language, nothing)
+        surface[f.file] = if link !== nothing && link.model === :splice
+            get(by_component, components[f.file], Set{String}())
+        else
+            own[f.file]
+        end
+    end
+    return surface
 end
