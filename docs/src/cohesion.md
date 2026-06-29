@@ -95,11 +95,13 @@ utility and keeps definitions that are not functions.
 
 The public surface is per language. A name in a file's `export`/`public` list is public
 in Julia and JavaScript/TypeScript; a Python name is public unless it leads with an
-underscore; a Go name is public when it is capitalised. A reference is attributed to its
-enclosing top-level definition by byte range, so a call inside a nested helper or a lambda
-still keeps the enclosing function alive. A name matching several definitions keeps all of
-them alive, since name resolution cannot tell a type from its constructor or one method
-from its overload.
+underscore; a Go name is public when it is capitalised. A per-definition visibility
+modifier covers the rest: a Rust item is public when it is `pub`, a C or C++ function is
+private when it is `static` (file-local), a Ruby method is private under a `private` or
+`protected` declaration. A reference is attributed to its enclosing top-level definition by
+byte range, so a call inside a nested helper or a lambda still keeps the enclosing function
+alive. A name matching several definitions keeps all of them alive, since name resolution
+cannot tell a type from its constructor or one method from its overload.
 
 The reading is name-based and lexical, like the rest of placement: it matches a name to a
 declared definition, never resolving a type or a dispatch. Two limits follow. It is sound
@@ -107,6 +109,7 @@ only over a whole module, so a private definition called from a same-module file
 the scan is falsely flagged. Runtime-only entry points (a test function, a dispatch-table
 callback, a string-dispatched name) carry no syntactic reference, so they are flagged
 unless declared public or referenced from top level; accept one with
-`dendro-ignore: unreferenced`. Languages with a per-definition visibility modifier (Rust,
-Java, C/C++, PHP, Ruby) have no public-surface marker yet, so every definition defaults to
-public and nothing is flagged there.
+`dendro-ignore: unreferenced`. Java and PHP get no signal: their `private` marks a class
+member, not a top-level symbol, and a package-private Java class is reached same-package
+without an import the resolver sees, so flagging it would be a false positive. Their
+top-level symbols stay public.

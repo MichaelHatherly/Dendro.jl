@@ -79,10 +79,39 @@ end
     @test Fixtures.unref_sites([j]) == Set([("m.js", "dead")])
 end
 
-@testitem ":unreferenced never fires for a language with no public surface" setup = [Fixtures] tags = [:unreferenced] begin
-    # Rust has no public-surface predicate yet, so every definition defaults to public:
-    # no false positives until the per-def visibility modifier lands.
-    src = "fn dead() -> i32 { 1 }\nfn other() -> i32 { 2 }\n"
+@testitem ":unreferenced reads Rust pub as the public surface" setup = [Fixtures] tags = [:unreferenced] begin
+    # `entry` is `pub`, a root, and calls `used`; `dead` is a private item nothing reaches.
+    src = "pub fn entry() -> i32 { used() }\nfn used() -> i32 { 1 }\nfn dead() -> i32 { 2 }\n"
     r = Fixtures.parsedfile(:rust, src; file = "m.rs")
-    @test isempty(Dendro.cluster_unreferenced([r], Dendro.corpus_symbols([r])))
+    @test Fixtures.unref_sites([r]) == Set([("m.rs", "dead")])
+end
+
+@testitem ":unreferenced reads a C static function as private" setup = [Fixtures] tags = [:unreferenced] begin
+    # `entry` has external linkage, a root; `used` is static but reached through it; `dead`
+    # is static, file-local, and unreferenced.
+    src = "int entry() { return used(); }\nstatic int used() { return 1; }\nstatic int dead() { return 2; }\n"
+    c = Fixtures.parsedfile(:c, src; file = "m.c")
+    @test Fixtures.unref_sites([c]) == Set([("m.c", "dead")])
+end
+
+@testitem ":unreferenced reads a C++ static function as private" setup = [Fixtures] tags = [:unreferenced] begin
+    src = "int entry() { return 1; }\nstatic int dead() { return 2; }\n"
+    c = Fixtures.parsedfile(:cpp, src; file = "m.cpp")
+    @test Fixtures.unref_sites([c]) == Set([("m.cpp", "dead")])
+end
+
+@testitem ":unreferenced reads a Ruby private method as private" setup = [Fixtures] tags = [:unreferenced] begin
+    # `entry` precedes the `private` toggle, a root, and calls `used`; `dead` follows it
+    # and nothing reaches it.
+    src = "class C\n  def entry\n    used\n  end\n  private\n  def used\n    1\n  end\n  def dead\n    2\n  end\nend\n"
+    r = Fixtures.parsedfile(:ruby, src; file = "m.rb")
+    @test Fixtures.unref_sites([r]) == Set([("m.rb", "dead")])
+end
+
+@testitem ":unreferenced leaves a same-package Java class alone" setup = [Fixtures] tags = [:unreferenced] begin
+    # Java's only top-level marker is package-private, which a sibling file reaches with no
+    # import the resolver sees, so Java symbols stay public: no false positive, no signal.
+    main = Fixtures.parsedfile(:java, "package p;\npublic class Main { int run() { return new Helper().work(); } }\n"; file = "Main.java")
+    helper = Fixtures.parsedfile(:java, "package p;\nclass Helper { int work() { return 1; } }\n"; file = "Helper.java")
+    @test isempty(Dendro.cluster_unreferenced([main, helper], Dendro.corpus_symbols([main, helper])))
 end

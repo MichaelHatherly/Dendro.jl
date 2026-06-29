@@ -22,7 +22,8 @@ end
 # A top-level definition somewhere in the corpus: the file it lives in, its identity in
 # that file's tree, the bound name and kind, the enclosing module path (outermost
 # first), the function-unit index it belongs to (0 for a type or const outside any
-# unit), and its source line.
+# unit), its source line, and its declared visibility (`:public`/`:private`/`:unknown`,
+# read from a per-def modifier where a language has one, `:unknown` otherwise).
 struct CorpusDef
     file::String
     id::NodeId
@@ -31,6 +32,7 @@ struct CorpusDef
     module_path::Vector{String}
     unit::Int
     line::Int
+    visibility::Symbol
 end
 
 # Every top-level definition across the corpus. A cross-file reference resolves against
@@ -99,6 +101,84 @@ function root_scope(scopes::Vector{ScopeEntry})
     return best
 end
 
+# The visibility a definition declares, for a language that marks it per definition:
+# `:public`/`:private`, or `:unknown` where the language has no usable marker.
+# `modifier_public` treats `:unknown` as public, the safe direction. The navigation is
+# grammar-specific, from the captured name node to its declaration's modifier.
+#
+# Only the markers that gate a top-level symbol and cannot be reached cross-file by name
+# count: a Rust non-`pub` item is module-private, a C/C++ `static` function is
+# file-local, a Ruby method under `private`/`protected` is same-class, so an unreferenced
+# one is genuinely dead. Java and PHP have no such top-level marker: their `private` sits
+# on class members, which are not top-level symbols, and a package-private Java class is
+# reached same-package without an import the resolver sees, so flagging it would be a
+# false positive. They keep `:unknown`, every top-level symbol public.
+function def_visibility(file::ParsedFile, defnode::TreeSitter.Node)
+    lang = file.language
+    lang === :rust && return rust_visibility(defnode)
+    (lang === :c || lang === :cpp) && return static_visibility(file, defnode)
+    lang === :ruby && return ruby_visibility(file, defnode)
+    return :unknown
+end
+
+# Rust marks a public item with a `visibility_modifier` (`pub`, `pub(crate)`) child on the
+# declaration, the captured name's parent. Its absence is private to the module, so an
+# unreferenced one is unreachable from anywhere.
+function rust_visibility(defnode::TreeSitter.Node)
+    decl = TreeSitter.parent(defnode)
+    TreeSitter.is_null(decl) && return :unknown
+    for c in TreeSitter.children(decl)
+        TreeSitter.node_type(c) == "visibility_modifier" && return :public
+    end
+    return :private
+end
+
+# A C or C++ free function with a `static` storage class has internal linkage, visible
+# only in its own file, so an unreferenced one is dead. Any other definition (an extern
+# function, a type) is public.
+function static_visibility(file::ParsedFile, defnode::TreeSitter.Node)
+    fdef = ancestor_of_type(defnode, "function_definition")
+    fdef === nothing && return :public
+    for c in TreeSitter.children(fdef)
+        TreeSitter.node_type(c) == "storage_class_specifier" &&
+            occursin("static", TreeSitter.slice(file.source, c)) && return :private
+    end
+    return :public
+end
+
+# Ruby methods are public until a bare `private` or `protected` statement in the class
+# body toggles subsequent ones; `public` toggles back. A top-level method (in `program`,
+# not a class body) is public. The toggle is a bare identifier statement, told apart from
+# a `private :sym` call, which parses as a call node, not an identifier.
+function ruby_visibility(file::ParsedFile, defnode::TreeSitter.Node)
+    method = TreeSitter.parent(defnode)
+    TreeSitter.is_null(method) && return :unknown
+    body = TreeSitter.parent(method)
+    (!TreeSitter.is_null(body) && TreeSitter.node_type(body) == "body_statement") || return :public
+    current = :public
+    target = nodeid(method)
+    for c in TreeSitter.children(body)
+        if TreeSitter.node_type(c) == "identifier"
+            word = strip(TreeSitter.slice(file.source, c))
+            (word == "private" || word == "protected") && (current = :private)
+            word == "public" && (current = :public)
+        elseif nodeid(c) == target
+            return current
+        end
+    end
+    return current
+end
+
+# The nearest ancestor of `node` whose type is `kind`, or `nothing`.
+function ancestor_of_type(node::TreeSitter.Node, kind::String)
+    n = TreeSitter.parent(node)
+    while !TreeSitter.is_null(n)
+        TreeSitter.node_type(n) == kind && return n
+        n = TreeSitter.parent(n)
+    end
+    return nothing
+end
+
 # Add one file's top-level definitions to `table`. A definition is top-level when its
 # owning scope, hoisted for functions and types, is a namespace: the file root or a
 # module region. That excludes a helper defined inside another function, whose owning
@@ -126,7 +206,7 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
         path = module_path_of(regions, from, to)
         unit = containing_unit(uranges, from, to)
         line = Int(TreeSitter.start_point(d).row) + 1
-        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line))
+        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d)))
     end
     return table
 end
@@ -363,24 +443,25 @@ underscore_public(def::CorpusDef, ::Set{String}) = !startswith(def.name, "_")
 # letter, the language's only visibility rule.
 capitalized_public(def::CorpusDef, ::Set{String}) = !isempty(def.name) && isuppercase(first(def.name))
 
-# Every definition is public: the safe default for a language with no public-surface
-# marker yet, so `:unreferenced` never fires there rather than flagging on a guess. The
-# body coincides with `import_exported`, a distinct visibility rule.
-# dendro-ignore: duplicate
-always_public(::CorpusDef, ::Set{String}) = true
+# A definition is public unless its declared visibility marks it private, the surface for
+# a language that marks visibility per definition (Rust non-`pub`, a `static` C/C++
+# function, a Ruby method under `private`/`protected`). An `:unknown` visibility reads as
+# public, the safe direction, so `:unreferenced` never fires on a guess; a language whose
+# private marker sits on a non-top-level member (Java, PHP) leaves every symbol `:unknown`.
+modifier_public(def::CorpusDef, ::Set{String}) = def.visibility !== :private
 
 const LINKAGES = Dict{Symbol, Linkage}(
     :julia => Linkage(:splice, splice_resolve, splice_exported, export_public),
-    :c => Linkage(:splice, splice_resolve, splice_exported, always_public),
-    :cpp => Linkage(:splice, splice_resolve, splice_exported, always_public),
-    :ruby => Linkage(:splice, ruby_resolve, splice_exported, always_public),
+    :c => Linkage(:splice, splice_resolve, splice_exported, modifier_public),
+    :cpp => Linkage(:splice, splice_resolve, splice_exported, modifier_public),
+    :ruby => Linkage(:splice, ruby_resolve, splice_exported, modifier_public),
     :go => Linkage(:directory, no_resolve, import_exported, capitalized_public),
     :python => Linkage(:import, python_resolve, import_exported, underscore_public),
     :javascript => Linkage(:import, js_resolve, js_exported, export_public),
     :typescript => Linkage(:import, js_resolve, js_exported, export_public),
-    :rust => Linkage(:import, rust_resolve, import_exported, always_public),
-    :java => Linkage(:import, java_resolve, import_exported, always_public),
-    :php => Linkage(:import, php_resolve, import_exported, always_public),
+    :rust => Linkage(:import, rust_resolve, import_exported, modifier_public),
+    :java => Linkage(:import, java_resolve, import_exported, modifier_public),
+    :php => Linkage(:import, php_resolve, import_exported, modifier_public),
 )
 
 # The names a file marks for export, from the `@export` captures of its linkage query.
