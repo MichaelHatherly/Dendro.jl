@@ -4,7 +4,7 @@ import NearestNeighbors
 import RelocatableFolders
 import TreeSitter
 
-public analyze, active, github_annotations
+public analyze, active, github_annotations, mermaid
 public Finding, Findings, Location
 public Rule, BUILTIN_RULES, OPTIONAL_RULES
 
@@ -33,5 +33,6 @@ include("unreferenced.jl")
 include("cohesion.jl")
 include("ignore.jl")
 include("corpus.jl")
+include("mermaid.jl")
 
 end # module

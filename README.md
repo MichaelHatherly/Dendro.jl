@@ -64,6 +64,20 @@ Pair it with `base` to scope to the functions a change touched; an annotation sh
 inline on the diff when its line is part of the change, otherwise in the run's Checks
 tab. See `.github/workflows/dendro.yml` for a working setup.
 
+To see the structure rather than read it, `mermaid(io, paths; graph, granularity)`
+renders one of the graphs Dendro builds as a mermaid `flowchart`. `graph` picks the
+diagram: `:coupling` the cross-file reference graph behind `:misplaced`/`:scattered`,
+`:reachability` the dead-code graph behind `:unreferenced`, `:clones` the duplicate
+clusters. `granularity` is `:file` or `:unit`. Active findings overlay onto the
+diagram. Redirect `io` to a `.mmd` file to save it:
+
+```julia
+using Dendro: mermaid
+
+mermaid("src"; graph = :coupling, granularity = :file)   # module-coupling map to stdout
+open(io -> mermaid(io, "src"; graph = :reachability), "dead.mmd", "w")
+```
+
 ## Languages
 
 bash, c, cpp, go, java, javascript, julia, php, python, ruby, rust, typescript.
