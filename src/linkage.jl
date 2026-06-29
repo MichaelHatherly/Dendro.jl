@@ -105,7 +105,7 @@ end
 # scope is that function.
 function file_symbols!(table::SymbolTable, file::ParsedFile)
     caps = file.index.scope_captures
-    caps === nothing && return table
+    isempty(caps.scopes) && return table
     imports = imports_query_for(file.language)
     regions = imports === nothing ? ModuleRegion[] : module_regions(file.tree, imports, file.source)
     root = root_scope(caps.scopes)
@@ -150,7 +150,7 @@ A file whose language ships no scopes query yields none.
 """
 function unbound_references(file::ParsedFile)
     caps = file.index.scope_captures
-    caps === nothing && return UnboundRef[]
+    isempty(caps.scopes) && return UnboundRef[]
     units = file.index.functions
     uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
     refs = UnboundRef[]
@@ -202,7 +202,7 @@ to_posix(path::AbstractString) = replace(path, '\\' => '/')
 corpus_join(parts::AbstractString...) = to_posix(normpath(joinpath(parts...)))
 
 # The final `/`-separated component of a POSIX path.
-posix_basename(path::AbstractString) = (i = findlast('/', path); i === nothing ? String(path) : path[nextind(path, i):end])
+posix_basename(path::String) = (i = findlast('/', path); i === nothing ? path : path[nextind(path, i):end])
 
 # The corpus path set paired with a basename index. The splice and relative-path
 # resolvers test membership directly; the absolute-path resolvers (Rust, Java, PHP)
@@ -302,7 +302,7 @@ end
 # languages with absolute module paths share (Rust, Java, PHP), where a build system,
 # not the source, fixes the real root. The basename index narrows the scan to paths
 # sharing an option's last component before the full suffix test.
-function suffix_match(corpus::Corpus, options::Tuple{Vararg{AbstractString}})
+function suffix_match(corpus::Corpus, options::Tuple{Vararg{String}})
     found = String[]
     for option in options
         cands = get(corpus.by_basename, posix_basename(option), nothing)
@@ -326,14 +326,14 @@ end
 
 # Java `import com.foo.Bar` names class `Bar` in file `com/foo/Bar.java`: the qualified
 # name is the file path, one public class per file.
-function java_resolve(target::AbstractString, ::AbstractString, corpus::Corpus)
+function java_resolve(target::String, ::AbstractString, corpus::Corpus)
     rel = replace(target, "." => "/")
     return suffix_match(corpus, (rel * ".java",))
 end
 
 # PHP `use App\Foo` names `Foo` in file `App/Foo.php`, the PSR-4 convention mapping a
 # namespace to a directory.
-function php_resolve(target::AbstractString, ::AbstractString, corpus::Corpus)
+function php_resolve(target::String, ::AbstractString, corpus::Corpus)
     rel = replace(strip(target, '\\'), "\\" => "/")
     return suffix_match(corpus, (rel * ".php",))
 end

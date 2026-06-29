@@ -52,6 +52,10 @@ struct ScopeCaptures
     defids::Set{NodeId}
 end
 
+# An empty captures set, the value a `QueryIndex` carries for a file with no scopes
+# query or no scope regions, so the field stays concretely typed rather than nullable.
+ScopeCaptures() = ScopeCaptures(ScopeEntry[], TreeSitter.Node[], Bool[], Symbol[], TreeSitter.Node[], Set{NodeId}())
+
 # Walk a scopes query's captures once: scope regions, name-introducing definitions
 # with their hoist flag and kind, and references. The second pass that assigns
 # definitions to scopes lives in `assign_defs!`, since the symbol table places them

@@ -99,11 +99,11 @@ struct QueryIndex
     bindings::Dict{NodeId, NodeId}
     # The lexical scope captures, walked once when a scopes query is supplied and
     # shared by the binding resolver, the corpus symbol table, and unbound-reference
-    # collection, so the capture walk runs once per file. `nothing` without a scopes
-    # query.
-    scope_captures::Union{ScopeCaptures, Nothing}
+    # collection, so the capture walk runs once per file. Empty for a file with no
+    # scopes query or no scope regions.
+    scope_captures::ScopeCaptures
 
-    function QueryIndex(language::Symbol, source::String, scope_captures::Union{ScopeCaptures, Nothing} = nothing)
+    function QueryIndex(language::Symbol, source::String, scope_captures::ScopeCaptures = ScopeCaptures())
         short_function, decision, continuation, nesting = Concept(), Concept(), Concept(), Concept()
         short_circuit, parameter, body, catch_clause = Concept(), Concept(), Concept(), Concept()
         comment, name, trivial_body, return_stmt = Concept(), Concept(), Concept(), Concept()
@@ -158,19 +158,18 @@ under its concept. When `scopes_query` is given, a second pass resolves each
 reference to its in-file definition into `index.bindings`.
 """
 function build_index(
-        tree::TreeSitter.Tree, language::Symbol, source::AbstractString, query::TreeSitter.Query,
+        tree::TreeSitter.Tree, language::Symbol, source::String, query::TreeSitter.Query,
         scopes_query::Union{TreeSitter.Query, Nothing} = nothing
     )
-    src = String(source)
-    caps = nothing
+    caps = ScopeCaptures()
     if scopes_query !== nothing
-        c = collect_scopes(tree, scopes_query, src)
+        c = collect_scopes(tree, scopes_query, source)
         if !isempty(c.scopes)
-            assign_defs!(c, src)
+            assign_defs!(c, source)
             caps = c
         end
     end
-    idx = QueryIndex(language, src, caps)
+    idx = QueryIndex(language, source, caps)
     funcs = TreeSitter.Node[]
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)
@@ -186,7 +185,7 @@ function build_index(
         ep = TreeSitter.end_point(n)
         Base.push!(idx.functions, FunctionUnit(n, Int(sp.row) + 1, Int(ep.row) + 1))
     end
-    caps === nothing || resolve_bindings!(idx.bindings, caps, src)
+    isempty(caps.scopes) || resolve_bindings!(idx.bindings, caps, source)
     return idx
 end
 
