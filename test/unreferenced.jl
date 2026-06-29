@@ -108,9 +108,24 @@ end
     @test Fixtures.unref_sites([r]) == Set([("m.rb", "dead")])
 end
 
+@testitem ":unreferenced reads a Java private method as private" setup = [Fixtures] tags = [:unreferenced] begin
+    # `e` is public, a root, and calls `used`; `dead` is a private method nothing reaches.
+    # A private method is class-internal, so its uses are all same-file binding edges.
+    src = "class C {\n  public int e() { return used(); }\n  private int used() { return 1; }\n  private int dead() { return 2; }\n}\n"
+    j = Fixtures.parsedfile(:java, src; file = "C.java")
+    @test Fixtures.unref_sites([j]) == Set([("C.java", "dead")])
+end
+
+@testitem ":unreferenced reads a PHP private method as private" setup = [Fixtures] tags = [:unreferenced] begin
+    src = "<?php\nclass C {\n  public function e() { return \$this->used(); }\n  private function used() { return 1; }\n  private function dead() { return 2; }\n}\n"
+    p = Fixtures.parsedfile(:php, src; file = "C.php")
+    @test Fixtures.unref_sites([p]) == Set([("C.php", "dead")])
+end
+
 @testitem ":unreferenced leaves a same-package Java class alone" setup = [Fixtures] tags = [:unreferenced] begin
-    # Java's only top-level marker is package-private, which a sibling file reaches with no
-    # import the resolver sees, so Java symbols stay public: no false positive, no signal.
+    # A package-private class is reached by a sibling file same-package with no import the
+    # resolver sees, so Java and PHP leave every non-`private` symbol public: no false
+    # positive on the class, signal only on a strictly-private method.
     main = Fixtures.parsedfile(:java, "package p;\npublic class Main { int run() { return new Helper().work(); } }\n"; file = "Main.java")
     helper = Fixtures.parsedfile(:java, "package p;\nclass Helper { int work() { return 1; } }\n"; file = "Helper.java")
     @test isempty(Dendro.cluster_unreferenced([main, helper], Dendro.corpus_symbols([main, helper])))

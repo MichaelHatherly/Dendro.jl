@@ -106,19 +106,52 @@ end
 # `modifier_public` treats `:unknown` as public, the safe direction. The navigation is
 # grammar-specific, from the captured name node to its declaration's modifier.
 #
-# Only the markers that gate a top-level symbol and cannot be reached cross-file by name
-# count: a Rust non-`pub` item is module-private, a C/C++ `static` function is
-# file-local, a Ruby method under `private`/`protected` is same-class, so an unreferenced
-# one is genuinely dead. Java and PHP have no such top-level marker: their `private` sits
-# on class members, which are not top-level symbols, and a package-private Java class is
-# reached same-package without an import the resolver sees, so flagging it would be a
-# false positive. They keep `:unknown`, every top-level symbol public.
+# Only a marker whose private definition cannot be reached cross-file by name is read: a
+# Rust non-`pub` item is module-private, a C/C++ `static` function is file-local, a Ruby,
+# Java, or PHP `private` method is same-class, so an unreferenced one is genuinely dead.
+# A package-private Java or PHP member is left public on purpose: it is reached
+# same-package without an import the resolver sees, so flagging it would be a false
+# positive.
 function def_visibility(file::ParsedFile, defnode::TreeSitter.Node)
     lang = file.language
     lang === :rust && return rust_visibility(defnode)
     (lang === :c || lang === :cpp) && return static_visibility(file, defnode)
     lang === :ruby && return ruby_visibility(file, defnode)
+    lang === :java && return java_visibility(defnode)
+    lang === :php && return php_visibility(file, defnode)
     return :unknown
+end
+
+# Java marks a method `private` in a `modifiers` child of its declaration. Only an
+# explicit `private` is private: a public, protected, or package-private member, and every
+# class, stays public, since a private method is reached only within its own file while a
+# package-private one is reached same-package without an import the resolver sees.
+function java_visibility(defnode::TreeSitter.Node)
+    decl = TreeSitter.parent(defnode)
+    TreeSitter.is_null(decl) && return :unknown
+    TreeSitter.node_type(decl) == "method_declaration" || return :public
+    for c in TreeSitter.children(decl)
+        TreeSitter.node_type(c) == "modifiers" || continue
+        for m in TreeSitter.children(c)
+            TreeSitter.node_type(m) == "private" && return :private
+        end
+        return :public
+    end
+    return :public
+end
+
+# PHP marks a method `private` with a `visibility_modifier`. Only `private` is private: a
+# protected or unmarked method, a top-level function, and a class stay public, the same
+# same-file reasoning as Java.
+function php_visibility(file::ParsedFile, defnode::TreeSitter.Node)
+    decl = TreeSitter.parent(defnode)
+    TreeSitter.is_null(decl) && return :unknown
+    TreeSitter.node_type(decl) == "method_declaration" || return :public
+    for c in TreeSitter.children(decl)
+        TreeSitter.node_type(c) == "visibility_modifier" || continue
+        return occursin("private", TreeSitter.slice(file.source, c)) ? :private : :public
+    end
+    return :public
 end
 
 # Rust marks a public item with a `visibility_modifier` (`pub`, `pub(crate)`) child on the
@@ -445,9 +478,8 @@ capitalized_public(def::CorpusDef, ::Set{String}) = !isempty(def.name) && isuppe
 
 # A definition is public unless its declared visibility marks it private, the surface for
 # a language that marks visibility per definition (Rust non-`pub`, a `static` C/C++
-# function, a Ruby method under `private`/`protected`). An `:unknown` visibility reads as
-# public, the safe direction, so `:unreferenced` never fires on a guess; a language whose
-# private marker sits on a non-top-level member (Java, PHP) leaves every symbol `:unknown`.
+# function, a `private` Ruby/Java/PHP method). An `:unknown` visibility reads as public,
+# the safe direction, so `:unreferenced` never fires on a guess.
 modifier_public(def::CorpusDef, ::Set{String}) = def.visibility !== :private
 
 const LINKAGES = Dict{Symbol, Linkage}(
