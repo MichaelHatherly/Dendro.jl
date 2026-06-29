@@ -160,6 +160,13 @@ function resolve_bindings!(
     caps = collect_scopes(tree, query, source)
     isempty(caps.scopes) && return bindings
     assign_defs!(caps, source)
+    return resolve_bindings!(bindings, caps, source)
+end
+
+# Resolve references against an already-collected, scope-assigned captures set, the
+# path that reuses the cached `ScopeCaptures` on a `QueryIndex` so the capture walk and
+# scope assignment are not repeated.
+function resolve_bindings!(bindings::Dict{NodeId, NodeId}, caps::ScopeCaptures, source::AbstractString)
     sizehint!(bindings, length(caps.refnodes))
     for r in caps.refnodes
         rid = nodeid(r)

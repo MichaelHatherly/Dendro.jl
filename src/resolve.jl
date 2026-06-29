@@ -1,5 +1,11 @@
 # Language identification and lazy parser resolution.
 
+# Stable identity of a node within one tree: its byte span and grammar symbol. A
+# node has no exposed id and is not hashable, so this stands in as a `Set` key. Lives
+# here, the first include, so every later file can key nodes by identity.
+const NodeId = Tuple{Int, Int, UInt16}
+nodeid(n::TreeSitter.Node) = (TreeSitter.byte_range(n)..., TreeSitter.node_symbol(n))
+
 # File extension to language name. Languages match TreeSitter.jl's supported set.
 const EXTENSIONS = Dict{String, Symbol}(
     "jl" => :julia,

@@ -104,10 +104,8 @@ end
 # module region. That excludes a helper defined inside another function, whose owning
 # scope is that function.
 function file_symbols!(table::SymbolTable, file::ParsedFile)
-    query = scopes_query_for(file.language)
-    query === nothing && return table
-    caps = collect_scopes(file.tree, query, file.source)
-    isempty(caps.scopes) && return table
+    caps = file.index.scope_captures
+    caps === nothing && return table
     imports = imports_query_for(file.language)
     regions = imports === nothing ? ModuleRegion[] : module_regions(file.tree, imports, file.source)
     root = root_scope(caps.scopes)
@@ -151,11 +149,8 @@ corpus graph picks them up and tries to resolve them against [`corpus_symbols`](
 A file whose language ships no scopes query yields none.
 """
 function unbound_references(file::ParsedFile)
-    query = scopes_query_for(file.language)
-    query === nothing && return UnboundRef[]
-    caps = collect_scopes(file.tree, query, file.source)
-    isempty(caps.scopes) && return UnboundRef[]
-    assign_defs!(caps, file.source)
+    caps = file.index.scope_captures
+    caps === nothing && return UnboundRef[]
     units = file.index.functions
     uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
     refs = UnboundRef[]
@@ -197,10 +192,8 @@ struct Linkage
     is_exported::Function
 end
 
-# Resolve a splice target (`include("path")`) to a corpus file: the path is relative to
-# the including file's directory. Returns the one corpus path it names, or none when the
-# Corpus resolution works in POSIX-separated path space: the corpus key set and the paths
-# the resolvers build are compared with `/`, so a match never depends on the host OS
+# Resolution works in POSIX-separated path space: the corpus key set and the paths the
+# resolvers build are compared with `/`, so a match never depends on the host OS
 # separator that `joinpath`/`normpath` would emit. Display paths keep their original form.
 to_posix(path::AbstractString) = replace(path, '\\' => '/')
 
@@ -208,8 +201,30 @@ to_posix(path::AbstractString) = replace(path, '\\' => '/')
 # matches a POSIX-normalized corpus key on any OS.
 corpus_join(parts::AbstractString...) = to_posix(normpath(joinpath(parts...)))
 
+# The final `/`-separated component of a POSIX path.
+posix_basename(path::AbstractString) = (i = findlast('/', path); i === nothing ? String(path) : path[nextind(path, i):end])
+
+# The corpus path set paired with a basename index. The splice and relative-path
+# resolvers test membership directly; the absolute-path resolvers (Rust, Java, PHP)
+# match a path suffix, which the index turns from a full-corpus scan into a lookup
+# keyed by the last path component.
+struct Corpus
+    paths::Set{String}
+    by_basename::Dict{String, Vector{String}}
+end
+function Corpus(paths::Set{String})
+    by_basename = Dict{String, Vector{String}}()
+    for p in paths
+        push!(get!(() -> String[], by_basename, posix_basename(p)), p)
+    end
+    return Corpus(paths, by_basename)
+end
+Base.in(path::AbstractString, corpus::Corpus) = path in corpus.paths
+
+# Resolve a splice target (`include("path")`) to a corpus file: the path is relative to
+# the including file's directory. Returns the one corpus path it names, or none when the
 # target is outside the corpus (a stdlib or generated file).
-function splice_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
+function splice_resolve(target::AbstractString, fromfile::AbstractString, corpus::Corpus)
     rel = strip(target, ['"', '\''])
     path = corpus_join(dirname(fromfile), rel)
     return path in corpus ? [path] : String[]
@@ -223,7 +238,7 @@ splice_exported(def::CorpusDef, ::Set{String}) = isempty(def.module_path)
 # `..pkg.mod`) resolves against the importing file's directory, one level up per leading
 # dot; an absolute import (`a.b`) matches any corpus path ending in that module path.
 # Each names a module file or a package's `__init__.py`.
-function python_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
+function python_resolve(target::AbstractString, fromfile::AbstractString, corpus::Corpus)
     level = 0
     while level < length(target) && target[level + 1] == '.'
         level += 1
@@ -256,7 +271,7 @@ import_exported(::CorpusDef, ::Set{String}) = true
 # (`./mod`, `../lib/mod`) names a corpus file; a bare specifier is a package. The path
 # resolves against the importing file's directory, trying each module extension and an
 # `index` file in a directory.
-function js_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
+function js_resolve(target::AbstractString, fromfile::AbstractString, corpus::Corpus)
     spec = strip(target, ['"', '\'', '`'])
     startswith(spec, ".") || return String[]
     base = corpus_join(dirname(fromfile), spec)
@@ -276,7 +291,7 @@ js_exported(def::CorpusDef, exports::Set{String}) = def.name in exports
 
 # Ruby `require_relative` names a file without its `.rb` extension, relative to the
 # requiring file. The required file's top-level definitions splice into scope.
-function ruby_resolve(target::AbstractString, fromfile::AbstractString, corpus::Set{String})
+function ruby_resolve(target::AbstractString, fromfile::AbstractString, corpus::Corpus)
     rel = strip(target, ['"', '\''])
     endswith(rel, ".rb") || (rel = rel * ".rb")
     path = corpus_join(dirname(fromfile), rel)
@@ -285,11 +300,16 @@ end
 
 # Corpus files whose path ends in one of `options`, the suffix-match the import-model
 # languages with absolute module paths share (Rust, Java, PHP), where a build system,
-# not the source, fixes the real root.
-function suffix_match(corpus::Set{String}, options::Tuple{Vararg{AbstractString}})
+# not the source, fixes the real root. The basename index narrows the scan to paths
+# sharing an option's last component before the full suffix test.
+function suffix_match(corpus::Corpus, options::Tuple{Vararg{AbstractString}})
     found = String[]
-    for option in options, path in corpus
-        (path == option || endswith(path, "/" * option)) && push!(found, path)
+    for option in options
+        cands = get(corpus.by_basename, posix_basename(option), nothing)
+        cands === nothing && continue
+        for path in cands
+            (path == option || endswith(path, "/" * option)) && push!(found, path)
+        end
     end
     return unique(found)
 end
@@ -297,7 +317,7 @@ end
 # Rust `use a::b::c` names module `a::b` in @import.from, item `c` in @import.name, so
 # the path is already the module: drop only the path roots, resolving `a/b.rs` or
 # `a/b/mod.rs`.
-function rust_resolve(target::AbstractString, ::AbstractString, corpus::Set{String})
+function rust_resolve(target::AbstractString, ::AbstractString, corpus::Corpus)
     parts = [p for p in split(target, "::"; keepempty = false) if !(p in ("crate", "self", "super"))]
     isempty(parts) && return String[]
     rel = join(parts, '/')
@@ -306,21 +326,21 @@ end
 
 # Java `import com.foo.Bar` names class `Bar` in file `com/foo/Bar.java`: the qualified
 # name is the file path, one public class per file.
-function java_resolve(target::AbstractString, ::AbstractString, corpus::Set{String})
+function java_resolve(target::AbstractString, ::AbstractString, corpus::Corpus)
     rel = replace(target, "." => "/")
     return suffix_match(corpus, (rel * ".java",))
 end
 
 # PHP `use App\Foo` names `Foo` in file `App/Foo.php`, the PSR-4 convention mapping a
 # namespace to a directory.
-function php_resolve(target::AbstractString, ::AbstractString, corpus::Set{String})
+function php_resolve(target::AbstractString, ::AbstractString, corpus::Corpus)
     rel = replace(strip(target, '\\'), "\\" => "/")
     return suffix_match(corpus, (rel * ".php",))
 end
 
 # Go and similar package-by-directory models do not resolve a target string; visibility
 # is by shared directory.
-no_resolve(::AbstractString, ::AbstractString, ::Set{String}) = String[]
+no_resolve(::AbstractString, ::AbstractString, ::Corpus) = String[]
 
 const LINKAGES = Dict{Symbol, Linkage}(
     :julia => Linkage(:splice, splice_resolve, splice_exported),
@@ -399,7 +419,7 @@ end
 # Group files into shared namespaces by following splice edges: an `include` joins two
 # files into one module, so a reference in either resolves to the other's names. Returns
 # a file path to component-root map (union-find over the file index).
-function inclusion_components(files::Vector{ParsedFile}, corpus::Set{String})
+function inclusion_components(files::Vector{ParsedFile}, corpus::Corpus)
     index = Dict{String, Int}(to_posix(f.file) => i for (i, f) in enumerate(files))
     parent = collect(1:length(files))
     for (i, f) in enumerate(files)
@@ -439,7 +459,7 @@ end
 # The cross-file names an import file sees: for each import statement, the definitions
 # in the resolved module file whose name the import brings in and the module exports.
 function import_visible(
-        f::ParsedFile, table::SymbolTable, link::Linkage, corpus::Set{String},
+        f::ParsedFile, table::SymbolTable, link::Linkage, corpus::Corpus,
         defs_by_file::Dict{String, Vector{Int}}, exports_by_file::Dict{String, Set{String}}
     )
     names = Dict{String, Vector{Int}}()
@@ -467,7 +487,7 @@ inclusion component, an import brings the named definitions of a resolved module
 file's own definitions are excluded, and a file whose language has no linkage sees
 nothing across the boundary.
 """
-function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Set{String})
+function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Corpus)
     roots = inclusion_components(files, corpus)
     bycomp = Dict{Int, Vector{Int}}()
     defs_by_file = Dict{String, Vector{Int}}()
