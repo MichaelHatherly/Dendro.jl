@@ -4,10 +4,10 @@
 const STUB_PATTERN = r"\b(?:TODO|FIXME|XXX|HACK)\b"i
 
 # Operators where two equal operands are ordinary, not a mistake: doubling (`x + x`),
-# scaling (`x * x`), shifts, the `x != x` NaN check, and `=>` pair construction,
-# where an identity entry (`"Accept" => "Accept"`) is a canonicalisation table, not a
-# redundant comparison.
-const IDEMPOTENT_OPS = Set{String}(["+", "*", "**", "<<", ">>", "!=", "!==", "=>"])
+# scaling (`x * x`), shifts, the `x != x` NaN check, `x / x` NaN/identity construction
+# (`0.0 / 0.0`), and `=>` pair construction, where an identity entry
+# (`"Accept" => "Accept"`) is a canonicalisation table, not a redundant comparison.
+const IDEMPOTENT_OPS = Set{String}(["+", "*", "**", "<<", ">>", "/", "!=", "!==", "=>"])
 
 # Source text of a node with runs of whitespace collapsed, for exact-match
 # comparison that tolerates reformatting but not a renamed identifier or literal.
@@ -98,8 +98,8 @@ end
 True when `node` is a binary expression whose two operands are textually identical,
 like `x == x` or `a && a`. The duplication is almost always a mistake: a comparison
 that is always true or false, a redundant boolean. Operators where equal operands
-are ordinary (`+`, `*`, shifts, `!=` for a NaN check, `=>` for an identity pair in a
-canonicalisation table) are left alone. A chained
+are ordinary (`+`, `*`, shifts, `/` and `!=` for NaN construction or a NaN check, `=>`
+for an identity pair in a canonicalisation table) are left alone. A chained
 comparison (`a == b == c`) is one n-ary node, not a binary pair, so it never matches.
 The `:identical_operands` rule reports one finding per match.
 """

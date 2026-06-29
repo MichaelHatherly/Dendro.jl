@@ -71,6 +71,11 @@ end
     @test operands(:javascript, "y = x === x") == 1
     @test operands(:ruby, "y = a && a") == 1
 
+    # `x / x` builds a NaN (`0.0 / 0.0`) or an identity, not a redundant comparison, so
+    # division with equal operands is left alone; an equality check still fires.
+    @test operands(:c, "int f() { return x / x; }") == 0
+    @test operands(:c, "int f() { return x == x; }") == 1
+
     # A chained comparison is one n-ary node, not a binary pair. Comparing its outer
     # two operands would flag `lo <= x <= lo`, which decides nothing trivially.
     @test operands(:python, "x = a == b == a") == 0
