@@ -84,14 +84,17 @@ query (`src/queries/<lang>.imports.scm`) plus a `LINKAGES` entry, never a specia
 in the graph code. The moment placement resolves a name by its type, it has left the
 bargain.
 
-Scattering is placement read per file. The same graph, with each file's within-file
-binding edges folded in so a cohesive file's units cluster together, says how many
-different modules a file's units are pulled toward; a file whose units each belong with a
-different other file is flagged `:scattered`, the cross-file companion to within-file
-`:low_cohesion`. The fold-in is load-bearing: without it the graph holds only cross-file
-edges and every layered file looks scattered. Keep the within-file edges folded in, keep
-the score the count of communities a file's units occupy that are anchored elsewhere, and
-keep it name-based and lexical like the rest of placement.
+Scattering is placement read per file. The same graph carries each file's within-file
+binding edges alongside the cross-file ones; reading the view that folds the within edges
+in lets a cohesive file's units cluster together, and the score is how many different
+modules a file's units are pulled toward. A file whose units each belong with a different
+other file is flagged `:scattered`, the cross-file companion to within-file
+`:low_cohesion`. The fold-in is load-bearing: the cross-file edges alone leave a file's
+units unlinked to each other, so every layered file would look scattered. Keep the
+within-file edges in the graph, read them folded in for scattering and as components
+within one file for cohesion, keep the score the count of communities a file's units
+occupy that are anchored elsewhere, and keep it name-based and lexical like the rest of
+placement.
 
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never

@@ -1,13 +1,13 @@
 # This file's units belong to several different modules. The cross-file companion to
 # within-file `:low_cohesion`: where cohesion counts the independent concerns inside a
-# file, scattering counts how many other modules pull the file's units away. The corpus
-# graph holds only cross-file edges, so its communities alone would split every layered
-# file, a file's own units never linked to each other. Folding each file's within-file
-# binding edges (the same edges `file_components` links on, read from `index.bindings`)
-# into the graph first lets a cohesive file's units settle into one community, so only a
-# file whose units are each drawn toward a different other file scatters. Scored like
-# cohesion: an absolute band on the count of elsewhere-anchored communities and the
-# corpus percentile, fired when either trips. Name-based and lexical throughout.
+# file, scattering counts how many other modules pull the file's units away. Communities
+# over the corpus graph's cross-file edges alone would split every layered file, a file's
+# own units never linked to each other. Reading the graph's within view (`adjacency(graph;
+# within = true)`) folds each file's binding edges in, so a cohesive file's units settle
+# into one community and only a file whose units are each drawn toward a different other
+# file scatters. Scored like cohesion: an absolute band on the count of elsewhere-anchored
+# communities and the corpus percentile, fired when either trips. Name-based and lexical
+# throughout.
 
 # Absolute band on the count of distinct communities a file's units occupy that are
 # anchored in another file. Zero is a file whose units stay home; the band marks where
@@ -24,32 +24,8 @@ const MIN_SCATTERED_UNITS = 2
 # under it only the absolute band fires, as cohesion does on a thin corpus.
 const MIN_SCATTERED_FILES = 5
 
-# The unit graph with each file's within-file binding edges folded in. The corpus graph
-# carries only cross-file edges, so its communities never see a file's own cohesion;
-# adding an edge between two units one of which references a binding the other defines
-# (the `binding_groups` `:low_cohesion` reads) lets a cohesive file cluster into one
-# community. Each group is star-linked to its first member, the same connectivity
-# `file_components` builds, mapped from local unit indices to graph nodes.
-function combined_adjacency(files::Vector{ParsedFile}, graph::CorpusGraph, ubiquity::Float64)
-    adj = adjacency(graph)
-    for f in files
-        scopes_query_for(f.language) === nothing && continue
-        for members in binding_groups(f.index, ubiquity)
-            base = get(graph.unit_index, (f.file, members[1]), 0)
-            base == 0 && continue
-            for m in members
-                node = get(graph.unit_index, (f.file, m), 0)
-                (node == 0 || node == base) && continue
-                adj[base][node] = get(adj[base], node, 0.0) + 1.0
-                adj[node][base] = get(adj[node], base, 0.0) + 1.0
-            end
-        end
-    end
-    return adj
-end
-
 """
-    cluster_scattered(files, graph; band=$SCATTERED_BAND, cut=0.95, min_files=$MIN_SCATTERED_FILES, ubiquity=$COHESION_UBIQUITY) -> Vector{Finding}
+    cluster_scattered(files, graph; band=$SCATTERED_BAND, cut=0.95, min_files=$MIN_SCATTERED_FILES) -> Vector{Finding}
 
 Files whose units are pulled into several other modules, reported as `:scattered`. With
 each file's within-file binding edges folded into the corpus graph, the units land in
@@ -62,10 +38,10 @@ query is skipped, its functions carrying no bindings to fold in.
 function cluster_scattered(
         files::Vector{ParsedFile}, graph::CorpusGraph;
         band::Tuple{Int, Int} = SCATTERED_BAND, cut::Real = 0.95,
-        min_files::Integer = MIN_SCATTERED_FILES, ubiquity::Float64 = COHESION_UBIQUITY
+        min_files::Integer = MIN_SCATTERED_FILES
     )
     findings = Finding[]
-    comm = communities(combined_adjacency(files, graph, ubiquity))
+    comm = communities(adjacency(graph; within = true))
     plur = community_plurality(graph, comm)
 
     scored = Tuple{ParsedFile, Int, Vector{Int}}[]

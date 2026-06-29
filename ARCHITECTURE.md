@@ -100,6 +100,12 @@ Measurement:
   `where`/typed unwrapping) are recognised by the language query, so a nested
   short-form def is its own unit and is excluded from its enclosing unit's metrics,
   clones, and tokens.
+- `graph_edges.jl` defines what a within-file binding edge is, the relation cohesion and
+  scattering share. `containing_unit` finds the innermost unit spanning a byte range;
+  `binding_groups` reads `index.bindings` into the groups of local units that share a
+  definition, dropping a binding referenced by more than `COHESION_UBIQUITY` of the
+  file's units. The corpus graph folds these into `within_edges`. Included after
+  `units.jl` (it calls `functions`), before `corpus_graph.jl` reads it.
 - `metrics.jl` defines the scalar metrics and `severity`: `cyclomatic`,
   `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
   `boolean_complexity`, `return_count`, and `npath` (NPath complexity, a recursion
@@ -158,17 +164,6 @@ Reporting:
   corpus is below `MIN_CORPUS_TOKENS`. A surprising function
   reads as unidiomatic, which correlates with bugs. Structure only, no symbol
   resolution; within one language. Included before `corpus.jl`, which calls it.
-- `cohesion.jl` defines within-file cohesion, the third corpus-relational pass.
-  `file_components` builds a file's unit graph from `index.bindings` (two units
-  linked when one references a binding the other defines or references, dropping a
-  binding referenced by more than `ubiquity` of the units), counts connected
-  components with the `clones.jl` union-find, and returns a representative unit per
-  component; `cluster_low_cohesion` emits a `:low_cohesion` finding per file,
-  carrying the absolute `LOW_COHESION_BAND` on the component count and the corpus
-  percentile, skipping a language with no scopes query and a corpus below
-  `MIN_COHESION_FILES` for the percentile. The LCOM4 reading of independent concerns
-  cohabiting. Binding-keyed but still syntactic, within one file. Included before
-  `corpus.jl`, which calls it.
 - `linkage.jl` defines corpus-wide symbol resolution. `corpus_symbols` builds a
   `SymbolTable` of every top-level definition across the corpus, each carrying its
   enclosing module path (from a per-language `@module` capture, so a nested module is
@@ -177,14 +172,18 @@ Reporting:
   language lets one file see another's names: `splice_resolve` maps a Julia `include`
   to a corpus file, `visible_defs` groups files into shared namespaces by an inclusion
   union-find and returns each file's cross-file candidates. Reuses the `bindings.jl`
-  capture walk and the `cohesion.jl` union-find. Included after `cohesion.jl`.
-- `corpus_graph.jl` defines the corpus unit graph. `build_corpus_graph` resolves every
-  unbound reference against the symbol table through `visible_defs`, recording weighted
-  unit-to-unit edges and per-unit file mass; a reference matching `k` definitions splits
-  `1/k`, and a definition referenced by more than `CORPUS_UBIQUITY` of the units is
-  dropped as cross-cutting. `communities` runs one level of modularity optimisation
-  (Louvain local moving) over the undirected graph for the neighbourhoods. Included
-  after `linkage.jl`.
+  capture walk and the `clones.jl` union-find. Included after `naturalness.jl`.
+- `corpus_graph.jl` defines the corpus unit graph, the one structure the three placement
+  passes read. `build_corpus_graph` resolves every unbound reference against the symbol
+  table through `visible_defs`, recording weighted unit-to-unit `edges` and per-unit file
+  mass; a reference matching `k` definitions splits `1/k`, and a definition referenced by
+  more than `CORPUS_UBIQUITY` of the units is dropped as cross-cutting. It also folds each
+  file's within-file binding edges (`within_binding_edges` over `binding_groups`) into
+  `within_edges`. `adjacency(graph; within)` builds the undirected neighbour-weight view,
+  cross-file alone or with the within edges folded in; `communities` runs one level of
+  modularity optimisation (Louvain local moving) over it for the neighbourhoods, and
+  `components` flood-fills the within view restricted to one file's nodes for cohesion.
+  Included after `linkage.jl`.
 - `placement.jl` defines cross-file placement, the fourth corpus-relational pass.
   `own_affinity` reads each unit's same-file coupling from `index.bindings`;
   `community_plurality` finds the file each community is anchored in; `cluster_misplaced`
@@ -192,14 +191,23 @@ Reporting:
   coupling landing in the one other file it leans toward most, carrying the absolute
   `MISPLACED_BAND` and the corpus percentile, gated by the community anchor. Included
   before `corpus.jl`, which calls it.
-- `scattered.jl` defines cross-file scattering, the fifth corpus-relational pass and the
-  file-level companion to `:low_cohesion`. `combined_adjacency` folds each file's
-  within-file binding edges (`binding_groups`, shared with `cohesion.jl`) into the corpus
-  graph's cross-file adjacency, so `communities` sees a file's own cohesion; a file's
-  units then land in communities. `cluster_scattered` emits a `:scattered` finding per
-  file, scored by the count of distinct communities its units occupy whose plurality
-  anchor is another file, carrying the absolute `SCATTERED_BAND` and the corpus
-  percentile. Included after `placement.jl` and before `corpus.jl`, which calls it.
+- `scattered.jl` defines cross-file scattering, the file-level companion to
+  `:low_cohesion`. `cluster_scattered` reads `communities(adjacency(graph; within = true))`,
+  the corpus graph with each file's within-file binding edges folded in, so `communities`
+  sees a file's own cohesion and a file's units land in communities. It emits a
+  `:scattered` finding per file, scored by the count of distinct communities its units
+  occupy whose plurality anchor is another file, carrying the absolute `SCATTERED_BAND`
+  and the corpus percentile. Included after `placement.jl`.
+- `cohesion.jl` defines within-file cohesion. `cluster_low_cohesion` reads the within
+  view of the corpus graph, `components(adjacency(graph; within = true), file_nodes)`:
+  cross-file edges never join one file's nodes, so the components restricted to a file are
+  its independent concerns. `component_reps` picks one representative unit per component
+  (earliest line first). The finding carries the absolute `LOW_COHESION_BAND` on the
+  component count and the corpus percentile, skipping a language with no scopes query, a
+  file below `MIN_COHESION_UNITS`, and a corpus below `MIN_COHESION_FILES` for the
+  percentile. The LCOM4 reading of independent concerns cohabiting. Binding-keyed but
+  still syntactic, within one file. Included after `scattered.jl`, since its signature
+  names `CorpusGraph`.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
@@ -209,11 +217,11 @@ Reporting:
   path once and build its query index into a `Vector{ParsedFile}`),
   `baseline_from`, `scope_clusters` (the shared diff filter for the relational
   passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
-  per-file findings, exact and near duplicates, naturalness, low cohesion, cross-file
-  placement, scattering, and optional diff scoping). It is included after `report.jl`,
-  `diff.jl`, `clones.jl`, `naturalness.jl`, `cohesion.jl`, `linkage.jl`,
-  `corpus_graph.jl`, `placement.jl`, and `scattered.jl` so everything it calls is
-  defined first.
+  per-file findings, exact and near duplicates, naturalness, then the corpus graph and
+  the three passes that read it, low cohesion, cross-file placement, scattering, and
+  optional diff scoping). It is included after `report.jl`, `diff.jl`, `clones.jl`,
+  `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`, `placement.jl`, `scattered.jl`, and
+  `cohesion.jl` so everything it calls is defined first.
 
 ## Core types
 
@@ -373,14 +381,16 @@ shared identifier string is what drops the `x`/`i`/`T` and imported-name noise a
 string graph carries: a local in one function and a same-named local in another are
 different bindings, and an external name resolves to nothing.
 
-`file_components` builds the unit graph: nodes are `functions(index)`, and two units
-are linked when they reference a common file-local binding, by `index.bindings`. A
-binding referenced by more than `ubiquity` of the units is cross-cutting (a file-wide
-utility) and links nothing, so it cannot fold genuine concerns into one component.
-Connected components come from the same union-find as the clone passes. The component
-count is the score: one component is a cohesive file, several are independent concerns
-cohabiting, the LCOM4 reading. The finding's locations are one representative function
-per component.
+The unit graph is the corpus graph's within view. `binding_groups` (`graph_edges.jl`)
+reads `index.bindings`: two units link when they reference a common file-local binding,
+and a binding referenced by more than `COHESION_UBIQUITY` of the units is cross-cutting (a
+file-wide utility) and links nothing, so it cannot fold genuine concerns into one
+component. `build_corpus_graph` folds these into `within_edges`, and
+`cluster_low_cohesion` runs `components` over `adjacency(graph; within = true)` restricted
+to one file's nodes: cross-file edges never join those nodes, so the components are the
+file's independent concerns. The component count is the score: one component is a cohesive
+file, several are independent concerns cohabiting, the LCOM4 reading. The finding's
+locations are one representative function per component, earliest line first.
 
 Like naturalness, cohesion carries both scores, fired when either trips: the absolute
 `LOW_COHESION_BAND` on the component count, set above an idiomatic corpus's spread,

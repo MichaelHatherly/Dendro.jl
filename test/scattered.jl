@@ -44,7 +44,7 @@ end
     table = Dendro.corpus_symbols(files)
     graph = Dendro.build_corpus_graph(files, table)
     @test isempty(Dendro.cluster_scattered(files, graph; band = (2, 3)))
-    @test !isempty(Dendro.cluster_low_cohesion(files; band = (2, 3)))
+    @test !isempty(Dendro.cluster_low_cohesion(files, graph; band = (2, 3)))
 end
 
 @testitem ":scattered respects dendro-ignore-file" setup = [Fixtures] tags = [:scattered] begin
