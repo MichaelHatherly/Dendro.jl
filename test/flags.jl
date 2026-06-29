@@ -114,6 +114,35 @@ end
     @test !Dendro.empty_body(only(Dendro.functions(i)).node, i)
 end
 
+@testitem "empty_body across languages" setup = [Fixtures] tags = [:flags] begin
+    empties(lang, src) = length(Dendro.empty_bodies(Fixtures.idx(lang, src)))
+
+    # A bodyless declaration is a contract, not an empty implementation: an interface or
+    # abstract method, a C++ `= default`/`= delete`, a Rust trait method signature.
+    @test empties(:java, "interface I { void accept(Object o); }\n") == 0
+    @test empties(:php, "<?php interface I { public function get(\$id); }\n") == 0
+    @test empties(:cpp, "struct S { ~S() = default; S(const S&) = delete; };\n") == 0
+    @test empties(:rust, "trait T { fn f(); }\n") == 0
+
+    # A concise arrow has an expression body, which always does work.
+    @test empties(:javascript, "const f = key => key.toLowerCase();\n") == 0
+    @test empties(:typescript, "const f = (m: string) => m.toLowerCase();\n") == 0
+
+    # A constructor whose work is signature-level initialization is not empty: a PHP
+    # promoted parameter, a C++ member-initializer list.
+    @test empties(:php, "<?php class A { public function __construct(public \$x) {} }\n") == 0
+    @test empties(:cpp, "struct S { int v_; S(int v) : v_(v) {} };\n") == 0
+
+    # A present but genuinely empty body is still flagged, the signal worth keeping: a
+    # keyword-delimited `def … end`, a brace-bodied no-op method, an empty block arrow,
+    # a plain constructor with no initialization.
+    @test empties(:ruby, "def f\nend\n") == 1
+    @test empties(:cpp, "struct S { void m() {} };\n") == 1
+    @test empties(:go, "func (s *T) Record() {}\n") == 1
+    @test empties(:javascript, "const f = () => {};\n") == 1
+    @test empties(:php, "<?php class A { public function __construct(\$x) {} }\n") == 1
+end
+
 @testitem "returns_in_finally (javascript)" setup = [Fixtures] tags = [:flags] begin
     bad = "function f() {\n  try { g(); } finally { return 1; }\n}\n"
     @test length(Dendro.returns_in_finally(Fixtures.idx(:javascript, bad))) == 1

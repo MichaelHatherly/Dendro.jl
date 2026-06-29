@@ -16,6 +16,10 @@
 
 (formal_parameters) @parameter
 
+; A promoted constructor parameter does the constructor's work in the signature, so an
+; empty body is not an empty implementation.
+(property_promotion_parameter) @init
+
 (compound_statement) @body
 
 (catch_clause) @catch

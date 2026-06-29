@@ -4,7 +4,9 @@
 ; so each wrapper combination is an explicit pattern anchored to the assignment's
 ; first child.
 
-(function_definition) @function
+; A `function … end` delimits its body with the construct, so an empty one is an empty
+; body, not a declaration; @requires_body marks that for `empty_body`.
+(function_definition) @function @requires_body
 (assignment . (call_expression)) @function @short_function
 (assignment . (typed_expression . (call_expression))) @function @short_function
 (assignment . (where_expression . (call_expression))) @function @short_function

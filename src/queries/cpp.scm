@@ -14,6 +14,14 @@
 
 (parameter_list) @parameter
 
+; A member-initializer list does the constructor's work before the body, so an empty
+; body is not an empty implementation. A project macro between the return type and the
+; name (`FMT_INLINE T(int x) : x_(x) {}`) defeats the parse, leaving the initializer
+; list as a `bitfield_clause`; a bitfield never appears in a real function body, so
+; inside a unit it is always a misparsed initializer list and marks init too.
+(field_initializer_list) @init
+(bitfield_clause) @init
+
 (compound_statement) @body
 
 (catch_clause) @catch

@@ -60,18 +60,36 @@ function function_body(node::TreeSitter.Node, index::QueryIndex)
     return last_named_child(node)
 end
 
+# True when `node`'s signature carries initialization that does a constructor's work:
+# a PHP promoted parameter, a C++ member-initializer list. Stops at a nested callable
+# so an inner constructor's init never counts for the outer unit.
+function has_init(node::TreeSitter.Node, index::QueryIndex)
+    isempty(index.init.ids) && return false
+    for c in TreeSitter.children(node)
+        is_function(c, index) && continue
+        c in index.init && return true
+        has_init(c, index) && return true
+    end
+    return false
+end
+
 """
     empty_body(node, index) -> Bool
 
-True when the function `node` has no body, or a block body that does no real work. A
-short-form `f(x) = expr` has an expression body, which always does work, so it is
-never empty.
+True when the function `node` has an empty body. For a brace-bodied language an empty
+body is a present block that does no real work; a bodyless declaration (an interface or
+abstract method, a C++ `= default`/`= delete`) is a contract, not flagged. For a
+keyword-delimited language (Julia `function … end`, Ruby `def … end`) an absent block
+is itself the empty body. A short-form `f(x) = expr` has an expression body, which
+always does work. A constructor whose work is signature-level initialization, a PHP
+promoted parameter or a C++ member-initializer list, is not empty though its block is.
 """
 function empty_body(node::TreeSitter.Node, index::QueryIndex)
     body = function_body(node, index)
-    body === nothing && return true
-    body in index.body && return empty_block(body, index)
-    return false
+    body === nothing && return node in index.requires_body
+    body in index.body || return false
+    empty_block(body, index) || return false
+    return !has_init(node, index)
 end
 
 """
