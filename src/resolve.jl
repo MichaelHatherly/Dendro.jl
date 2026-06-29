@@ -12,6 +12,7 @@ const EXTENSIONS = Dict{String, Symbol}(
     "py" => :python,
     "sh" => :bash,
     "bash" => :bash,
+    "zsh" => :bash,
     "c" => :c,
     "h" => :c,
     "cpp" => :cpp,

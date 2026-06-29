@@ -5,7 +5,9 @@
 ; construct families (@loop/@switch/@ternary/@try/@case) are not wired; npath on Ruby
 ; reduces to a sequence count.
 
-[(method) (singleton_method)] @function
+; A `def … end` delimits its body with the construct, so an empty one is an empty body,
+; not a declaration; @requires_body marks that for `empty_body`.
+[(method) (singleton_method)] @function @requires_body
 
 [(if) (elsif) (unless) (while) (until) (for) (when) (rescue)
  (conditional)] @decision

@@ -41,16 +41,37 @@ end
 Finding(file, line, unit, metric, value, absolute, percentile, kind, suppressed) =
     Finding(metric, [Location(file, line, unit)], value, absolute, percentile, kind, suppressed)
 
-# Label a function node by its name, or "" when no name node is found.
+# The defining name tagged on `node`'s binder, a sibling outside its subtree, or "".
+# An anonymous callable bound to a name (a JS arrow `const f = () => ...`) carries its
+# name on the enclosing binder, so a unit holding no name of its own takes the binder's.
+function binder_def_name(node::TreeSitter.Node, index::QueryIndex)
+    p = TreeSitter.parent(node)
+    TreeSitter.is_null(p) && return ""
+    for c in TreeSitter.children(p)
+        c in index.def_name && return String(strip(TreeSitter.slice(index.source, c)))
+    end
+    return ""
+end
+
+# Label a function node by its name, or "" when no name node is found. A qualified
+# definition tags its final component as `def_name`; prefer that over the first
+# `@name`, which for `Module.method` is the module qualifier. A bound anonymous
+# callable takes the name from its enclosing binder when it holds none of its own.
 function unit_name(node::TreeSitter.Node, index::QueryIndex)
     name = Ref("")
+    def = Ref("")
     TreeSitter.traverse(node) do n, enter
-        if enter && isempty(name[]) && n in index.name
-            name[] = String(strip(TreeSitter.slice(index.source, n)))
+        if enter
+            isempty(name[]) && n in index.name &&
+                (name[] = String(strip(TreeSitter.slice(index.source, n))))
+            isempty(def[]) && n in index.def_name &&
+                (def[] = String(strip(TreeSitter.slice(index.source, n))))
         end
         nothing
     end
-    return name[]
+    isempty(def[]) || return def[]
+    binder = binder_def_name(node, index)
+    return isempty(binder) ? name[] : binder
 end
 
 unit_name(unit::FunctionUnit, index::QueryIndex) = unit_name(unit.node, index)

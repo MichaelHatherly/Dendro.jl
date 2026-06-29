@@ -101,6 +101,33 @@ end
     # Type annotations on parameters still count as one parameter each.
     i = Fixtures.idx(:julia, "function h(a::Int, b)\n    a\nend\n")
     @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 2
+
+    # Keyword arguments are named at the call site, so they do not count: only the
+    # two positional parameters before the `;` separator do.
+    i = Fixtures.idx(:julia, "function k(a, b::Int; c=1, d=2)\n    a\nend\n")
+    @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 2
+
+    # A keyword-only signature has no positional parameters.
+    i = Fixtures.idx(:julia, "function m(; a=1, b=2)\n    a\nend\n")
+    @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 0
+end
+
+@testitem "parameter_count counts only positional params (python)" setup = [Fixtures] tags = [:metrics] begin
+    count(src) = (i = Fixtures.idx(:python, src); Dendro.parameter_count(only(Dendro.functions(i)).node, i))
+
+    # `*args`, `**kwargs`, and the keyword-only params after a bare `*` are named at the
+    # call site, the same concern Julia's `;` separates, so they do not count.
+    @test count("def f(self, a, b, *args, **kwargs):\n    pass\n") == 3
+    @test count("def f(a, *, b):\n    pass\n") == 1
+    @test count("def f(a, **kwargs):\n    pass\n") == 1
+
+    # An annotated splat (`*args: T`) wraps the splat in a typed parameter; it still
+    # opens the keyword region, and a keyword-only param after it does not count.
+    @test count("def f(self, a, *args: int, b: str, **kwargs: int):\n    pass\n") == 2
+
+    # A receiver (`self`/`cls`) is positional and counts; a long positional API is a
+    # genuine finding.
+    @test count("def f(self, a, b, c, d, e):\n    pass\n") == 6
 end
 
 @testitem "boolean_complexity (julia)" setup = [Fixtures] tags = [:metrics] begin

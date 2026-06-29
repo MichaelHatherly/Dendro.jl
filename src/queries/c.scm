@@ -18,6 +18,12 @@
 
 (identifier) @name
 
+; Name a unit by the identifier in its declarator, not the first identifier the
+; lexical scan reaches: a return-type token or storage-class macro precedes it. The
+; pattern matches the function_declarator at any depth, so pointer- and
+; parenthesized-return wrappers around it do not hide the name.
+(function_declarator declarator: (identifier) @def_name)
+
 (return_statement) @return
 
 (call_expression) @call

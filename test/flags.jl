@@ -27,6 +27,11 @@ end
     # `x != x` NaN check.
     @test flag("f(x) = x + x") == 0
     @test flag("f(x) = x != x") == 0
+
+    # `=>` pairs an identity entry in a canonicalisation table, not a redundant
+    # comparison, so a self-mapping is left alone.
+    @test flag("f() = Dict(\"Accept\" => \"Accept\")") == 0
+    @test flag("f() = (:a => :a)") == 0
 end
 
 @testitem "duplicate_branches (julia)" setup = [Fixtures] tags = [:flags] begin
@@ -65,6 +70,11 @@ end
     @test operands(:python, "x = a + a") == 0
     @test operands(:javascript, "y = x === x") == 1
     @test operands(:ruby, "y = a && a") == 1
+
+    # `x / x` builds a NaN (`0.0 / 0.0`) or an identity, not a redundant comparison, so
+    # division with equal operands is left alone; an equality check still fires.
+    @test operands(:c, "int f() { return x / x; }") == 0
+    @test operands(:c, "int f() { return x == x; }") == 1
 
     # A chained comparison is one n-ary node, not a binary pair. Comparing its outer
     # two operands would flag `lo <= x <= lo`, which decides nothing trivially.
@@ -107,6 +117,35 @@ end
     # A short-form def's expression body always does work, so it is never empty.
     i = Fixtures.idx(:julia, "f(x) = x + 1\n")
     @test !Dendro.empty_body(only(Dendro.functions(i)).node, i)
+end
+
+@testitem "empty_body across languages" setup = [Fixtures] tags = [:flags] begin
+    empties(lang, src) = length(Dendro.empty_bodies(Fixtures.idx(lang, src)))
+
+    # A bodyless declaration is a contract, not an empty implementation: an interface or
+    # abstract method, a C++ `= default`/`= delete`, a Rust trait method signature.
+    @test empties(:java, "interface I { void accept(Object o); }\n") == 0
+    @test empties(:php, "<?php interface I { public function get(\$id); }\n") == 0
+    @test empties(:cpp, "struct S { ~S() = default; S(const S&) = delete; };\n") == 0
+    @test empties(:rust, "trait T { fn f(); }\n") == 0
+
+    # A concise arrow has an expression body, which always does work.
+    @test empties(:javascript, "const f = key => key.toLowerCase();\n") == 0
+    @test empties(:typescript, "const f = (m: string) => m.toLowerCase();\n") == 0
+
+    # A constructor whose work is signature-level initialization is not empty: a PHP
+    # promoted parameter, a C++ member-initializer list.
+    @test empties(:php, "<?php class A { public function __construct(public \$x) {} }\n") == 0
+    @test empties(:cpp, "struct S { int v_; S(int v) : v_(v) {} };\n") == 0
+
+    # A present but genuinely empty body is still flagged, the signal worth keeping: a
+    # keyword-delimited `def … end`, a brace-bodied no-op method, an empty block arrow,
+    # a plain constructor with no initialization.
+    @test empties(:ruby, "def f\nend\n") == 1
+    @test empties(:cpp, "struct S { void m() {} };\n") == 1
+    @test empties(:go, "func (s *T) Record() {}\n") == 1
+    @test empties(:javascript, "const f = () => {};\n") == 1
+    @test empties(:php, "<?php class A { public function __construct(\$x) {} }\n") == 1
 end
 
 @testitem "returns_in_finally (javascript)" setup = [Fixtures] tags = [:flags] begin

@@ -13,7 +13,9 @@
 # only fall. Lower a limit whenever the count drops, that locks in the cleanup;
 # never raise one without a reason. The counts depend on the Julia and JET versions
 # (JET 0.10 on Julia 1.12), so the ratchet runs only on that Julia version, and
-# skips elsewhere.
+# skips elsewhere. The sound count rose from 462 to 472 with the Julia 1.12.6 / JET
+# 0.10.15 bump; it is identical on the prior commit, so it tracks the toolchain, not
+# a code regression.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -21,7 +23,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 462   # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 472   # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 12      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

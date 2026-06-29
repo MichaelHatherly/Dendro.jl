@@ -20,6 +20,11 @@
 
 (identifier) @name
 
+; Name a unit by its defining name, not the first identifier the lexical scan
+; reaches: a method's receiver variable precedes its name.
+(function_declaration name: (identifier) @def_name)
+(method_declaration name: (field_identifier) @def_name)
+
 (return_statement) @return
 
 (call_expression) @call
