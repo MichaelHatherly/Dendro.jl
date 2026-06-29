@@ -22,7 +22,8 @@ end
 # A top-level definition somewhere in the corpus: the file it lives in, its identity in
 # that file's tree, the bound name and kind, the enclosing module path (outermost
 # first), the function-unit index it belongs to (0 for a type or const outside any
-# unit), and its source line.
+# unit), its source line, and its declared visibility (`:public`/`:private`/`:unknown`,
+# read from a per-def modifier where a language has one, `:unknown` otherwise).
 struct CorpusDef
     file::String
     id::NodeId
@@ -31,6 +32,7 @@ struct CorpusDef
     module_path::Vector{String}
     unit::Int
     line::Int
+    visibility::Symbol
 end
 
 # Every top-level definition across the corpus. A cross-file reference resolves against
@@ -45,6 +47,9 @@ SymbolTable() = SymbolTable(CorpusDef[])
 # function scope and never reach another file, so they are not indexed.
 const SYMBOL_KINDS = (:function, :struct, :macro, :class, :const)
 is_symbol_kind(kind::Symbol) = kind in SYMBOL_KINDS
+
+# Definition kinds that name a type, the symbols a same-package reference resolves to.
+is_type_kind(kind::Symbol) = kind === :struct || kind === :class
 
 # The namespace regions a linkage query tags over one tree, each paired with its name.
 # @module marks the region, @module.name the name identifier; a name binds to the
@@ -99,6 +104,123 @@ function root_scope(scopes::Vector{ScopeEntry})
     return best
 end
 
+# The visibility a definition declares, read through the language's `Linkage.visibility`
+# hook: `:public`/`:private`, or `:unknown` where the language marks nothing per definition.
+# `modifier_public` treats `:unknown` as public, the safe direction.
+#
+# Each hook reads only a marker whose private definition cannot be reached cross-file by
+# name: a Rust non-`pub` item is module-private, a C/C++ `static` function is file-local, a
+# Ruby, Java, or PHP `private` method is same-class, so an unreferenced one is genuinely
+# dead. A package-private Java or PHP member is left public on purpose: it is reached
+# same-package without an import the resolver sees, so flagging it would be a false
+# positive.
+function def_visibility(file::ParsedFile, defnode::TreeSitter.Node)
+    link = get(LINKAGES, file.language, nothing)
+    link === nothing && return :unknown
+    return link.visibility(file, defnode)::Symbol
+end
+
+# A language that marks no per-definition visibility: every symbol is `:unknown`, read as
+# public. Its public surface is the export list or naming convention, not a modifier.
+no_visibility(::ParsedFile, ::TreeSitter.Node) = :unknown
+
+# Java visibility from a `modifiers` child of the declaration. A class is public only when
+# marked `public`; a package-private one is private, since the `:package` linkage resolves
+# its same-package references, so an unreferenced one is dead. A method is private only
+# when marked `private`, reached within its own file; a package-private method stays public,
+# reached same-package through a receiver the resolver does not follow.
+function java_visibility(::ParsedFile, defnode::TreeSitter.Node)
+    decl = TreeSitter.parent(defnode)
+    TreeSitter.is_null(decl) && return :unknown
+    kind = TreeSitter.node_type(decl)
+    kind == "class_declaration" && return has_modifier(decl, "public") ? :public : :private
+    kind == "method_declaration" && return has_modifier(decl, "private") ? :private : :public
+    return :public
+end
+
+# True when a declaration's `modifiers` child holds a keyword node of type `keyword`.
+function has_modifier(decl::TreeSitter.Node, keyword::String)
+    for c in TreeSitter.children(decl)
+        TreeSitter.node_type(c) == "modifiers" || continue
+        for m in TreeSitter.children(c)
+            TreeSitter.node_type(m) == keyword && return true
+        end
+    end
+    return false
+end
+
+# PHP marks a method `private` with a `visibility_modifier`. Only `private` is private: a
+# protected or unmarked method, a top-level function, and a class stay public, the same
+# same-file reasoning as Java.
+function php_visibility(file::ParsedFile, defnode::TreeSitter.Node)
+    decl = TreeSitter.parent(defnode)
+    TreeSitter.is_null(decl) && return :unknown
+    TreeSitter.node_type(decl) == "method_declaration" || return :public
+    for c in TreeSitter.children(decl)
+        TreeSitter.node_type(c) == "visibility_modifier" || continue
+        return occursin("private", TreeSitter.slice(file.source, c)) ? :private : :public
+    end
+    return :public
+end
+
+# Rust marks a public item with a `visibility_modifier` (`pub`, `pub(crate)`) child on the
+# declaration, the captured name's parent. Its absence is private to the module, so an
+# unreferenced one is unreachable from anywhere.
+function rust_visibility(::ParsedFile, defnode::TreeSitter.Node)
+    decl = TreeSitter.parent(defnode)
+    TreeSitter.is_null(decl) && return :unknown
+    for c in TreeSitter.children(decl)
+        TreeSitter.node_type(c) == "visibility_modifier" && return :public
+    end
+    return :private
+end
+
+# A C or C++ free function with a `static` storage class has internal linkage, visible
+# only in its own file, so an unreferenced one is dead. Any other definition (an extern
+# function, a type) is public.
+function static_visibility(file::ParsedFile, defnode::TreeSitter.Node)
+    fdef = ancestor_of_type(defnode, "function_definition")
+    fdef === nothing && return :public
+    for c in TreeSitter.children(fdef)
+        TreeSitter.node_type(c) == "storage_class_specifier" &&
+            occursin("static", TreeSitter.slice(file.source, c)) && return :private
+    end
+    return :public
+end
+
+# Ruby methods are public until a bare `private` or `protected` statement in the class
+# body toggles subsequent ones; `public` toggles back. A top-level method (in `program`,
+# not a class body) is public. The toggle is a bare identifier statement, told apart from
+# a `private :sym` call, which parses as a call node, not an identifier.
+function ruby_visibility(file::ParsedFile, defnode::TreeSitter.Node)
+    method = TreeSitter.parent(defnode)
+    TreeSitter.is_null(method) && return :unknown
+    body = TreeSitter.parent(method)
+    (!TreeSitter.is_null(body) && TreeSitter.node_type(body) == "body_statement") || return :public
+    current = :public
+    target = nodeid(method)
+    for c in TreeSitter.children(body)
+        if TreeSitter.node_type(c) == "identifier"
+            word = strip(TreeSitter.slice(file.source, c))
+            (word == "private" || word == "protected") && (current = :private)
+            word == "public" && (current = :public)
+        elseif nodeid(c) == target
+            return current
+        end
+    end
+    return current
+end
+
+# The nearest ancestor of `node` whose type is `kind`, or `nothing`.
+function ancestor_of_type(node::TreeSitter.Node, kind::String)
+    n = TreeSitter.parent(node)
+    while !TreeSitter.is_null(n)
+        TreeSitter.node_type(n) == kind && return n
+        n = TreeSitter.parent(n)
+    end
+    return nothing
+end
+
 # Add one file's top-level definitions to `table`. A definition is top-level when its
 # owning scope, hoisted for functions and types, is a namespace: the file root or a
 # module region. That excludes a helper defined inside another function, whose owning
@@ -126,7 +248,7 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
         path = module_path_of(regions, from, to)
         unit = containing_unit(uranges, from, to)
         line = Int(TreeSitter.start_point(d).row) + 1
-        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line))
+        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d)))
     end
     return table
 end
@@ -183,13 +305,23 @@ end
 
 # How a language lets one file see another's names. `model` picks the resolver:
 # `:splice` joins included files into one namespace (Julia `include`, C `#include`);
-# `:import` brings named or whole-module names in (Python, JS). `resolve_target` maps a
-# captured include/import string to corpus file paths; `is_exported` decides whether a
-# definition is visible outside its file.
+# `:import` brings named or whole-module names in (Python, JS); `:directory` shares a
+# package directory's names (Go); `:package` adds the same-directory types an import model
+# resolves without an import (Java). `resolve_target` maps a captured include/import string
+# to corpus file paths; `is_exported` decides whether a definition is visible outside its
+# file; `is_public` decides whether it is part of the corpus's public API, the surface
+# reachability roots a dead-code search from; `visibility` reads a definition's declared
+# modifier (`:public`/`:private`/`:unknown`), the input `is_public` consults for a language
+# whose API surface is a per-definition keyword rather than an export list. Visibility to
+# another file and membership of the public API are different questions: a Julia name is
+# visible across an `include` splice without being exported, so `:unreferenced` reads
+# `is_public`, not `is_exported`.
 struct Linkage
     model::Symbol
     resolve_target::Function
     is_exported::Function
+    is_public::Function
+    visibility::Function
 end
 
 # Resolution works in POSIX-separated path space: the corpus key set and the paths the
@@ -342,18 +474,40 @@ end
 # is by shared directory.
 no_resolve(::AbstractString, ::AbstractString, ::Corpus) = String[]
 
+# A definition is public when its file's export list names it, the surface for a
+# language that marks its API by name (Julia `export`/`public`, a JS/TS `export`). The
+# export set is the file's own for an import model, the inclusion component's for a
+# splice, so a Julia name exported from the module file counts as public for the spliced
+# file that defines it. The body coincides with `js_exported`, a distinct visibility rule.
+# dendro-ignore: duplicate
+export_public(def::CorpusDef, exports::Set{String}) = def.name in exports
+
+# A Python definition is public unless its name leads with an underscore, the
+# convention that marks a module-private name.
+underscore_public(def::CorpusDef, ::Set{String}) = !startswith(def.name, "_")
+
+# A Go definition is exported, and so public, when its name starts with an uppercase
+# letter, the language's only visibility rule.
+capitalized_public(def::CorpusDef, ::Set{String}) = !isempty(def.name) && isuppercase(first(def.name))
+
+# A definition is public unless its declared visibility marks it private, the surface for
+# a language that marks visibility per definition (Rust non-`pub`, a `static` C/C++
+# function, a `private` Ruby/Java/PHP method). An `:unknown` visibility reads as public,
+# the safe direction, so `:unreferenced` never fires on a guess.
+modifier_public(def::CorpusDef, ::Set{String}) = def.visibility !== :private
+
 const LINKAGES = Dict{Symbol, Linkage}(
-    :julia => Linkage(:splice, splice_resolve, splice_exported),
-    :c => Linkage(:splice, splice_resolve, splice_exported),
-    :cpp => Linkage(:splice, splice_resolve, splice_exported),
-    :ruby => Linkage(:splice, ruby_resolve, splice_exported),
-    :go => Linkage(:directory, no_resolve, import_exported),
-    :python => Linkage(:import, python_resolve, import_exported),
-    :javascript => Linkage(:import, js_resolve, js_exported),
-    :typescript => Linkage(:import, js_resolve, js_exported),
-    :rust => Linkage(:import, rust_resolve, import_exported),
-    :java => Linkage(:import, java_resolve, import_exported),
-    :php => Linkage(:import, php_resolve, import_exported),
+    :julia => Linkage(:splice, splice_resolve, splice_exported, export_public, no_visibility),
+    :c => Linkage(:splice, splice_resolve, splice_exported, modifier_public, static_visibility),
+    :cpp => Linkage(:splice, splice_resolve, splice_exported, modifier_public, static_visibility),
+    :ruby => Linkage(:splice, ruby_resolve, splice_exported, modifier_public, ruby_visibility),
+    :go => Linkage(:directory, no_resolve, import_exported, capitalized_public, no_visibility),
+    :python => Linkage(:import, python_resolve, import_exported, underscore_public, no_visibility),
+    :javascript => Linkage(:import, js_resolve, js_exported, export_public, no_visibility),
+    :typescript => Linkage(:import, js_resolve, js_exported, export_public, no_visibility),
+    :rust => Linkage(:import, rust_resolve, import_exported, modifier_public, rust_visibility),
+    :java => Linkage(:package, java_resolve, import_exported, modifier_public, java_visibility),
+    :php => Linkage(:import, php_resolve, import_exported, modifier_public, php_visibility),
 )
 
 # The names a file marks for export, from the `@export` captures of its linkage query.
@@ -478,12 +632,41 @@ function import_visible(
     return names
 end
 
+# The same-package type names a file sees: the top-level types its sibling files in the
+# same directory declare, the names a package-scoped language (Java) resolves without an
+# import. Only a type is exposed, not a method, since a method is reached through a
+# receiver, not a bare same-package name; a top-level type name is unique within a package,
+# so the match is collision-free. The file's own definitions are excluded.
+function package_visible(f::ParsedFile, table::SymbolTable, members::Vector{Int})
+    names = Dict{String, Vector{Int}}()
+    for di in members
+        d = table.defs[di]
+        (d.file == f.file || !is_type_kind(d.kind)) && continue
+        push!(get!(() -> Int[], names, d.name), di)
+    end
+    return names
+end
+
+# Union two visibility maps, concatenating the candidate lists a name resolves to in
+# either, so a file that sees a name through both an import and its package keeps both.
+function merge_visible(a::Dict{String, Vector{Int}}, b::Dict{String, Vector{Int}})
+    out = Dict{String, Vector{Int}}(name => copy(dis) for (name, dis) in a)
+    for (name, dis) in b
+        append!(get!(() -> Int[], out, name), dis)
+    end
+    for dis in values(out)
+        unique!(dis)
+    end
+    return out
+end
+
 """
     visible_defs(files, table, corpus) -> Dict{String, Dict{String, Vector{Int}}}
 
 For each file, the corpus definitions it can reference from another file, indexed by
 name. The linkage model selects how: a splice shares every file-scope name in an
-inclusion component, an import brings the named definitions of a resolved module. A
+inclusion component, an import brings the named definitions of a resolved module, a
+package adds the same-directory types an import model resolves without an import. A
 file's own definitions are excluded, and a file whose language has no linkage sees
 nothing across the boundary.
 """
@@ -508,9 +691,70 @@ function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Cor
             member_visible(f, table, link, get(bycomp, roots[f.file], Int[]))
         elseif link.model === :directory
             member_visible(f, table, link, get(defs_by_dir, dirname(f.file), Int[]))
+        elseif link.model === :package
+            merge_visible(
+                import_visible(f, table, link, corpus, defs_by_file, exports_by_file),
+                package_visible(f, table, get(defs_by_dir, dirname(f.file), Int[])),
+            )
         else
             import_visible(f, table, link, corpus, defs_by_file, exports_by_file)
         end
     end
     return visible
+end
+
+"""
+    corpus_references(files, table) -> Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}
+
+Every cross-file reference in `files` that resolves against `table`, paired with the
+file it sits in and the candidate definition indices its name reaches through
+[`visible_defs`](@ref). Unlike the corpus graph, this keeps a reference sitting in
+top-level code (`ref.unit == 0`): the reachability pass attributes a reference to its
+enclosing definition by byte range, not by unit, and a top-level reference is a root
+edge. A name matching several visible definitions yields all of them.
+"""
+function corpus_references(files::Vector{ParsedFile}, table::SymbolTable)
+    corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
+    visible = visible_defs(files, table, corpus)
+    out = Tuple{ParsedFile, UnboundRef, Vector{Int}}[]
+    for f in files
+        names = visible[f.file]
+        for ref in unbound_references(f)
+            candidates = get(names, ref.name, nothing)
+            candidates === nothing && continue
+            push!(out, (f, ref, candidates))
+        end
+    end
+    return out
+end
+
+"""
+    public_surface(files) -> Dict{String, Set{String}}
+
+The export names that gate each file's public definitions. For an import model the set
+is the file's own [`file_exports`](@ref); for a splice model it is the union across the
+file's inclusion component, so a Julia name exported from the module file counts as
+public for the spliced file that defines it. A language with no linkage maps to an empty
+set; its convention or modifier predicate decides publicness without consulting it.
+"""
+function public_surface(files::Vector{ParsedFile})
+    corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
+    own = Dict{String, Set{String}}(f.file => file_exports(f) for f in files)
+    components = inclusion_components(files, corpus)
+    by_component = Dict{Int, Set{String}}()
+    for f in files
+        link = get(LINKAGES, f.language, nothing)
+        (link === nothing || link.model !== :splice) && continue
+        union!(get!(() -> Set{String}(), by_component, components[f.file]), own[f.file])
+    end
+    surface = Dict{String, Set{String}}()
+    for f in files
+        link = get(LINKAGES, f.language, nothing)
+        surface[f.file] = if link !== nothing && link.model === :splice
+            get(by_component, components[f.file], Set{String}())
+        else
+            own[f.file]
+        end
+    end
+    return surface
 end

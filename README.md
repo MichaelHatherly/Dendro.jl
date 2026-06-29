@@ -75,5 +75,6 @@ do not apply.
 
 The [documentation](https://MichaelHatherly.github.io/Dendro.jl/stable) covers the
 rest: the two-score model and every metric, duplicate and near-duplicate detection,
-within-file cohesion, cross-file placement and scattering, suppression directives and
-path ignores, custom rules, and the public API reference.
+within-file cohesion, cross-file placement and scattering, dead private code by
+reachability, suppression directives and path ignores, custom rules, and the public API
+reference.

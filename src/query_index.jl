@@ -43,6 +43,8 @@ end
 # A capture outside this set has no field to record into; `dispatch!` throws on one,
 # and the suite guards every query's captures against this set. The reserved-word
 # concepts (`catch`, `return`, `finally`) map to the `_clause`/`_stmt` fields below.
+# The query-capture contract: src builds `by_name` as a literal, so only the suite reads
+# this set. dendro-ignore: unreferenced
 const CONCEPT_NAMES = (
     :short_function, :decision, :continuation, :nesting, :short_circuit,
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,

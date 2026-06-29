@@ -168,5 +168,6 @@ function analyze(
     append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut), scope))
     append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut), scope))
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut), scope))
+    append!(findings, scope_clusters(cluster_unreferenced(files, table), scope))
     return Findings(findings)
 end

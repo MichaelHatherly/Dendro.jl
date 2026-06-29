@@ -12,12 +12,13 @@
     @test !("x" in toks)
 end
 
-@testitem "cross_entropy ranks the surprising function higher" tags = [:naturalness] begin
+@testitem "entropy ranks the surprising function higher" tags = [:naturalness] begin
     common = ["identifier", "=", "identifier", "+", "integer_literal"]
     model = Dendro.build_model([copy(common) for _ in 1:50])
 
     novel = ["while", "identifier", "<", "identifier", "break"]
-    @test Dendro.cross_entropy(common, model) < Dendro.cross_entropy(novel, model)
+    ce(toks) = Dendro.interpolated_cross_entropy(toks, model, model, 1.0)
+    @test ce(common) < ce(novel)
 end
 
 @testitem "the cache lowers entropy for a file-local idiom" tags = [:naturalness] begin
@@ -28,7 +29,7 @@ end
     # A file that consistently uses idiom B: the cache learns it as local idiom.
     cache = Dendro.build_model([copy(idiom_b) for _ in 1:10])
 
-    global_only = Dendro.cross_entropy(idiom_b, global_model)
+    global_only = Dendro.interpolated_cross_entropy(idiom_b, global_model, global_model, 1.0)
     with_cache = Dendro.interpolated_cross_entropy(idiom_b, global_model, cache, 0.5)
     # Read against its own file's idiom, the function is less surprising.
     @test with_cache < global_only

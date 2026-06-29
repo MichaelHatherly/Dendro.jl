@@ -28,7 +28,8 @@ corpus (every profile-resolvable file under each folder, or a named file), parse
 each once, builds a baseline from that corpus, runs the per-file path above
 against it for each file,
 and appends the corpus-relational findings: cross-file duplicates, naturalness
-outliers, low-cohesion files, misplaced units, and scattered files. The active rule set is a value it carries: the
+outliers, low-cohesion files, misplaced units, scattered files, and unreferenced
+private definitions. The active rule set is a value it carries: the
 `rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
 per-file scoring, and suppression validation, so a caller extends the checks
 without touching the pipeline. The baseline-from-the-corpus step is what makes
@@ -143,8 +144,7 @@ Reporting:
 - `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
   that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
 - `clones.jl` defines both duplicate passes over a shared subtree index. `subtrees`
-  hashes every named subtree of a function bottom-up; `subtree_hashes` and
-  `node_histogram` derive from it. Exact: `anchor_floor` and `cluster_duplicates`
+  hashes every named subtree of a function bottom-up. Exact: `anchor_floor` and `cluster_duplicates`
   bucket function- and block-shaped subtrees by hash, with `subsumed` as the
   maximality filter. Near-miss: `clone_features` (a unit's pre-order hash sequence,
   histogram, digest, and size from one walk), `lcs_length`/`clone_similarity` (the
@@ -171,8 +171,19 @@ Reporting:
   per-file resolver left unbound. `Linkage`/`LINKAGES` carry how a
   language lets one file see another's names: `splice_resolve` maps a Julia `include`
   to a corpus file, `visible_defs` groups files into shared namespaces by an inclusion
-  union-find and returns each file's cross-file candidates. Reuses the `bindings.jl`
-  capture walk and the `clones.jl` union-find. Included after `naturalness.jl`.
+  union-find and returns each file's cross-file candidates, and `corpus_references` is the
+  shared resolver yielding every cross-file reference with its candidates (the corpus graph
+  and the reachability pass both read it). The `:package` model (Java) unions import
+  visibility with `package_visible`, the same-directory types a package resolves without an
+  import, so a package-private class reference resolves. `Linkage.is_public` and the
+  per-language predicates (`export_public`, `underscore_public`, `capitalized_public`,
+  `modifier_public`) decide public-API membership, and `public_surface` gives each file its
+  export set, the file's own for an import model, the inclusion component's for a splice.
+  The convention predicates read a `CorpusDef`'s name; `modifier_public` reads its
+  `visibility`, set by `def_visibility` from a grammar-specific modifier (Rust `pub`, a
+  C/C++ `static` function, a Ruby/Java/PHP `private` method, a package-private Java class).
+  Reuses the `bindings.jl` capture walk and the `clones.jl` union-find. Included after
+  `naturalness.jl`.
 - `corpus_graph.jl` defines the corpus unit graph, the one structure the three placement
   passes read. `build_corpus_graph` resolves every unbound reference against the symbol
   table through `visible_defs`, recording weighted unit-to-unit `edges` and per-unit file
@@ -198,6 +209,14 @@ Reporting:
   `:scattered` finding per file, scored by the count of distinct communities its units
   occupy whose plurality anchor is another file, carrying the absolute `SCATTERED_BAND`
   and the corpus percentile. Included after `placement.jl`.
+- `unreferenced.jl` defines dead-code detection by reachability, not the corpus graph but
+  a dedicated reference graph over `table.defs` that keeps non-unit targets and discounts
+  no cross-cutting utility. `reach_graph` builds the forward edges (within-file bindings
+  and `corpus_references`, each attributed to its enclosing top-level definition by
+  `enclosing_def`) and the root set (declared-public definitions and those referenced from
+  top-level code); `reachable` walks it breadth-first. `cluster_unreferenced` emits an
+  `:unreferenced` finding per unreached definition, suppressible inline. Reads `linkage.jl`
+  for `corpus_references` and the public surface. Included after `scattered.jl`.
 - `cohesion.jl` defines within-file cohesion. `cluster_low_cohesion` reads the within
   view of the corpus graph, `components(adjacency(graph; within = true), file_nodes)`:
   cross-file edges never join one file's nodes, so the components restricted to a file are

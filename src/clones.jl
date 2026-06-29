@@ -60,21 +60,12 @@ function histogram_of(st::Vector{Subtree})
     return hist
 end
 
-# Sorted multiset of a function's subtree hashes: the order-blind structural view, a
-# renaming-tolerant fingerprint the ordered sequence in `clone_features` refines for the verdict.
-subtree_hashes(unit::FunctionUnit, index::QueryIndex) =
-    sort!([s.hash for s in subtrees(unit, index)])
-
-node_histogram(unit::FunctionUnit, index::QueryIndex) =
-    histogram_of(subtrees(unit, index))
-
 """
     clone_features(unit, index) -> (sequence, histogram, digest, size)
 
 A function's near-miss features from a single subtree walk: its pre-order subtree-hash
-`sequence` (the same Type-2 hashes `subtree_hashes` sorts into a multiset, kept in
-source order for the order-aware LCS), its node-type `histogram` (the characteristic
-vector), its exact `digest`, and its `size`.
+`sequence` (the Type-2 hashes in source order for the order-aware LCS), its node-type
+`histogram` (the characteristic vector), its exact `digest`, and its `size`.
 """
 function clone_features(unit::FunctionUnit, index::QueryIndex)
     st = subtrees(unit, index)
