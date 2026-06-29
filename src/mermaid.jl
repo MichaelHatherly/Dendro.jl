@@ -31,11 +31,24 @@ function item_files(items::Union{Vector{CorpusUnit}, Vector{CorpusDef}})
     return files
 end
 
-# A stable `f<k>` id per file in sorted order, the node naming the file-level views share.
+# A readable node id per file, the file-level views share. The id is the file's basename
+# with every non-alphanumeric character replaced, since a mermaid id admits no `/`, `.`, or
+# `:`, so `src/corpus.jl` reads as `corpus_jl` in the edge lines rather than an opaque
+# counter. Two files with the same basename get a numeric suffix, assigned in sorted order
+# so the ids are stable.
 function file_ids(files::Set{String})
     ids = Dict{String, String}()
-    for (k, file) in enumerate(sort!(collect(files)))
-        ids[file] = string("f", k)
+    used = Set{String}()
+    for file in sort!(collect(files))
+        base = replace(basename(file), r"[^A-Za-z0-9]" => "_")
+        slug = base
+        k = 1
+        while slug in used
+            k += 1
+            slug = string(base, "_", k)
+        end
+        push!(used, slug)
+        ids[file] = slug
     end
     return ids
 end
