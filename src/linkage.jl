@@ -48,6 +48,9 @@ SymbolTable() = SymbolTable(CorpusDef[])
 const SYMBOL_KINDS = (:function, :struct, :macro, :class, :const)
 is_symbol_kind(kind::Symbol) = kind in SYMBOL_KINDS
 
+# Definition kinds that name a type, the symbols a same-package reference resolves to.
+is_type_kind(kind::Symbol) = kind === :struct || kind === :class
+
 # The namespace regions a linkage query tags over one tree, each paired with its name.
 # @module marks the region, @module.name the name identifier; a name binds to the
 # innermost region containing it, so a `module` named only by a nested block keeps its
@@ -122,22 +125,29 @@ function def_visibility(file::ParsedFile, defnode::TreeSitter.Node)
     return :unknown
 end
 
-# Java marks a method `private` in a `modifiers` child of its declaration. Only an
-# explicit `private` is private: a public, protected, or package-private member, and every
-# class, stays public, since a private method is reached only within its own file while a
-# package-private one is reached same-package without an import the resolver sees.
+# Java visibility from a `modifiers` child of the declaration. A class is public only when
+# marked `public`; a package-private one is private, since the `:package` linkage resolves
+# its same-package references, so an unreferenced one is dead. A method is private only
+# when marked `private`, reached within its own file; a package-private method stays public,
+# reached same-package through a receiver the resolver does not follow.
 function java_visibility(defnode::TreeSitter.Node)
     decl = TreeSitter.parent(defnode)
     TreeSitter.is_null(decl) && return :unknown
-    TreeSitter.node_type(decl) == "method_declaration" || return :public
+    kind = TreeSitter.node_type(decl)
+    kind == "class_declaration" && return has_modifier(decl, "public") ? :public : :private
+    kind == "method_declaration" && return has_modifier(decl, "private") ? :private : :public
+    return :public
+end
+
+# True when a declaration's `modifiers` child holds a keyword node of type `keyword`.
+function has_modifier(decl::TreeSitter.Node, keyword::String)
     for c in TreeSitter.children(decl)
         TreeSitter.node_type(c) == "modifiers" || continue
         for m in TreeSitter.children(c)
-            TreeSitter.node_type(m) == "private" && return :private
+            TreeSitter.node_type(m) == keyword && return true
         end
-        return :public
     end
-    return :public
+    return false
 end
 
 # PHP marks a method `private` with a `visibility_modifier`. Only `private` is private: a
@@ -296,13 +306,14 @@ end
 
 # How a language lets one file see another's names. `model` picks the resolver:
 # `:splice` joins included files into one namespace (Julia `include`, C `#include`);
-# `:import` brings named or whole-module names in (Python, JS). `resolve_target` maps a
-# captured include/import string to corpus file paths; `is_exported` decides whether a
-# definition is visible outside its file; `is_public` decides whether it is part of the
-# corpus's public API, the surface reachability roots a dead-code search from. Visibility
-# to another file and membership of the public API are different questions: a Julia name
-# is visible across an `include` splice without being exported, so `:unreferenced` reads
-# `is_public`, not `is_exported`.
+# `:import` brings named or whole-module names in (Python, JS); `:directory` shares a
+# package directory's names (Go); `:package` adds the same-directory types an import model
+# resolves without an import (Java). `resolve_target` maps a captured include/import string
+# to corpus file paths; `is_exported` decides whether a definition is visible outside its
+# file; `is_public` decides whether it is part of the corpus's public API, the surface
+# reachability roots a dead-code search from. Visibility to another file and membership of
+# the public API are different questions: a Julia name is visible across an `include`
+# splice without being exported, so `:unreferenced` reads `is_public`, not `is_exported`.
 struct Linkage
     model::Symbol
     resolve_target::Function
@@ -492,7 +503,7 @@ const LINKAGES = Dict{Symbol, Linkage}(
     :javascript => Linkage(:import, js_resolve, js_exported, export_public),
     :typescript => Linkage(:import, js_resolve, js_exported, export_public),
     :rust => Linkage(:import, rust_resolve, import_exported, modifier_public),
-    :java => Linkage(:import, java_resolve, import_exported, modifier_public),
+    :java => Linkage(:package, java_resolve, import_exported, modifier_public),
     :php => Linkage(:import, php_resolve, import_exported, modifier_public),
 )
 
@@ -618,12 +629,41 @@ function import_visible(
     return names
 end
 
+# The same-package type names a file sees: the top-level types its sibling files in the
+# same directory declare, the names a package-scoped language (Java) resolves without an
+# import. Only a type is exposed, not a method, since a method is reached through a
+# receiver, not a bare same-package name; a top-level type name is unique within a package,
+# so the match is collision-free. The file's own definitions are excluded.
+function package_visible(f::ParsedFile, table::SymbolTable, members::Vector{Int})
+    names = Dict{String, Vector{Int}}()
+    for di in members
+        d = table.defs[di]
+        (d.file == f.file || !is_type_kind(d.kind)) && continue
+        push!(get!(() -> Int[], names, d.name), di)
+    end
+    return names
+end
+
+# Union two visibility maps, concatenating the candidate lists a name resolves to in
+# either, so a file that sees a name through both an import and its package keeps both.
+function merge_visible(a::Dict{String, Vector{Int}}, b::Dict{String, Vector{Int}})
+    out = Dict{String, Vector{Int}}(name => copy(dis) for (name, dis) in a)
+    for (name, dis) in b
+        append!(get!(() -> Int[], out, name), dis)
+    end
+    for dis in values(out)
+        unique!(dis)
+    end
+    return out
+end
+
 """
     visible_defs(files, table, corpus) -> Dict{String, Dict{String, Vector{Int}}}
 
 For each file, the corpus definitions it can reference from another file, indexed by
 name. The linkage model selects how: a splice shares every file-scope name in an
-inclusion component, an import brings the named definitions of a resolved module. A
+inclusion component, an import brings the named definitions of a resolved module, a
+package adds the same-directory types an import model resolves without an import. A
 file's own definitions are excluded, and a file whose language has no linkage sees
 nothing across the boundary.
 """
@@ -648,6 +688,11 @@ function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Cor
             member_visible(f, table, link, get(bycomp, roots[f.file], Int[]))
         elseif link.model === :directory
             member_visible(f, table, link, get(defs_by_dir, dirname(f.file), Int[]))
+        elseif link.model === :package
+            merge_visible(
+                import_visible(f, table, link, corpus, defs_by_file, exports_by_file),
+                package_visible(f, table, get(defs_by_dir, dirname(f.file), Int[])),
+            )
         else
             import_visible(f, table, link, corpus, defs_by_file, exports_by_file)
         end

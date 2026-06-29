@@ -18,7 +18,9 @@
 # a code regression. The `:unreferenced` pass then raised it from 472 to 478 and the
 # opt count from 12 to 13: the reachability resolver dispatches through the
 # function-valued `Linkage.is_public` field, the same intentional dynamic dispatch the
-# function-valued rules already incur.
+# function-valued rules already incur. Java's `:package` linkage (same-package type
+# resolution, the per-def visibility navigation) raised the sound count again from 478 to
+# 481, more `Any`-node tree walks of the same kind.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -26,7 +28,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 478   # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 481   # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 13      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

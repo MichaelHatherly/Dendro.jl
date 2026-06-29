@@ -173,14 +173,17 @@ Reporting:
   to a corpus file, `visible_defs` groups files into shared namespaces by an inclusion
   union-find and returns each file's cross-file candidates, and `corpus_references` is the
   shared resolver yielding every cross-file reference with its candidates (the corpus graph
-  and the reachability pass both read it). `Linkage.is_public` and the per-language
-  predicates (`export_public`, `underscore_public`, `capitalized_public`, `modifier_public`)
-  decide public-API membership, and `public_surface` gives each file its export set, the
-  file's own for an import model, the inclusion component's for a splice. The
-  convention predicates read a `CorpusDef`'s name; `modifier_public` reads its
+  and the reachability pass both read it). The `:package` model (Java) unions import
+  visibility with `package_visible`, the same-directory types a package resolves without an
+  import, so a package-private class reference resolves. `Linkage.is_public` and the
+  per-language predicates (`export_public`, `underscore_public`, `capitalized_public`,
+  `modifier_public`) decide public-API membership, and `public_surface` gives each file its
+  export set, the file's own for an import model, the inclusion component's for a splice.
+  The convention predicates read a `CorpusDef`'s name; `modifier_public` reads its
   `visibility`, set by `def_visibility` from a grammar-specific modifier (Rust `pub`, a
-  C/C++ `static` function, a Ruby `private` region). Reuses the `bindings.jl` capture walk
-  and the `clones.jl` union-find. Included after `naturalness.jl`.
+  C/C++ `static` function, a Ruby/Java/PHP `private` method, a package-private Java class).
+  Reuses the `bindings.jl` capture walk and the `clones.jl` union-find. Included after
+  `naturalness.jl`.
 - `corpus_graph.jl` defines the corpus unit graph, the one structure the three placement
   passes read. `build_corpus_graph` resolves every unbound reference against the symbol
   table through `visible_defs`, recording weighted unit-to-unit `edges` and per-unit file

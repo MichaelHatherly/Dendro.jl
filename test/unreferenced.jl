@@ -111,7 +111,7 @@ end
 @testitem ":unreferenced reads a Java private method as private" setup = [Fixtures] tags = [:unreferenced] begin
     # `e` is public, a root, and calls `used`; `dead` is a private method nothing reaches.
     # A private method is class-internal, so its uses are all same-file binding edges.
-    src = "class C {\n  public int e() { return used(); }\n  private int used() { return 1; }\n  private int dead() { return 2; }\n}\n"
+    src = "public class C {\n  public int e() { return used(); }\n  private int used() { return 1; }\n  private int dead() { return 2; }\n}\n"
     j = Fixtures.parsedfile(:java, src; file = "C.java")
     @test Fixtures.unref_sites([j]) == Set([("C.java", "dead")])
 end
@@ -122,11 +122,19 @@ end
     @test Fixtures.unref_sites([p]) == Set([("C.php", "dead")])
 end
 
-@testitem ":unreferenced leaves a same-package Java class alone" setup = [Fixtures] tags = [:unreferenced] begin
-    # A package-private class is reached by a sibling file same-package with no import the
-    # resolver sees, so Java and PHP leave every non-`private` symbol public: no false
-    # positive on the class, signal only on a strictly-private method.
-    main = Fixtures.parsedfile(:java, "package p;\npublic class Main { int run() { return new Helper().work(); } }\n"; file = "Main.java")
-    helper = Fixtures.parsedfile(:java, "package p;\nclass Helper { int work() { return 1; } }\n"; file = "Helper.java")
+@testitem ":unreferenced resolves a Java class across its package" setup = [Fixtures] tags = [:unreferenced] begin
+    # `Main` is public, a root; it names `Helper`, a package-private class in a sibling file
+    # of the same package. The `:package` linkage resolves the reference without an import,
+    # so the used `Helper` is not flagged.
+    main = Fixtures.parsedfile(:java, "package p;\npublic class Main { int run() { return new Helper().work(); } }\n"; file = "p/Main.java")
+    helper = Fixtures.parsedfile(:java, "package p;\nclass Helper { public int work() { return 1; } }\n"; file = "p/Helper.java")
     @test isempty(Dendro.cluster_unreferenced([main, helper], Dendro.corpus_symbols([main, helper])))
+end
+
+@testitem ":unreferenced flags a dead package-private Java class" setup = [Fixtures] tags = [:unreferenced] begin
+    # `Dead` is package-private and no file in the package names it, so it is unreachable.
+    # `Main` is public, a root, and does not reference it.
+    main = Fixtures.parsedfile(:java, "package p;\npublic class Main { int run() { return 1; } }\n"; file = "p/Main.java")
+    dead = Fixtures.parsedfile(:java, "package p;\nclass Dead { public int work() { return 1; } }\n"; file = "p/Dead.java")
+    @test Fixtures.unref_sites([main, dead]) == Set([("p/Dead.java", "Dead")])
 end

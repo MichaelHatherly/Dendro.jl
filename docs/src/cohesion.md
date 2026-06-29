@@ -46,10 +46,11 @@ Reported as `:misplaced`: a unit that couples more to another file than to its o
 within-file binding resolver leaves a reference unbound when its definition lives in
 another file. Placement resolves those references corpus-wide. A per-language linkage
 query (`src/queries/<lang>.imports.scm`) tags how files see each other's names across
-three models: a splice joins included files into one namespace (Julia `include`, C
+four models: a splice joins included files into one namespace (Julia `include`, C
 `#include`, Ruby `require_relative`); an import brings named definitions of a resolved
-module in (Python, JavaScript, TypeScript, Rust, Java, PHP); a directory shares a
-package's names across its files (Go). A reference that leaves its file resolves to the
+module in (Python, JavaScript, TypeScript, Rust, PHP); a directory shares a package's
+names across its files (Go); a package adds, on top of imports, the same-directory types a
+language resolves without an import (Java). A reference that leaves its file resolves to the
 definition it names in a file its linkage exposes, and the result is a corpus-wide graph
 of which unit references which.
 
@@ -97,8 +98,9 @@ The public surface is per language. A name in a file's `export`/`public` list is
 in Julia and JavaScript/TypeScript; a Python name is public unless it leads with an
 underscore; a Go name is public when it is capitalised. A per-definition visibility
 modifier covers the rest: a Rust item is public when it is `pub`, a C or C++ function is
-private when it is `static` (file-local), and a method is private under a Ruby `private`/
-`protected` declaration or a Java or PHP `private` keyword. A reference is attributed to its enclosing top-level definition by
+private when it is `static` (file-local), a method is private under a Ruby `private`/
+`protected` declaration or a Java or PHP `private` keyword, and a Java class is private
+when it is package-private (not marked `public`). A reference is attributed to its enclosing top-level definition by
 byte range, so a call inside a nested helper or a lambda still keeps the enclosing function
 alive. A name matching several definitions keeps all of them alive, since name resolution
 cannot tell a type from its constructor or one method from its overload.
@@ -109,7 +111,8 @@ only over a whole module, so a private definition called from a same-module file
 the scan is falsely flagged. Runtime-only entry points (a test function, a dispatch-table
 callback, a string-dispatched name) carry no syntactic reference, so they are flagged
 unless declared public or referenced from top level; accept one with
-`dendro-ignore: unreferenced`. In Java and PHP only a strictly-`private` method is checked,
-since a private method is class-internal, reached only within its own file. A
-package-private class or member stays public: it is reached same-package without an import
-the resolver sees, so flagging it would be a false positive.
+`dendro-ignore: unreferenced`. Java resolves a same-package reference through its `:package`
+linkage, so a package-private class with no user in its package is flagged alongside a
+`private` method. A package-private *member* stays public, reached same-package through a
+receiver the resolver does not follow. PHP checks only a `private` method; its classes
+carry no package-private privacy.
