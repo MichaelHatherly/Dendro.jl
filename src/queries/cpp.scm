@@ -22,6 +22,16 @@
 
 (identifier) @name
 
+; Name a unit by the name in its declarator, not the first identifier the lexical
+; scan reaches: a return-type token, storage-class macro, or template parameter
+; precedes it. The declarator may be a free or member name, a qualified
+; `Class::method` (named by its final component), a destructor, or an operator.
+(function_declarator declarator: (identifier) @def_name)
+(function_declarator declarator: (field_identifier) @def_name)
+(function_declarator declarator: (qualified_identifier name: (identifier) @def_name))
+(function_declarator declarator: (destructor_name) @def_name)
+(function_declarator declarator: (operator_name) @def_name)
+
 (return_statement) @return
 
 (call_expression) @call

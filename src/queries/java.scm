@@ -21,6 +21,11 @@
 
 (identifier) @name
 
+; Name a unit by its declared name, not the first identifier the lexical scan
+; reaches: a leading annotation (`@Deprecated`) precedes it.
+(method_declaration name: (identifier) @def_name)
+(constructor_declaration name: (identifier) @def_name)
+
 (return_statement) @return
 
 (finally_clause) @finally

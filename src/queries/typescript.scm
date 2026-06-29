@@ -22,6 +22,13 @@
 
 (identifier) @name
 
+; Name a unit by its defining name, not the first identifier the lexical scan
+; reaches: an arrow callback is otherwise labelled by its first parameter. A bare
+; anonymous arrow stays unnamed.
+(function_declaration name: (identifier) @def_name)
+(method_definition name: (property_identifier) @def_name)
+(variable_declarator name: (identifier) @def_name value: (arrow_function))
+
 (return_statement) @return
 
 (finally_clause) @finally
