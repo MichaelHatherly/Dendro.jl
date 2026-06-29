@@ -92,6 +92,19 @@ end
     @test !haskey(graph.edges, (uidx, secret_idx))
 end
 
+@testitem "corpus graph keeps a JavaScript default import from importing names" setup = [Fixtures] tags = [:corpus_graph] begin
+    util = Fixtures.parsedfile(:javascript, "export function helper(x) { return x; }\nexport default function () {}\n"; file = "u.js")
+    main = Fixtures.parsedfile(:javascript, "import thing from './u';\nfunction use(a) { return helper(a); }\n"; file = "m.js")
+    files = [util, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # A default import binds the module's default export, not its named exports. `helper`
+    # is never brought into bare scope, so `use`'s reference does not resolve: no edge.
+    # The empty name set of a default import must not be read as a wildcard.
+    @test !haskey(graph.edges, (graph.unit_index[("m.js", 1)], graph.unit_index[("u.js", 1)]))
+end
+
 @testitem "corpus graph resolves a C include splice" setup = [Fixtures] tags = [:corpus_graph] begin
     header = Fixtures.parsedfile(:c, "int helper(int x) { return x; }\n"; file = "a.h")
     main = Fixtures.parsedfile(:c, "#include \"a.h\"\nint use(int a) { return helper(a); }\n"; file = "b.c")
@@ -134,6 +147,29 @@ end
     graph = Dendro.build_corpus_graph(files, table)
 
     # `use crate::foo::helper` resolves module `foo` to foo.rs and brings `helper` in.
+    @test haskey(graph.edges, (graph.unit_index[("main.rs", 1)], graph.unit_index[("foo.rs", 1)]))
+end
+
+@testitem "corpus graph resolves a Rust grouped use import" setup = [Fixtures] tags = [:corpus_graph] begin
+    foo = Fixtures.parsedfile(:rust, "pub fn helper() -> i32 { 1 }\npub fn other() -> i32 { 2 }\n"; file = "foo.rs")
+    main = Fixtures.parsedfile(:rust, "use crate::foo::{helper, other};\nfn run() -> i32 { helper() + other() }\n"; file = "main.rs")
+    files = [foo, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # `use crate::foo::{helper, other}` resolves module `foo` and brings both items in,
+    # so `run` couples to foo.rs through each call.
+    @test haskey(graph.edges, (graph.unit_index[("main.rs", 1)], graph.unit_index[("foo.rs", 1)]))
+end
+
+@testitem "corpus graph resolves a Rust wildcard use import" setup = [Fixtures] tags = [:corpus_graph] begin
+    foo = Fixtures.parsedfile(:rust, "pub fn helper() -> i32 { 1 }\n"; file = "foo.rs")
+    main = Fixtures.parsedfile(:rust, "use crate::foo::*;\nfn run() -> i32 { helper() }\n"; file = "main.rs")
+    files = [foo, main]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+
+    # `use crate::foo::*` brings every name from foo.rs into scope, so `helper` resolves.
     @test haskey(graph.edges, (graph.unit_index[("main.rs", 1)], graph.unit_index[("foo.rs", 1)]))
 end
 

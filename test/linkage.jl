@@ -18,12 +18,6 @@
         ("g", :function, ["Outer", "Inner"]),
         ("h", :function, String[]),
     ]
-
-    # The name index keys on (language, module path, name) so a lookup is scoped to the
-    # module a reference can see, and two `g`s in different modules never collide.
-    gi = only(table.by_name[(:julia, ["Outer", "Inner"], "g")])
-    @test table.defs[gi].file == "a.jl"
-    @test !haskey(table.by_name, (:julia, String[], "g"))
 end
 
 @testitem "corpus symbols ignore locals inside a function body" setup = [Fixtures] tags = [:linkage] begin
@@ -33,6 +27,16 @@ end
     # Only `f` is a corpus symbol. `tmp` is a local: its name binds inside the function
     # scope, not the file, so it is never visible to another file and never indexed.
     @test [d.name for d in table.defs] == ["f"]
+end
+
+@testitem "corpus symbols skip Python class methods" setup = [Fixtures] tags = [:linkage] begin
+    f = Fixtures.parsedfile(:python, "def top():\n    return 1\nclass C:\n    def method(self):\n        return 2\n"; file = "m.py")
+    table = Dendro.corpus_symbols([f])
+
+    # `top` is a module-level function, importable by bare name. `method` is a class
+    # attribute, reachable only as `C.method`, never by bare name, so it is not a corpus
+    # symbol. `C` itself is a top-level name.
+    @test sort([d.name for d in table.defs]) == ["C", "top"]
 end
 
 @testitem "unbound references carry cross-file names and their unit" setup = [Fixtures] tags = [:linkage] begin

@@ -34,6 +34,25 @@ end
     @test hit.suppressed
 end
 
+@testitem ":misplaced does not fire on a thin candidate set" setup = [Fixtures] tags = [:placement] begin
+    # Five files, but only one unit ever scores. `leaner` in a.jl references its own
+    # file's `home` three times and b.jl's `baz`/`qux` three times, so its envy is 0.5:
+    # below the absolute band. Its community is anchored in b.jl, so it is a candidate,
+    # but it is the sole entry in the scored distribution. The percentile must stay
+    # silent on a distribution this thin; the corpus file count alone is not enough.
+    mod = Fixtures.parsedfile(:julia, "include(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
+    a = Fixtures.parsedfile(:julia, "home() = 1\nleaner() = home() + home() + home() + baz() + qux() + baz()\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "baz() = qux()\nqux() = baz()\n"; file = "b.jl")
+    c = Fixtures.parsedfile(:julia, "c1() = 1\n"; file = "c.jl")
+    d = Fixtures.parsedfile(:julia, "d1() = 1\n"; file = "d.jl")
+    files = [mod, a, b, c, d]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+    findings = Dendro.cluster_misplaced(files, graph, table)
+
+    @test isempty(findings)
+end
+
 @testitem ":misplaced leaves a well-placed unit alone" setup = [Fixtures] tags = [:placement] begin
     mod = Fixtures.parsedfile(:julia, "include(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
     # `mix` references its own file's `helper` twice and b.jl's `ext` once: mostly home,

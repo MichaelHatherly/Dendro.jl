@@ -17,8 +17,8 @@ const MISPLACED_BAND = (60, 80)
 # one stray call to another file is not a reason to move.
 const MIN_MISPLACED_REFS = 3
 
-# The corpus needs this many files before the envy percentile means anything; under it
-# only the absolute band fires, as cohesion does on a thin corpus.
+# The scored candidate set needs this many entries before the envy percentile means
+# anything; under it only the absolute band fires, as cohesion does on a thin corpus.
 const MIN_MISPLACED_FILES = 5
 
 # A unit's own-file affinity: how many of its references resolve, in-file, to a
@@ -103,8 +103,8 @@ function cluster_misplaced(
     )
     findings = Finding[]
     own = own_affinity(files, graph)
-    plurality = community_plurality(graph, communities(graph))
     comm = communities(graph)
+    plurality = community_plurality(graph, comm)
     directives = Dict{String, Vector{Directive}}(f.file => f.directives for f in files)
 
     scored = Tuple{Int, Int, Location}[]
@@ -123,7 +123,7 @@ function cluster_misplaced(
     isempty(scored) && return findings
 
     counts = sort([s[2] for s in scored])
-    enough = length(files) >= min_files
+    enough = length(scored) >= min_files
     for (src, score, target) in scored
         absolute = severity(score, band)
         pct = enough ? searchsortedlast(counts, score) / length(counts) : nothing

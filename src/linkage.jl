@@ -1,9 +1,9 @@
 # Corpus-wide symbol resolution. The per-file binding resolver (`bindings.jl`) leaves
 # a reference unbound when its definition lives in another file. This builds the table
-# those references resolve against: every top-level definition across the corpus, keyed
-# by language, enclosing module path, and name. Name-based and lexical, never typed: it
-# records what a name is declared as, not what a call dispatches to. The file boundary
-# is crossed; the symbol-resolution one is not.
+# those references resolve against: every top-level definition across the corpus, each
+# carrying the enclosing module path that scopes a name match. Name-based and lexical,
+# never typed: it records what a name is declared as, not what a call dispatches to. The
+# file boundary is crossed; the symbol-resolution one is not.
 #
 # This file is a registry of per-language resolvers: one independent `*_resolve` and
 # visibility rule per language, with nothing to connect them, so it reads as low
@@ -21,27 +21,25 @@ end
 
 # A top-level definition somewhere in the corpus: the file it lives in, its identity in
 # that file's tree, the bound name and kind, the enclosing module path (outermost
-# first), whether linkage makes it visible to other files, the function-unit index it
-# belongs to (0 for a type or const outside any unit), and its source line.
+# first), the function-unit index it belongs to (0 for a type or const outside any
+# unit), and its source line.
 struct CorpusDef
     file::String
     id::NodeId
     name::String
     kind::Symbol
     module_path::Vector{String}
-    exported::Bool
     unit::Int
     line::Int
 end
 
-# Every corpus definition, indexed by (language, module path, name) so a reference
-# resolves only against names declared in a module it can see, and two same-named defs
-# in different modules never collide.
+# Every top-level definition across the corpus. A cross-file reference resolves against
+# it by name, gated by what its file can see; the module path each def carries scopes a
+# match to the namespace a reference can reach.
 struct SymbolTable
-    by_name::Dict{Tuple{Symbol, Vector{String}, String}, Vector{Int}}
     defs::Vector{CorpusDef}
 end
-SymbolTable() = SymbolTable(Dict{Tuple{Symbol, Vector{String}, String}, Vector{Int}}(), CorpusDef[])
+SymbolTable() = SymbolTable(CorpusDef[])
 
 # Definition kinds that name a top-level, corpus-visible symbol. Locals bind inside a
 # function scope and never reach another file, so they are not indexed.
@@ -130,8 +128,7 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
         path = module_path_of(regions, from, to)
         unit = containing_unit(uranges, from, to)
         line = Int(TreeSitter.start_point(d).row) + 1
-        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, false, unit, line))
-        push!(get!(() -> Int[], table.by_name, (file.language, path, name)), length(table.defs))
+        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line))
     end
     return table
 end
@@ -176,10 +173,10 @@ end
 """
     corpus_symbols(files) -> SymbolTable
 
-The top-level definitions across `files`, indexed by language, enclosing module path,
-and name. The table a cross-file reference resolves against: each file contributes the
-functions, types, macros, and consts visible at its module scope, skipping locals and
-languages with no scopes query.
+The top-level definitions across `files`, each carrying its enclosing module path. The
+table a cross-file reference resolves against: each file contributes the functions,
+types, macros, and consts visible at its module scope, skipping locals and languages
+with no scopes query.
 """
 function corpus_symbols(files::Vector{ParsedFile})
     table = SymbolTable()
@@ -297,11 +294,11 @@ function suffix_match(corpus::Set{String}, options::Tuple{Vararg{AbstractString}
     return unique(found)
 end
 
-# Rust `use a::b::c` brings item `c` from module `a::b`. Drop the path roots and the
-# final item to leave the module, resolved to `a/b.rs` or `a/b/mod.rs`.
+# Rust `use a::b::c` names module `a::b` in @import.from, item `c` in @import.name, so
+# the path is already the module: drop only the path roots, resolving `a/b.rs` or
+# `a/b/mod.rs`.
 function rust_resolve(target::AbstractString, ::AbstractString, corpus::Set{String})
     parts = [p for p in split(target, "::"; keepempty = false) if !(p in ("crate", "self", "super"))]
-    length(parts) > 1 && (parts = parts[1:(end - 1)])
     isempty(parts) && return String[]
     rel = join(parts, '/')
     return suffix_match(corpus, (rel * ".rs", rel * "/mod.rs"))
@@ -451,6 +448,7 @@ function import_visible(
             exports = get(() -> Set{String}(), exports_by_file, path)
             for di in get(defs_by_file, path, Int[])
                 d = table.defs[di]
+                d.file == f.file && continue
                 link.is_exported(d, exports)::Bool || continue
                 (isempty(imported) || d.name in imported) || continue
                 push!(get!(() -> String[], names, d.name), di)

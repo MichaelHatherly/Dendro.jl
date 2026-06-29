@@ -5,8 +5,12 @@
 ; tree-sitter-typescript.
 
 ; --- named imports ---
-(import_statement) @import
-(import_statement source: (string) @import.from)
+; Only a named-import clause brings exports into bare scope. A default, namespace, or
+; side-effect import binds the module itself, not its named exports, so it marks no
+; region: an empty name set is reserved for a genuine wildcard, which TypeScript lacks.
+(import_statement
+  (import_clause (named_imports))
+  source: (string) @import.from) @import
 (import_statement (import_clause (named_imports (import_specifier name: (identifier) @import.name))))
 
 ; --- exports ---

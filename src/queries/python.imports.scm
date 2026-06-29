@@ -1,11 +1,8 @@
-; Python linkage. A class body is a namespace: its methods are reachable as
-; attributes, never importable by bare name, so @module tells a class apart from the
-; module scope. `from <module> import <names>` brings specific names into the importing
-; file's scope; @import marks the statement, @import.from its source module, @import.name
-; each imported name. Node types match tree-sitter-python.
-
-; --- Namespace regions ---
-(class_definition name: (identifier) @module.name) @module
+; Python linkage. `from <module> import <names>` brings specific names into the
+; importing file's scope; @import marks the statement, @import.from its source module,
+; @import.name each imported name. A class body is not tagged a namespace region: a
+; method is reachable only as `C.method`, never importable by bare name, so it is left
+; out of the corpus symbol table. Node types match tree-sitter-python.
 
 ; --- from <module> import <names> ---
 (import_from_statement) @import

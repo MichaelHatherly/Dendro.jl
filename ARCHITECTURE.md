@@ -170,10 +170,10 @@ Reporting:
   cohabiting. Binding-keyed but still syntactic, within one file. Included before
   `corpus.jl`, which calls it.
 - `linkage.jl` defines corpus-wide symbol resolution. `corpus_symbols` builds a
-  `SymbolTable` of every top-level definition across the corpus, keyed by language,
-  module path, and name (module paths from a per-language `@module` capture, so a
-  nested module never collides with the file root); `unbound_references` collects the
-  references the per-file resolver left unbound. `Linkage`/`LINKAGES` carry how a
+  `SymbolTable` of every top-level definition across the corpus, each carrying its
+  enclosing module path (from a per-language `@module` capture, so a nested module is
+  distinguished from the file root); `unbound_references` collects the references the
+  per-file resolver left unbound. `Linkage`/`LINKAGES` carry how a
   language lets one file see another's names: `splice_resolve` maps a Julia `include`
   to a corpus file, `visible_defs` groups files into shared namespaces by an inclusion
   union-find and returns each file's cross-file candidates. Reuses the `bindings.jl`
