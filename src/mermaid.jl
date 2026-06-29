@@ -6,7 +6,10 @@
 
 # A label for inside a `["..."]` node: a double quote becomes the mermaid HTML entity and a
 # newline a space, so neither breaks the line.
-mmd_label(s) = replace(string(s), "\"" => "#quot;", "\n" => " ", "\r" => " ")
+mmd_label(s::AbstractString) = replace(s, "\"" => "#quot;", "\n" => " ", "\r" => " ")
+
+# A node line `id["label"]`, the label escaped. The node shape every view builds.
+mmd_node(id::AbstractString, label::AbstractString) = string(id, "[\"", mmd_label(label), "\"]")
 
 # The diagram header: the `flowchart` declaration and one `classDef` per overlay style.
 function mmd_header(io::IO, classes::Vector{Pair{String, String}})
@@ -15,6 +18,17 @@ function mmd_header(io::IO, classes::Vector{Pair{String, String}})
         println(io, "  classDef ", name, " ", style, ";")
     end
     return nothing
+end
+
+# The distinct files across a sequence of corpus units or definitions. A typed loop, not a
+# generator: a captured generator would erase the element type and read each `.file` as a
+# dynamic field access.
+function item_files(items::Union{Vector{CorpusUnit}, Vector{CorpusDef}})
+    files = Set{String}()
+    for it in items
+        push!(files, it.file)
+    end
+    return files
 end
 
 # A stable `f<k>` id per file in sorted order, the node naming the file-level views share.
@@ -26,13 +40,39 @@ function file_ids(files::Set{String})
     return ids
 end
 
-# One subgraph per group, in `order`: the subgraph id and title from each key, one node line
-# per member. The grouped-node shape the unit-level coupling and reachability views share.
-function emit_subgraphs(io::IO, order::Vector, members::Dict, id_of, title_of, node_of)
-    for key in order
-        println(io, "  subgraph ", id_of(key), "[\"", title_of(key), "\"]")
-        for m in members[key]
-            println(io, "    ", node_of(m))
+# Emit each subgraph: its id, its title, and its node lines. The frame `coupling_file`
+# builds, the node lines already formed.
+function emit_subgraphs(io::IO, subs::Vector{Tuple{String, String, Vector{String}}})
+    for (id, title, lines) in subs
+        println(io, "  subgraph ", id, "[\"", title, "\"]")
+        for line in lines
+            println(io, "    ", line)
+        end
+        println(io, "  end")
+    end
+    return nothing
+end
+
+# Group node `(subgraph-id, subgraph-title, node-id, node-label)` rows into subgraphs,
+# groups in first-seen order, and emit each. The grouped-node frame the unit-level coupling
+# and reachability views share; each builds its rows in one flat typed loop, so no captured
+# closure widens the element type and no nested loop repeats across the two.
+function emit_node_groups(io::IO, rows::Vector{Tuple{String, String, String, String}})
+    order = String[]
+    titles = Dict{String, String}()
+    lines = Dict{String, Vector{String}}()
+    for (gid, title, nid, label) in rows
+        if !haskey(lines, gid)
+            push!(order, gid)
+            titles[gid] = title
+            lines[gid] = String[]
+        end
+        push!(lines[gid], mmd_node(nid, label))
+    end
+    for gid in order
+        println(io, "  subgraph ", gid, "[\"", titles[gid], "\"]")
+        for line in lines[gid]
+            println(io, "    ", line)
         end
         println(io, "  end")
     end
@@ -48,7 +88,7 @@ function file_nodes(io::IO, fids::Dict{String, String})
 end
 
 # Class each file in `files` that carries a node, sorted, the file-level overlay.
-function class_files(io::IO, fids::Dict{String, String}, files, class::String)
+function class_files(io::IO, fids::Dict{String, String}, files::Set{String}, class::String)
     for file in sort!(collect(files))
         haskey(fids, file) && println(io, "  class ", fids[file], " ", class)
     end
@@ -116,16 +156,12 @@ end
 function coupling_unit(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable, cut::Real)
     comm = communities(graph)
     plur = community_plurality(graph, comm)
-    groups = Dict{Int, Vector{Int}}()
+    rows = Tuple{String, String, String, String}[]
     for i in eachindex(comm)
-        push!(get!(() -> Int[], groups, comm[i]), i)
+        c = comm[i]
+        push!(rows, (string("community_", c), mmd_label(basename(get(plur, c, ""))), string("u", i), graph.units[i].name))
     end
-    emit_subgraphs(
-        io, sort!(collect(keys(groups))), groups,
-        c -> string("community_", c),
-        c -> mmd_label(basename(get(plur, c, ""))),
-        i -> string("u", i, "[\"", mmd_label(graph.units[i].name), "\"]"),
-    )
+    emit_node_groups(io, rows)
     for (a, b) in sort!(collect(keys(graph.edges)))
         println(io, "  u", a, " -->|", round(graph.edges[(a, b)]; digits = 1), "| u", b)
     end
@@ -162,17 +198,20 @@ end
 function coupling_file(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, cut::Real)
     comm = communities(graph)
     plur = community_plurality(graph, comm)
-    fids = file_ids(Set(u.file for u in graph.units))
+    fids = file_ids(item_files(graph.units))
     by_comm = Dict{Int, Vector{String}}()
     for (file, c) in file_community(graph, comm)
         push!(get!(() -> String[], by_comm, c), file)
     end
-    emit_subgraphs(
-        io, sort!(collect(keys(by_comm))), by_comm,
-        c -> string("community_", c),
-        c -> mmd_label(basename(get(plur, c, ""))),
-        file -> string(fids[file], "[\"", mmd_label(basename(file)), "\"]"),
-    )
+    subs = Tuple{String, String, Vector{String}}[]
+    for c in sort!(collect(keys(by_comm)))
+        lines = String[]
+        for file in sort!(by_comm[c])
+            push!(lines, mmd_node(fids[file], basename(file)))
+        end
+        push!(subs, (string("community_", c), mmd_label(basename(get(plur, c, ""))), lines))
+    end
+    emit_subgraphs(io, subs)
     agg = Dict{Tuple{String, String}, Float64}()
     for ((a, b), w) in graph.edges
         fa, fb = graph.units[a].file, graph.units[b].file
@@ -227,17 +266,12 @@ function mermaid_reachability(io::IO, files::Vector{ParsedFile}, table::SymbolTa
 end
 
 function reach_unit(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, roots::Set{Int}, seen::BitVector)
-    by_file = Dict{String, Vector{Int}}()
+    fids = file_ids(item_files(table.defs))
+    rows = Tuple{String, String, String, String}[]
     for (i, d) in enumerate(table.defs)
-        push!(get!(() -> Int[], by_file, d.file), i)
+        push!(rows, (fids[d.file], mmd_label(basename(d.file)), string("d", i), d.name))
     end
-    fids = file_ids(Set(keys(by_file)))
-    emit_subgraphs(
-        io, sort!(collect(keys(by_file))), by_file,
-        file -> fids[file],
-        file -> mmd_label(basename(file)),
-        i -> string("d", i, "[\"", mmd_label(table.defs[i].name), "\"]"),
-    )
+    emit_node_groups(io, rows)
     edges = Set{Tuple{Int, Int}}()
     for i in eachindex(adj), j in adj[i]
         i == j || push!(edges, (i, j))
@@ -256,7 +290,7 @@ function reach_unit(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, roots:
 end
 
 function reach_file(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, seen::BitVector)
-    fids = file_ids(Set(d.file for d in table.defs))
+    fids = file_ids(item_files(table.defs))
     file_nodes(io, fids)
     edges = Set{Tuple{String, String}}()
     for i in eachindex(adj), j in adj[i]
@@ -266,8 +300,14 @@ function reach_file(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, seen::
     for (a, b) in sort!(collect(edges))
         println(io, "  ", fids[a], " --> ", fids[b])
     end
-    alive = Set(table.defs[i].file for i in eachindex(table.defs) if seen[i])
-    dead = Set(file for file in keys(fids) if !(file in alive))
+    alive = Set{String}()
+    for i in eachindex(table.defs)
+        seen[i] && push!(alive, table.defs[i].file)
+    end
+    dead = Set{String}()
+    for file in keys(fids)
+        file in alive || push!(dead, file)
+    end
     class_files(io, fids, dead, "dead")
     return nothing
 end
@@ -280,7 +320,11 @@ function clone_findings(files::Vector{ParsedFile}, min_size::Integer, threshold:
     out = Finding[]
     append!(out, cluster_duplicates(files; min_size))
     append!(out, cluster_near_duplicates(files; min_size, threshold, radius_factor))
-    return filter(f -> !f.suppressed, out)
+    active = Finding[]
+    for f in out
+        f.suppressed || push!(active, f)
+    end
+    return active
 end
 
 # The clone clusters as a flowchart: each cluster a subgraph of its members (or the files
@@ -326,7 +370,11 @@ function clones_file(io::IO, clusters::Vector{Finding})
     file_nodes(io, fids)
     edges = Set{Tuple{String, String, Bool}}()
     for cl in clusters
-        spans = sort!(unique(loc.file for loc in cl.locations))
+        spans = String[]
+        for loc in cl.locations
+            push!(spans, loc.file)
+        end
+        sort!(unique!(spans))
         for k in 2:length(spans)
             push!(edges, (spans[1], spans[k], cl.metric === RELATIONAL.duplicate))
         end

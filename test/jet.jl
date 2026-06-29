@@ -22,7 +22,11 @@
 # resolution, the per-def visibility navigation) raised the sound count again from 478 to
 # 481, more `Any`-node tree walks of the same kind. Routing visibility through the
 # function-valued `Linkage.visibility` field, like the other per-language hooks, raised
-# sound to 482 and opt to 14: one more dynamic dispatch of the kind already counted.
+# sound to 482 and opt to 14: one more dynamic dispatch of the kind already counted. The
+# mermaid graph export (`mermaid.jl`) raised sound from 482 to 505, opt unchanged: a second
+# public entrypoint, `mermaid`, carries `analyze`'s keyword-argument and `Vector{String}`
+# paths machinery, and its three renderers walk the same `Any` nodes the corpus passes do,
+# no new kind of dynamic dispatch, just a second site for it.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -30,7 +34,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 482   # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 505   # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 14      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
