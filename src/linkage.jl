@@ -104,33 +104,32 @@ function root_scope(scopes::Vector{ScopeEntry})
     return best
 end
 
-# The visibility a definition declares, for a language that marks it per definition:
-# `:public`/`:private`, or `:unknown` where the language has no usable marker.
-# `modifier_public` treats `:unknown` as public, the safe direction. The navigation is
-# grammar-specific, from the captured name node to its declaration's modifier.
+# The visibility a definition declares, read through the language's `Linkage.visibility`
+# hook: `:public`/`:private`, or `:unknown` where the language marks nothing per definition.
+# `modifier_public` treats `:unknown` as public, the safe direction.
 #
-# Only a marker whose private definition cannot be reached cross-file by name is read: a
-# Rust non-`pub` item is module-private, a C/C++ `static` function is file-local, a Ruby,
-# Java, or PHP `private` method is same-class, so an unreferenced one is genuinely dead.
-# A package-private Java or PHP member is left public on purpose: it is reached
+# Each hook reads only a marker whose private definition cannot be reached cross-file by
+# name: a Rust non-`pub` item is module-private, a C/C++ `static` function is file-local, a
+# Ruby, Java, or PHP `private` method is same-class, so an unreferenced one is genuinely
+# dead. A package-private Java or PHP member is left public on purpose: it is reached
 # same-package without an import the resolver sees, so flagging it would be a false
 # positive.
 function def_visibility(file::ParsedFile, defnode::TreeSitter.Node)
-    lang = file.language
-    lang === :rust && return rust_visibility(defnode)
-    (lang === :c || lang === :cpp) && return static_visibility(file, defnode)
-    lang === :ruby && return ruby_visibility(file, defnode)
-    lang === :java && return java_visibility(defnode)
-    lang === :php && return php_visibility(file, defnode)
-    return :unknown
+    link = get(LINKAGES, file.language, nothing)
+    link === nothing && return :unknown
+    return link.visibility(file, defnode)::Symbol
 end
+
+# A language that marks no per-definition visibility: every symbol is `:unknown`, read as
+# public. Its public surface is the export list or naming convention, not a modifier.
+no_visibility(::ParsedFile, ::TreeSitter.Node) = :unknown
 
 # Java visibility from a `modifiers` child of the declaration. A class is public only when
 # marked `public`; a package-private one is private, since the `:package` linkage resolves
 # its same-package references, so an unreferenced one is dead. A method is private only
 # when marked `private`, reached within its own file; a package-private method stays public,
 # reached same-package through a receiver the resolver does not follow.
-function java_visibility(defnode::TreeSitter.Node)
+function java_visibility(::ParsedFile, defnode::TreeSitter.Node)
     decl = TreeSitter.parent(defnode)
     TreeSitter.is_null(decl) && return :unknown
     kind = TreeSitter.node_type(decl)
@@ -167,7 +166,7 @@ end
 # Rust marks a public item with a `visibility_modifier` (`pub`, `pub(crate)`) child on the
 # declaration, the captured name's parent. Its absence is private to the module, so an
 # unreferenced one is unreachable from anywhere.
-function rust_visibility(defnode::TreeSitter.Node)
+function rust_visibility(::ParsedFile, defnode::TreeSitter.Node)
     decl = TreeSitter.parent(defnode)
     TreeSitter.is_null(decl) && return :unknown
     for c in TreeSitter.children(decl)
@@ -311,14 +310,18 @@ end
 # resolves without an import (Java). `resolve_target` maps a captured include/import string
 # to corpus file paths; `is_exported` decides whether a definition is visible outside its
 # file; `is_public` decides whether it is part of the corpus's public API, the surface
-# reachability roots a dead-code search from. Visibility to another file and membership of
-# the public API are different questions: a Julia name is visible across an `include`
-# splice without being exported, so `:unreferenced` reads `is_public`, not `is_exported`.
+# reachability roots a dead-code search from; `visibility` reads a definition's declared
+# modifier (`:public`/`:private`/`:unknown`), the input `is_public` consults for a language
+# whose API surface is a per-definition keyword rather than an export list. Visibility to
+# another file and membership of the public API are different questions: a Julia name is
+# visible across an `include` splice without being exported, so `:unreferenced` reads
+# `is_public`, not `is_exported`.
 struct Linkage
     model::Symbol
     resolve_target::Function
     is_exported::Function
     is_public::Function
+    visibility::Function
 end
 
 # Resolution works in POSIX-separated path space: the corpus key set and the paths the
@@ -494,17 +497,17 @@ capitalized_public(def::CorpusDef, ::Set{String}) = !isempty(def.name) && isuppe
 modifier_public(def::CorpusDef, ::Set{String}) = def.visibility !== :private
 
 const LINKAGES = Dict{Symbol, Linkage}(
-    :julia => Linkage(:splice, splice_resolve, splice_exported, export_public),
-    :c => Linkage(:splice, splice_resolve, splice_exported, modifier_public),
-    :cpp => Linkage(:splice, splice_resolve, splice_exported, modifier_public),
-    :ruby => Linkage(:splice, ruby_resolve, splice_exported, modifier_public),
-    :go => Linkage(:directory, no_resolve, import_exported, capitalized_public),
-    :python => Linkage(:import, python_resolve, import_exported, underscore_public),
-    :javascript => Linkage(:import, js_resolve, js_exported, export_public),
-    :typescript => Linkage(:import, js_resolve, js_exported, export_public),
-    :rust => Linkage(:import, rust_resolve, import_exported, modifier_public),
-    :java => Linkage(:package, java_resolve, import_exported, modifier_public),
-    :php => Linkage(:import, php_resolve, import_exported, modifier_public),
+    :julia => Linkage(:splice, splice_resolve, splice_exported, export_public, no_visibility),
+    :c => Linkage(:splice, splice_resolve, splice_exported, modifier_public, static_visibility),
+    :cpp => Linkage(:splice, splice_resolve, splice_exported, modifier_public, static_visibility),
+    :ruby => Linkage(:splice, ruby_resolve, splice_exported, modifier_public, ruby_visibility),
+    :go => Linkage(:directory, no_resolve, import_exported, capitalized_public, no_visibility),
+    :python => Linkage(:import, python_resolve, import_exported, underscore_public, no_visibility),
+    :javascript => Linkage(:import, js_resolve, js_exported, export_public, no_visibility),
+    :typescript => Linkage(:import, js_resolve, js_exported, export_public, no_visibility),
+    :rust => Linkage(:import, rust_resolve, import_exported, modifier_public, rust_visibility),
+    :java => Linkage(:package, java_resolve, import_exported, modifier_public, java_visibility),
+    :php => Linkage(:import, php_resolve, import_exported, modifier_public, php_visibility),
 )
 
 # The names a file marks for export, from the `@export` captures of its linkage query.
@@ -732,7 +735,7 @@ The export names that gate each file's public definitions. For an import model t
 is the file's own [`file_exports`](@ref); for a splice model it is the union across the
 file's inclusion component, so a Julia name exported from the module file counts as
 public for the spliced file that defines it. A language with no linkage maps to an empty
-set, which its `always_public` predicate ignores.
+set; its convention or modifier predicate decides publicness without consulting it.
 """
 function public_surface(files::Vector{ParsedFile})
     corpus = Corpus(Set{String}(to_posix(f.file) for f in files))

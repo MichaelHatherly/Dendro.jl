@@ -59,6 +59,21 @@ end
     @test hit.suppressed
 end
 
+@testitem ":unreferenced keeps every overload of a referenced name alive" setup = [Fixtures] tags = [:unreferenced] begin
+    # `entry` is a root and names `render`; two `render` methods exist. A within-file
+    # reference binds lexically to one, but name resolution cannot tell overloads apart, so
+    # reaching one reaches all. Without that, the unbound overload would be a false positive.
+    a = Fixtures.parsedfile(:julia, "export entry\nentry() = render(1)\nrender(x::Int) = 1\nrender(x::String) = 2\n"; file = "a.jl")
+    @test isempty(Dendro.cluster_unreferenced([a], Dendro.corpus_symbols([a])))
+end
+
+@testitem ":unreferenced flags a dead private type and const" setup = [Fixtures] tags = [:unreferenced] begin
+    # Reachability covers every top-level definition, not only functions: a struct and a
+    # const nothing names, neither exported, are dead.
+    a = Fixtures.parsedfile(:julia, "export keep\nkeep() = 1\nstruct Dead end\nconst GONE = 1\n"; file = "a.jl")
+    @test Fixtures.unref_sites([a]) == Set([("a.jl", "Dead"), ("a.jl", "GONE")])
+end
+
 @testitem ":unreferenced reads Go capitalisation as the public surface" setup = [Fixtures] tags = [:unreferenced] begin
     # `Entry` is exported (capitalised), so a root; it calls `helper`, which stays live.
     # `dead` is private and unreached.
@@ -71,6 +86,15 @@ end
     src = "def public_fn():\n    return 1\ndef _dead():\n    return 2\n"
     p = Fixtures.parsedfile(:python, src; file = "m.py")
     @test Fixtures.unref_sites([p]) == Set([("m.py", "_dead")])
+end
+
+@testitem ":unreferenced reaches a private Python name through an import" setup = [Fixtures] tags = [:unreferenced] begin
+    # `main` imports and calls `_used`; the cross-file import edge keeps the underscore-
+    # private name alive. `_dead` is private and no file imports it, so it is flagged. This
+    # exercises cross-file resolution for the import model the splice cases cover for Julia.
+    main = Fixtures.parsedfile(:python, "from helper import _used\n_used()\n"; file = "main.py")
+    helper = Fixtures.parsedfile(:python, "def _used():\n    return 1\ndef _dead():\n    return 2\n"; file = "helper.py")
+    @test Fixtures.unref_sites([main, helper]) == Set([("helper.py", "_dead")])
 end
 
 @testitem ":unreferenced reads a JS export list as the public surface" setup = [Fixtures] tags = [:unreferenced] begin
@@ -104,6 +128,14 @@ end
     # `entry` precedes the `private` toggle, a root, and calls `used`; `dead` follows it
     # and nothing reaches it.
     src = "class C\n  def entry\n    used\n  end\n  private\n  def used\n    1\n  end\n  def dead\n    2\n  end\nend\n"
+    r = Fixtures.parsedfile(:ruby, src; file = "m.rb")
+    @test Fixtures.unref_sites([r]) == Set([("m.rb", "dead")])
+end
+
+@testitem ":unreferenced reads a Ruby protected method as private" setup = [Fixtures] tags = [:unreferenced] begin
+    # `protected` marks `helper` and `dead` non-public, like `private`. `helper` is reached
+    # through the call in `entry`, a within-file edge; `dead` is unreferenced.
+    src = "class C\n  def entry\n    helper\n  end\n  protected\n  def helper\n    1\n  end\n  def dead\n    2\n  end\nend\n"
     r = Fixtures.parsedfile(:ruby, src; file = "m.rb")
     @test Fixtures.unref_sites([r]) == Set([("m.rb", "dead")])
 end
