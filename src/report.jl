@@ -232,10 +232,11 @@ end
     github_annotations(findings)
 
 Write `findings` as GitHub Actions workflow commands, one `::error`/`::warning`
-line per finding, anchored at its first location. GitHub renders each as an inline
-annotation on the matching diff line, so pair this with `analyze`'s `base` to scope
-to changed lines. Suppressed findings are omitted. High-band findings map to
-`::error`, the rest to `::warning`.
+line per finding, anchored at its first location. GitHub records each as a
+pull-request check annotation; it renders inline on the diff when the anchored line
+is part of the change, otherwise in the run's Checks tab. Pair this with `analyze`'s
+`base` to scope findings to the functions a change touched. Suppressed findings are
+omitted. High-band findings map to `::error`, the rest to `::warning`.
 """
 function github_annotations(io::IO, findings::Findings)
     for f in findings

@@ -22,9 +22,14 @@ struct Rule
     fn::Function
 end
 
-# Built-in rules, in report order. Scalar bands are fixed (warn, high) targets,
-# so a uniformly-weak codebase has a standard to improve toward rather than only
-# its own median. Drawn from common complexity guidance.
+"""
+    BUILTIN_RULES :: Vector{Rule}
+
+The default rule set, in report order. Scalar bands are fixed `(warn, high)`
+targets, so a uniformly-weak codebase has a standard to improve toward rather than
+only its own median. Drawn from common complexity guidance. Pass `rules` to
+[`analyze`](@ref) to extend or replace them.
+"""
 const BUILTIN_RULES = Rule[
     Rule(:cyclomatic, :scalar, (11, 21), (u, i) -> cyclomatic(u.node, i)),
     Rule(:cognitive_complexity, :scalar, (15, 25), (u, i) -> cognitive_complexity(u.node, i)),
@@ -40,10 +45,15 @@ const BUILTIN_RULES = Rule[
     Rule(:return_in_finally, :flag, nothing, returns_in_finally),
 ]
 
-# Rules a caller can opt into but that are off by default: return_count needs
-# per-project band tuning, trivial_wrapper has a higher false-positive rate, npath
-# grows multiplicatively so its band wants per-project tuning.
-# Use them with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
+"""
+    OPTIONAL_RULES :: Vector{Rule}
+
+Rules a caller can opt into but that are off by default: `return_count` needs
+per-project band tuning, `trivial_wrapper` has a higher false-positive rate,
+`unreachable_after_jump` flags code after an unconditional jump, and `npath` grows
+multiplicatively so its band wants per-project tuning. Use them with
+`analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
+"""
 const OPTIONAL_RULES = Rule[
     Rule(:return_count, :scalar, (4, 8), (u, i) -> return_count(u.node, i)),
     Rule(:trivial_wrapper, :flag, nothing, trivial_wrappers),
