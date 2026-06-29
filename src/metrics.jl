@@ -42,8 +42,11 @@ function_length(unit::FunctionUnit) = unit.lastline - unit.firstline + 1
 """
     parameter_count(node, index) -> Int
 
-Number of parameters in the function's signature, taken as the named children of
-the first parameter-list node the query tagged.
+Number of positional parameters in the function's signature, taken as the named
+children of the first parameter-list node the query tagged. A keyword separator
+(`;` in Julia) ends the positional list: keyword arguments are named at the call
+site, so a long keyword list is a different concern than a long positional one and
+does not count. Languages with no such separator count every named child.
 """
 # First parameter-list node in pre-order, or `nothing`. Descends the whole tree, so
 # the outer function's signature is found before any nested callable's.
@@ -59,7 +62,12 @@ end
 function parameter_count(node::TreeSitter.Node, index::QueryIndex)
     container = first_parameter_list(node, index)
     container === nothing && return 0
-    return TreeSitter.count_named_nodes(container)
+    n = 0
+    for c in TreeSitter.children(container)
+        TreeSitter.node_type(c) == ";" && break
+        TreeSitter.is_named(c) && (n += 1)
+    end
+    return n
 end
 
 """

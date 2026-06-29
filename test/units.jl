@@ -26,6 +26,22 @@ end
     @test isempty(Dendro.functions(Fixtures.idx(:julia, src)))
 end
 
+@testitem "qualified definitions are named by their final component (julia)" setup = [Fixtures] tags = [:units] begin
+    name(src) = (i = Fixtures.idx(:julia, src); Dendro.unit_name(only(Dendro.functions(i)), i))
+
+    # A qualified method is labelled by the method, not the module the lexical scan
+    # reaches first.
+    @test name("function Base.relpath(x)\n    x\nend\n") == "relpath"
+    @test name("Missings.disallowmissing(df) = df\n") == "disallowmissing"
+    @test name("function Base.show(io, x)\n    x\nend\n") == "show"
+    # The qualified short form survives the `where`/`::T` wrappers too.
+    @test name("CC.foo(x::T) where {T} = x\n") == "foo"
+
+    # An unqualified definition is unchanged.
+    @test name("function g(a, b)\n    a\nend\n") == "g"
+    @test name("h(x) = x + 1\n") == "h"
+end
+
 @testitem "nested short-form def is its own unit (julia)" setup = [Fixtures] tags = [:units] begin
     src = "function outer(x)\n    inner(y) = y > 0 ? y : -y\n    return inner(x)\nend\n"
     i = Fixtures.idx(:julia, src)

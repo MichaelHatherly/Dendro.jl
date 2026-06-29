@@ -101,6 +101,15 @@ end
     # Type annotations on parameters still count as one parameter each.
     i = Fixtures.idx(:julia, "function h(a::Int, b)\n    a\nend\n")
     @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 2
+
+    # Keyword arguments are named at the call site, so they do not count: only the
+    # two positional parameters before the `;` separator do.
+    i = Fixtures.idx(:julia, "function k(a, b::Int; c=1, d=2)\n    a\nend\n")
+    @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 2
+
+    # A keyword-only signature has no positional parameters.
+    i = Fixtures.idx(:julia, "function m(; a=1, b=2)\n    a\nend\n")
+    @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 0
 end
 
 @testitem "boolean_complexity (julia)" setup = [Fixtures] tags = [:metrics] begin

@@ -27,6 +27,11 @@ end
     # `x != x` NaN check.
     @test flag("f(x) = x + x") == 0
     @test flag("f(x) = x != x") == 0
+
+    # `=>` pairs an identity entry in a canonicalisation table, not a redundant
+    # comparison, so a self-mapping is left alone.
+    @test flag("f() = Dict(\"Accept\" => \"Accept\")") == 0
+    @test flag("f() = (:a => :a)") == 0
 end
 
 @testitem "duplicate_branches (julia)" setup = [Fixtures] tags = [:flags] begin

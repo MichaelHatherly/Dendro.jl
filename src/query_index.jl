@@ -47,7 +47,7 @@ const CONCEPT_NAMES = (
     :short_function, :decision, :continuation, :nesting, :short_circuit,
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
-    :loop, :switch, :ternary, :try, :case,
+    :loop, :switch, :ternary, :try, :case, :def_name,
 )
 
 """
@@ -89,6 +89,10 @@ struct QueryIndex
     ternary::Concept
     try_stmt::Concept
     case::Concept
+    # The defining name of a callable, captured only where the lexical first name
+    # would mislabel it: a qualified method `Module.method` whose final component is
+    # the name. Empty for languages and definitions whose name is the first `@name`.
+    def_name::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -110,6 +114,7 @@ struct QueryIndex
         finally_clause, call, binary_expr, conditional = Concept(), Concept(), Concept(), Concept()
         terminal, operator, loop, switch = Concept(), Concept(), Concept(), Concept()
         ternary, try_stmt, case = Concept(), Concept(), Concept()
+        def_name = Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "nesting" => nesting,
@@ -119,14 +124,14 @@ struct QueryIndex
             "finally" => finally_clause, "call" => call, "binary_expr" => binary_expr,
             "conditional" => conditional, "terminal" => terminal, "operator" => operator,
             "loop" => loop, "switch" => switch, "ternary" => ternary, "try" => try_stmt,
-            "case" => case,
+            "case" => case, "def_name" => def_name,
         )
         return new(
             language, source, FunctionUnit[], Set{NodeId}(),
             short_function, decision, continuation, nesting, short_circuit, parameter,
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
-            try_stmt, case, by_name, Dict{NodeId, NodeId}(), scope_captures,
+            try_stmt, case, def_name, by_name, Dict{NodeId, NodeId}(), scope_captures,
         )
     end
 end
