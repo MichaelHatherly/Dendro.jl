@@ -109,6 +109,15 @@
         return "function $name($(name)0)\n$body\nend\n"
     end
 
+    # A function with `n` sequential `if` guards, so `cyclomatic` is `n + 1` with flat
+    # nesting and no flags. Sized to sit between the default warn and high cyclomatic
+    # bands, the recurring fixture for the config band tests.
+    guards(name, n) = string(
+        "function $name($(name)0)\n",
+        join("    if $(name)0 > $i\n        return $i\n    end\n" for i in 1:n),
+        "    return 0\nend\n"
+    )
+
     # A function with `n` empty `catch` blocks, so it carries `n` `:empty_catch` flags.
     catchfn(name, n) = string(
         "function $name($(name)0)\n",

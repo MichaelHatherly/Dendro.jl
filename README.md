@@ -113,6 +113,59 @@ them, greyed; `:all` keeps everything; `:auto` (the default) filters at `:unit` 
 the whole graph at `:file`. So `granularity = :unit` is readable out of the box, and
 `focus = :all` opts back into the full graph.
 
+## Command line
+
+`julia -m Dendro <path>...` runs the same analysis from a shell, in an environment
+where Dendro is installed. It prints the report and, under `--check`, exits non-zero
+when anything is reported. Installed as an app, it is the `dendro` command.
+
+```bash
+julia -m Dendro src                       # report the findings
+julia -m Dendro --base=origin/main src    # only the lines a change touched
+julia -m Dendro --check src               # exit 1 on any error-severity finding (CI gate)
+julia -m Dendro --format=github src       # GitHub Actions annotations
+```
+
+The default report ranks every function by percentile, so it is never empty, the
+triage view. `--check` instead gates on the `:high` floor, the error-severity findings
+(high-band scalars and all flags), so a clean codebase exits 0 and a regression exits
+1. `--config=<file>` reads a config file in place of discovery, `--no-config` ignores
+config files, `--cut=<float>` sets the percentile cutoff. `--help` lists every flag.
+
+## Configuration
+
+The bands a finding is judged against are drawn from common complexity guidance.
+They are deliberate opinions, and a project retunes them from a `.dendro.toml` at its
+repo root, no code changes. Discovery is a cascade, merged key by key, last wins: the
+built-in defaults, a user-global `~/.config/dendro/config.toml`, the repo
+`.dendro.toml`, then any explicit `analyze` keyword.
+
+```toml
+# .dendro.toml
+cut = 0.97                 # percentile cutoff for corpus-relative flags
+
+[bands]
+cyclomatic = [15, 30]      # scalar metric: override (warn, high)
+function_length = [60, 120]
+low_cohesion = [5, 7]      # relational metric: override its band
+
+[rules]
+npath = true               # enable an optional rule
+parameter_count = false    # disable a built-in rule
+
+[clones]
+min_size = 12              # min named-node subtree to count as a clone
+threshold = 0.9           # near-miss similarity cutoff
+radius_factor = 0.5       # candidate-search radius, as a fraction of function size
+```
+
+`[bands]` keys are the scalar metric names plus the four relational names
+(`unnatural`, `low_cohesion`, `scattered`, `misplaced`); `[rules]` keys are any rule
+name; `[clones]` sets the duplicate-detection thresholds. An unknown key warns and is
+ignored, so a typo is visible rather than silent. The bands, the `cut`, the clone
+thresholds, and rule on/off are configurable; the corpus floors and model internals
+stay fixed.
+
 ## Languages
 
 bash, c, cpp, go, java, javascript, julia, php, python, ruby, rust, typescript.

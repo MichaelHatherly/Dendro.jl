@@ -37,3 +37,9 @@ Rule
 BUILTIN_RULES
 OPTIONAL_RULES
 ```
+
+## Configuration
+
+```@docs
+Config
+```

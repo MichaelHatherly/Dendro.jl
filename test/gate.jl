@@ -155,3 +155,26 @@ end
 
     @test_throws "Dendro: `since` ref not found" Dendro.errors(src; since = "no-such-ref")
 end
+
+@testitem "quality gate honors a repo .dendro.toml" tags = [:gate] setup = [Fixtures] begin
+    using Dendro: errors
+
+    # A referenced flat function whose cyclomatic count sits under the default bands, so the
+    # floor is empty until the repo file tightens the band. `modsrc` calls `f`, so the
+    # unreferenced pass stays quiet and cyclomatic is the only band in play. The gate
+    # resolves the same config as `analyze`, so the retune reaches it. The global layer is
+    # isolated so a developer's own config cannot flag the function first.
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "m.jl"), Fixtures.modsrc(["f(1)"], Fixtures.guards("f", 6)))
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            @test isempty(errors(src))   # default bands leave the floor empty
+
+            write(joinpath(root, ".dendro.toml"), "[bands]\ncyclomatic = [1, 2]\n")
+            flagged = errors(src)
+            @test !isempty(flagged)
+            @test any(f -> f.metric === :cyclomatic, flagged)
+        end
+    end
+end

@@ -26,7 +26,7 @@ fkey(f::Finding, root::AbstractString)::FloorKey =
 # corpus and manufacture deltas. An empty archive (paths new at `since`) leaves the count
 # empty, so every HEAD finding reads as new. The ref is pre-checked, so a missing ref
 # throws rather than silently degrading to the floor.
-function base_floor_counts(roots::Vector{String}, since, root::AbstractString; rules, ignore, language)
+function base_floor_counts(roots::Vector{String}, since, root::AbstractString; config, rules, ignore, language)
     refspec = string(since, "^{commit}")
     verified = success(pipeline(`git -C $root rev-parse --verify --quiet $refspec`; stdout = devnull, stderr = devnull))
     verified || error("Dendro: `since` ref not found: $since")
@@ -44,7 +44,7 @@ function base_floor_counts(roots::Vector{String}, since, root::AbstractString; r
         troot = realpath(tmp)
         tpaths = String[joinpath(troot, r) for r in rels if ispath(joinpath(troot, r))]
         (archived && !isempty(tpaths)) || return
-        for f in high_floor(active(analyze(tpaths; rules, ignore, language)))
+        for f in high_floor(active(analyze(tpaths; config, rules, ignore, language)))
             k = fkey(f, troot)
             counts[k] = get(counts, k, 0) + 1
         end
@@ -69,7 +69,7 @@ function ratchet(head::Findings, base_counts::Dict{FloorKey, Int}, root::Abstrac
 end
 
 """
-    errors(paths; since=nothing, rules=BUILTIN_RULES, ignore=String[], language=nothing) -> Findings
+    errors(paths; since=nothing, config=nothing, rules=nothing, ignore=String[], language=nothing) -> Findings
 
 The error-severity findings over `paths`: the deterministic floor, every finding at
 the `:high` absolute band (high-band scalars and all flags), with inline
@@ -79,6 +79,12 @@ This is the gate companion to [`analyze`](@ref). `analyze` ranks by corpus perce
 for triage and so is never empty; `errors` reads only the fixed bands, so it is
 satisfiable and stable, suitable for a CI gate. Assert `isempty(errors(path))` in a
 test and every package's existing `Pkg.test()` gates on Dendro for free.
+
+Like [`analyze`](@ref), `errors` honors a [`Config`](@ref): it discovers one from the
+repo `.dendro.toml` unless a `config` is passed, so a project that retunes a band or
+toggles a rule sees the change in the gate, not only in `analyze`. The same config
+scores the working tree and the `since` base, so a retuned band never reads as a
+regression on its own.
 
 With `since`, a git ref, the result is the ratchet: the floor at the working tree
 minus the floor at that ref. A finding the change introduced is reported; one that
@@ -91,16 +97,19 @@ misconfiguration, never a silent fall-back to the floor.
 findings to changed lines for annotations; `since` is a finding-set difference, the
 gate.
 
-`rules`, `ignore`, and `language` pass through to [`analyze`](@ref).
+`config`, `rules`, `ignore`, and `language` pass through to [`analyze`](@ref); `rules`
+absent, the active set is the config's resolution of [`BUILTIN_RULES`](@ref) and the
+enabled [`OPTIONAL_RULES`](@ref).
 """
 function errors(
         paths::Union{AbstractString, AbstractVector{<:AbstractString}};
-        since = nothing, rules = BUILTIN_RULES, ignore = String[], language = nothing
+        since = nothing, config = nothing, rules = nothing, ignore = String[], language = nothing
     )
-    head = high_floor(active(analyze(paths; rules, ignore, language)))
-    since === nothing && return head
     roots::Vector{String} = paths isa AbstractString ? [paths] : collect(paths)
+    cfg::Config = config === nothing ? discover_config(roots) : config
+    head = high_floor(active(analyze(paths; config = cfg, rules, ignore, language)))
+    since === nothing && return head
     root = git_toplevel(roots)
-    base = base_floor_counts(roots, since, root; rules, ignore, language)
+    base = base_floor_counts(roots, since, root; config = cfg, rules, ignore, language)
     return ratchet(head, base, root)
 end

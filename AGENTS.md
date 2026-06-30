@@ -32,7 +32,13 @@ The fixed bands are a standard, not a measurement. They are deliberate targets
 drawn from common complexity guidance, so a weak codebase has something to improve
 toward rather than only its own median to match. They are opinions, and opinions
 can be retuned, but they are never derived from the corpus. The corpus is what the
-percentile score is for.
+percentile score is for. A project retunes them in a `.dendro.toml` at its root,
+the cascade resolved in `config.jl`: built-in defaults, then a user-global config,
+then the repo file, then explicit `analyze` keywords, merged key by key. Only the
+flagging opinions are configurable: the bands, the percentile cut, the clone-detection
+thresholds, and which rules are active. The corpus floors and the model internals are
+not. An unknown key warns rather than failing, the same honest-over-silent stance as a
+typo'd `dendro-ignore`.
 
 Syntactic and shallow, on purpose. Dendro reads tree shape and resolves names
 lexically, never types. It matches a reference to the definition it lexically names,

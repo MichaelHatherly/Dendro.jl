@@ -29,10 +29,10 @@ each once, builds a baseline from that corpus, runs the per-file path above
 against it for each file,
 and appends the corpus-relational findings: cross-file duplicates, naturalness
 outliers, low-cohesion files, misplaced units, scattered files, and unreferenced
-private definitions. The active rule set is a value it carries: the
-`rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
-per-file scoring, and suppression validation, so a caller extends the checks
-without touching the pipeline. The baseline-from-the-corpus step is what makes
+private definitions. The active rule set is a value it carries, resolved from a
+`Config` (see Configuration) unless the `rules` keyword overrides it, and it threads
+through baseline sampling, per-file scoring, and suppression validation, so a caller
+extends the checks without touching the pipeline. The baseline-from-the-corpus step is what makes
 relative scoring work with no setup, for a single file as much as a folder: a
 file's own functions are the distribution it is scored against.
 
@@ -47,6 +47,31 @@ against that ref via `changed_ranges` and restricts each file's findings (and th
 duplicate clusters, exact and near, through the shared `scope_clusters`) to the
 touched line ranges. Nothing else branches the flow.
 
+## Configuration
+
+The bands a finding is judged against are tunable, the cascade resolved in
+`config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
+the four relational bands, a rule on/off override dict, and the three clone-detection
+thresholds. `discover_config(roots)` accumulates each layer's overrides starting from
+the built-in defaults (the relational band consts, `DEFAULT_CUT`, the clone consts,
+empty override dicts), overlaying a user-global
+`~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`,
+then builds one `Config`. Each layer is `apply_toml!`, which touches only the keys
+present and warns on an unknown one. `analyze` then resolves without mutating: `cfg =
+discover_config(roots)` unless a `config` is passed, an explicit `cut` resolves over
+`cfg.cut` (`something(cut, cfg.cut)`), and `resolve_rules(cfg)` builds the active rule
+set, dropping disabled built-ins, adding enabled optionals, and rebanding each scalar
+rule from `cfg.bands`. The relational bands thread into the `cluster_*` calls. Reading
+the config rather than mutating it means no copy is needed, even when a caller passes
+their own. Discovery is source precedence, never spatial: one corpus, one baseline,
+one set of bands per run, since the percentile half is corpus-global.
+
+`main.jl` is the CLI behind `julia -m Dendro` and the `dendro` app (`[apps.dendro]` in
+`Project.toml`, wired through `@main`). It parses argv into `CLIOptions`, discovers the
+config, runs `analyze`, prints the report or GitHub annotations, and returns an exit
+code, 1 under `--check` when anything is reported. It reads the same cascade, so a repo
+with a `.dendro.toml` gets its bands with no flags passed.
+
 ## Gating
 
 `analyze` answers triage, "where to look", and ranks by corpus percentile, so its
@@ -57,7 +82,10 @@ high-band scalars plus all flags (flags are always `:high`). Percentile-only
 findings carry `:ok`/`:warn` and drop out, so the floor never fails on rank alone.
 Inline `dendro-ignore` directives apply first, so a suppressed finding lifts the
 gate. Assert `isempty(errors(path))` in a test and every package's `Pkg.test()`
-gates on Dendro for free.
+gates on Dendro for free. Like `analyze`, `errors` resolves a `Config` (see
+Configuration), so a repo `.dendro.toml` that retunes a band or toggles a rule reaches
+the gate, and it scores the working tree and the `since` base against the same config,
+so a retune never reads as a regression on its own.
 
 With `since`, a git ref, `errors` becomes a ratchet: the floor at the working tree
 minus the floor at that ref. `base_floor_counts` materialises the base by `git
@@ -266,6 +294,10 @@ Reporting:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
   Pure path logic, no parsing. Included before `corpus.jl`, which calls it.
+- `config.jl` defines the immutable `Config` and the threshold cascade:
+  `discover_config` (accumulate the user-global then repo `.dendro.toml` overrides and
+  build one `Config`), `apply_toml!` (one layer, warning on unknown keys), and
+  `resolve_rules` (the config's rule set). Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
   folder for analysable files, pruning ignored paths), `collect_corpus` (resolve a
   list of roots to the unique set of file paths to parse, the shared front of
@@ -286,6 +318,10 @@ Reporting:
   the unit-index and file-path node ids. A graph renderer rebuilds the structure it draws
   from the corpus rather than from `Findings`. Included after `corpus.jl`, whose
   `collect_corpus` and `parse_corpus` it reuses.
+- `main.jl` defines the CLI `main` behind `julia -m Dendro` and the `dendro` app:
+  `parse_args` into `CLIOptions`, `run_cli` (discover config, `analyze`, emit, exit
+  code), and the `@main` wiring. Included last, since it calls `analyze`, `active`,
+  and `github_annotations`.
 
 ## Core types
 

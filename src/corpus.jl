@@ -44,7 +44,7 @@ end
 function git_toplevel(paths::Union{AbstractString, AbstractVector{<:AbstractString}})
     ref = paths isa AbstractString ? paths : first(paths)
     dir = isdir(ref) ? ref : dirname(ref)
-    return String(strip(read(`git -C $dir rev-parse --show-toplevel`, String)))
+    return String(strip(read(pipeline(`git -C $dir rev-parse --show-toplevel`; stderr = devnull), String)))
 end
 
 # A diff scope: the git toplevel and the changed line ranges per file, relative to
@@ -110,7 +110,7 @@ function collect_corpus(roots::Vector{String}, ignore, language)
 end
 
 """
-    analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, threshold=$DEFAULT_THRESHOLD, radius_factor=$DEFAULT_RADIUS_FACTOR, language=nothing, rules=BUILTIN_RULES, ignore=String[]) -> Findings
+    analyze(path; base=nothing, cut=nothing, min_size=nothing, threshold=nothing, radius_factor=nothing, language=nothing, rules=nothing, ignore=String[], config=nothing) -> Findings
     analyze(paths::AbstractVector; ...) -> Findings
 
 Analyze the file or folder at `path`. Every function gets scalar and flag metrics;
@@ -129,8 +129,16 @@ to the one git toplevel and the repo-wide diff scopes them.
 `threshold` is the LCS-similarity cutoff for a near-miss, `radius_factor` scales the
 candidate-search radius to a function's size.
 
-`rules` is the active rule set, defaulting to [`BUILTIN_RULES`]. Append your own
-[`Rule`](@ref)s to lint for a project's structural conventions:
+Thresholds come from a [`Config`](@ref): the bands, the percentile `cut`, and which
+rules are active. By default `analyze` discovers one, merging a user-global config and
+the repo `.dendro.toml` over the built-in defaults.
+Pass `config` to supply one directly and skip discovery. An explicit `cut` or `rules`
+overrides the config, so a caller keeps the final say.
+
+`cut` is the percentile cutoff a corpus-relative metric flags above; it defaults to
+the config's, `0.95` absent a file. `rules` is the active rule set; absent, it is the
+config's resolution of [`BUILTIN_RULES`](@ref) and the enabled [`OPTIONAL_RULES`](@ref).
+Pass your own to lint for a project's structural conventions:
 `analyze(path; rules = [BUILTIN_RULES; my_rule])`.
 
 `ignore` is a list of gitignore-style patterns, matched against each path relative
@@ -143,16 +151,21 @@ file.
 """
 function analyze(
         paths::Union{AbstractString, AbstractVector{<:AbstractString}};
-        base = nothing, cut::Real = 0.95,
-        min_size::Integer = DEFAULT_MIN_SIZE,
-        threshold::Real = DEFAULT_THRESHOLD,
-        radius_factor::Real = DEFAULT_RADIUS_FACTOR, language = nothing,
-        rules = BUILTIN_RULES, ignore = String[]
+        base = nothing, cut = nothing,
+        min_size = nothing, threshold = nothing, radius_factor = nothing,
+        language = nothing, rules = nothing, ignore = String[], config = nothing
     )
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
+    cfg::Config = config === nothing ? discover_config(roots) : config
+    ecut = cut === nothing ? cfg.cut : Float64(cut)
+    active_rules = rules === nothing ? resolve_rules(cfg) : collect(Rule, rules)
+    msize = min_size === nothing ? cfg.min_size : Int(min_size)
+    thresh = threshold === nothing ? cfg.threshold : Float64(threshold)
+    radius = radius_factor === nothing ? cfg.radius_factor : Float64(radius_factor)
+
     corpus = collect_corpus(roots, ignore, language)
-    files = parse_corpus(corpus; language, rules)
-    bl = baseline_from(files, rules)
+    files = parse_corpus(corpus; language, rules = active_rules)
+    bl = baseline_from(files, active_rules)
 
     scope::Union{Scope, Nothing} = nothing
     if base !== nothing
@@ -168,23 +181,23 @@ function analyze(
             haskey(scope.ranges, rel) || continue
             within = scope.ranges[rel]
         end
-        scan = Scan(f.index, f.file; rules, baseline = bl, cut = cut, within = within, directives = f.directives)
+        scan = Scan(f.index, f.file; rules = active_rules, baseline = bl, cut = ecut, within = within, directives = f.directives)
         append!(findings, findings_for(scan))
     end
 
-    append!(findings, scope_clusters(cluster_duplicates(files; min_size), scope))
+    append!(findings, scope_clusters(cluster_duplicates(files; min_size = msize), scope))
     append!(
         findings, scope_clusters(
-            cluster_near_duplicates(files; min_size, threshold, radius_factor), scope
+            cluster_near_duplicates(files; min_size = msize, threshold = thresh, radius_factor = radius), scope
         )
     )
-    append!(findings, scope_clusters(cluster_unnatural(files; cut), scope))
+    append!(findings, scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope))
 
     table = corpus_symbols(files)
     graph = build_corpus_graph(files, table)
-    append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut), scope))
-    append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut), scope))
-    append!(findings, scope_clusters(cluster_scattered(files, graph; cut), scope))
+    append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = ecut, band = cfg.low_cohesion), scope))
+    append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
+    append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
     append!(findings, scope_clusters(cluster_unreferenced(files, table), scope))
     return Findings(findings)
 end
