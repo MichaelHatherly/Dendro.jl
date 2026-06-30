@@ -17,6 +17,27 @@ const SUITE = BenchmarkTools.BenchmarkGroup()
 
 const CORPUS_DIR = joinpath(@__DIR__, "..", "test", "corpus")
 
+# === Runner-speed calibration ===
+# A fixed, allocation-free compute kernel whose only job is to measure how fast the
+# runner is on a given run. `compare.jl` divides it out so a wall-clock delta
+# reflects the code, not a shared CI runner that happened to be slower that day.
+# The iteration count is pinned forever: changing it rebases every future
+# comparison against a different clock.
+const CALIBRATION_ITERATIONS = 500_000
+
+function calibration_kernel(n::Int)
+    acc = 0.0
+    x = 1.0
+    for _ in 1:n
+        x = muladd(x, 1.000_000_1, 1.0)
+        acc += x - floor(x)
+    end
+    return acc
+end
+
+SUITE["calibration"] =
+    BenchmarkTools.@benchmarkable calibration_kernel($CALIBRATION_ITERATIONS)
+
 # === End-to-end ===
 # The public pipeline over the whole test corpus: parse, baseline, per-file scoring,
 # duplicate, naturalness, and cohesion passes across all languages.
