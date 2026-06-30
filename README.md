@@ -122,11 +122,14 @@ when anything is reported. Installed as an app, it is the `dendro` command.
 ```bash
 julia -m Dendro src                       # report the findings
 julia -m Dendro --base=origin/main src    # only the lines a change touched
-julia -m Dendro --check src               # exit 1 if anything is reported (CI gate)
+julia -m Dendro --check src               # exit 1 on any error-severity finding (CI gate)
 julia -m Dendro --format=github src       # GitHub Actions annotations
 ```
 
-`--config=<file>` reads a config file in place of discovery, `--no-config` ignores
+The default report ranks every function by percentile, so it is never empty, the
+triage view. `--check` instead gates on the `:high` floor, the error-severity findings
+(high-band scalars and all flags), so a clean codebase exits 0 and a regression exits
+1. `--config=<file>` reads a config file in place of discovery, `--no-config` ignores
 config files, `--cut=<float>` sets the percentile cutoff. `--help` lists every flag.
 
 ## Configuration

@@ -23,8 +23,8 @@ const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced)
 """
     Config
 
-Resolved tuning thresholds for one analysis, built by [`discover_config`](@ref) from
-the built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
+Resolved tuning thresholds for one analysis, built by `discover_config` from the
+built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
 overrides scalar rule `(warn, high)` tuples by metric name; the four relational fields
 override the relational bands; `rules` toggles a rule on or off by name. Immutable:
 pass one to [`analyze`](@ref) with `config =` to skip file discovery.
@@ -76,17 +76,26 @@ function band_tuple(value, name, source)
     return (Int(value[1]), Int(value[2]))
 end
 
+# The override dicts an analysis accumulates across config layers: scalar bands,
+# relational bands, and rule toggles. Bundled so `apply_toml!` carries one accumulator
+# rather than three, keeping its own metrics out of the warn band.
+overrides() = (
+    bands = Dict{Symbol, Tuple{Int, Int}}(),
+    relational = Dict{Symbol, Tuple{Int, Int}}(),
+    rules = Dict{Symbol, Bool}(),
+)
+
 # Apply a `[bands]` table into the override dicts: a relational name lands in
 # `relational`, a scalar name in `bands`, anything else warns and is dropped, as a
 # typo'd directive does.
-function apply_bands!(bands, relational, table, source)
+function apply_bands!(acc, table, source)
     scalars = scalar_metric_names()
     for (name, value) in table
         sym = Symbol(name)
         if sym in RELATIONAL_BANDS
-            relational[sym] = band_tuple(value, name, source)
+            acc.relational[sym] = band_tuple(value, name, source)
         elseif sym in scalars
-            bands[sym] = band_tuple(value, name, source)
+            acc.bands[sym] = band_tuple(value, name, source)
         else
             @warn "Dendro: unknown band in $source, ignored" band = name
         end
@@ -95,12 +104,12 @@ function apply_bands!(bands, relational, table, source)
 end
 
 # Apply a `[rules]` table: each known rule name toggles on or off, anything else warns.
-function apply_rules!(rules, table, source)
+function apply_rules!(acc, table, source)
     known = rule_names()
     for (name, on) in table
         sym = Symbol(name)
         if sym in known
-            rules[sym] = Bool(on)
+            acc.rules[sym] = Bool(on)
         else
             @warn "Dendro: unknown rule in $source, ignored" rule = name
         end
@@ -112,14 +121,14 @@ end
 # leaves. Only the keys present are touched; an unknown top-level key warns rather than
 # failing, so a file written for a newer Dendro still applies the keys this version
 # knows.
-function apply_toml!(bands, relational, rules, cut, data, source)
+function apply_toml!(acc, cut, data, source)
     for (key, value) in data
         if key == "cut"
             cut = Float64(value)
         elseif key == "bands"
-            apply_bands!(bands, relational, value, source)
+            apply_bands!(acc, value, source)
         elseif key == "rules"
-            apply_rules!(rules, value, source)
+            apply_rules!(acc, value, source)
         else
             @warn "Dendro: unknown key in $source, ignored" key
         end
@@ -173,21 +182,19 @@ read in place of the discovered repo one and must exist. `use_files = false` ski
 file layers, returning the built-in defaults.
 """
 function discover_config(roots; explicit = nothing, use_files = true)
+    acc = overrides()
     cut = DEFAULT_CUT
-    bands = Dict{Symbol, Tuple{Int, Int}}()
-    relational = Dict{Symbol, Tuple{Int, Int}}()
-    rules = Dict{Symbol, Bool}()
     if use_files
         for path in config_files(roots, explicit)
-            cut = apply_toml!(bands, relational, rules, cut, TOML.parsefile(path), path)
+            cut = apply_toml!(acc, cut, TOML.parsefile(path), path)
         end
     end
     return Config(
-        cut, bands,
-        get(relational, :unnatural, UNNATURAL_BAND),
-        get(relational, :low_cohesion, LOW_COHESION_BAND),
-        get(relational, :scattered, SCATTERED_BAND),
-        get(relational, :misplaced, MISPLACED_BAND),
-        rules,
+        cut, acc.bands,
+        get(acc.relational, :unnatural, UNNATURAL_BAND),
+        get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
+        get(acc.relational, :scattered, SCATTERED_BAND),
+        get(acc.relational, :misplaced, MISPLACED_BAND),
+        acc.rules,
     )
 end

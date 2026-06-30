@@ -34,8 +34,30 @@ end
     write(joinpath(srcdir, "f.jl"), Fixtures.guards("f", 6))
     write(joinpath(root, ".dendro.toml"), "cut = 1.01\n[bands]\ncyclomatic = [3, 4]\n")
 
-    hit = only(filter(f -> f.metric === :cyclomatic, analyze(srcdir)))
+    # Isolate the user-global layer so a developer's own config cannot leak in.
+    hit = mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            only(filter(f -> f.metric === :cyclomatic, analyze(srcdir)))
+        end
+    end
     @test hit.absolute === :high
+end
+
+@testitem "config coerces values and drops unknown bands" setup = [Fixtures] tags = [:config] begin
+    using Dendro: discover_config
+
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        write(f, "cut = 1\n[bands]\nlow_cohesion = [5, 7]\nbogus = [1, 2]\n")
+        cfg = mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                @test_logs (:warn,) match_mode = :any discover_config([dir]; explicit = f)
+            end
+        end
+        @test cfg.cut == 1.0              # an integer cut coerces to Float64
+        @test cfg.low_cohesion == (5, 7)  # a relational band reaches its field
+        @test isempty(cfg.bands)          # the unknown `bogus` warned and was dropped
+    end
 end
 
 @testitem "config toggles optional and built-in rules" setup = [Fixtures] tags = [:config] begin

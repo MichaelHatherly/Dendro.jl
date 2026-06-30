@@ -20,17 +20,43 @@ end
     end
 end
 
-@testitem "cli check gates on findings" setup = [Fixtures] tags = [:cli] begin
+@testitem "cli check gates on the high floor" setup = [Fixtures] tags = [:cli] begin
     import Dendro
 
-    # A module whose exported `run` reaches `f`, so nothing reads as dead code and the
-    # only findings are the percentile outliers a high cut suppresses.
+    # A reachable function nesting six `if` blocks trips nesting_depth's :high band, so
+    # the gate fails. The percentile-ranked report is never empty, so the gate reads the
+    # satisfiable floor, not every finding.
+    mktempdir() do dir
+        write(joinpath(dir, "m.jl"), Fixtures.modsrc(["d(1)"], Fixtures.deepfn("d")))
+        redirect_stdout(devnull) do
+            @test Dendro.main(["--check", dir]) == 1   # a :high finding fails the gate
+            @test Dendro.main([dir]) == 0              # no --check, the report exits 0
+        end
+    end
+
+    # A reachable function under every band leaves the high floor empty, so the gate
+    # passes even though the percentile report still flags it.
     mktempdir() do dir
         write(joinpath(dir, "m.jl"), Fixtures.modsrc(["f(1)"], Fixtures.guards("f", 6)))
         redirect_stdout(devnull) do
-            @test Dendro.main(["--check", dir]) == 1               # percentile flags fire
-            @test Dendro.main(["--check", "--cut=1.01", dir]) == 0 # nothing left to flag
-            @test Dendro.main([dir]) == 0                          # no --check, always 0
+            @test Dendro.main(["--check", dir]) == 0
+        end
+    end
+end
+
+@testitem "cli reports input errors cleanly" setup = [Fixtures] tags = [:cli] begin
+    import Dendro
+
+    redirect_stdout(devnull) do
+        redirect_stderr(devnull) do
+            @test Dendro.main(["--cut=abc", "."]) == 1            # cut is not a number
+            @test Dendro.main(["--config=/no/such.toml", "."]) == 1  # explicit config missing
+            @test Dendro.main(["/no/such/path"]) == 1            # path does not exist
+            mktempdir() do dir
+                bad = joinpath(dir, ".dendro.toml")
+                write(bad, "cut = =\n")                          # malformed TOML
+                @test Dendro.main(["--config=$bad", dir]) == 1
+            end
         end
     end
 end

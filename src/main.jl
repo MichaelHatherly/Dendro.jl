@@ -34,6 +34,13 @@ function parse_format(value)
     throw(CLIError("--format must be text or github, got $value"))
 end
 
+# The percentile cutoff for a `--cut` value, a clean usage error on a non-number.
+function parse_cut(value)
+    n = tryparse(Float64, value)
+    n === nothing && throw(CLIError("--cut must be a number, got $value"))
+    return n
+end
+
 # Parse argv into options, throwing `CLIError` on a bad flag or missing value. `--help`
 # and `--version` are handled before this, so every remaining `--flag` is an option or
 # an error and every bare token is a path.
@@ -60,13 +67,13 @@ function parse_args(argv)
         elseif x == "--config"
             config_file = take_value!(argv, x, inline)
         elseif x == "--cut"
-            cut = parse(Float64, take_value!(argv, x, inline))
+            cut = parse_cut(take_value!(argv, x, inline))
         elseif x == "--format"
             format = parse_format(take_value!(argv, x, inline))
         elseif startswith(x, "-") && x != "-"
             throw(CLIError("unknown option $x"))
         else
-            push!(paths, inline === nothing ? x : string(x, "=", inline))
+            push!(paths, x)
         end
     end
     isempty(paths) && throw(CLIError("no paths given"))
@@ -81,13 +88,27 @@ function emit_report(findings, format)
     return nothing
 end
 
-# Resolve config, analyze, print, and return the exit code. With `--check` a non-empty
-# report exits 1, the CI gate; otherwise the run exits 0 and the report is the output.
+# Resolve config, analyze, print, and return the exit code. With `--check` the run
+# gates on the `:high` floor, the error-severity findings (high-band scalars and all
+# flags), exiting 1 when any remain and 0 on a clean floor. This is the satisfiable
+# gate `errors` computes; the percentile-ranked `analyze` report is never empty, so it
+# is the default triage output, not the gate. Paths and an explicit config are checked
+# here, the CLI boundary, so a bad one is a clean usage error rather than a stack trace.
 function run_cli(options::CLIOptions)
+    options.config_file === nothing || isfile(options.config_file) ||
+        throw(CLIError("config file not found: $(options.config_file)"))
+    for path in options.paths
+        ispath(path) || throw(CLIError("no such path: $path"))
+    end
     config = discover_config(options.paths; explicit = options.config_file, use_files = options.use_config)
     findings = active(analyze(options.paths; base = options.base, config = config, cut = options.cut))
+    if options.check
+        gated = high_floor(findings)
+        emit_report(gated, options.format)
+        return isempty(gated) ? 0 : 1
+    end
     emit_report(findings, options.format)
-    return options.check && !isempty(findings) ? 1 : 0
+    return 0
 end
 
 function print_help()
@@ -128,8 +149,8 @@ function main(argv)
     try
         return Cint(run_cli(parse_args(args)))
     catch err
-        err isa CLIError || rethrow()
-        println(stderr, "dendro: ", err.msg)
+        err isa CLIError || err isa TOML.ParserError || rethrow()
+        println(stderr, "dendro: ", err isa CLIError ? err.msg : sprint(showerror, err))
         return Cint(1)
     end
 end
