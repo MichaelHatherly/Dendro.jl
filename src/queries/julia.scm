@@ -4,9 +4,19 @@
 ; so each wrapper combination is an explicit pattern anchored to the assignment's
 ; first child.
 
-; A `function … end` delimits its body with the construct, so an empty one is an empty
-; body, not a declaration; @requires_body marks that for `empty_body`.
-(function_definition) @function @requires_body
+; A `function … end` whose signature is a call delimits its own body, so an empty one is
+; an empty implementation; @requires_body marks that for `empty_body`. A bare `function f
+; end` has a name but no call signature: a forward declaration of a zero-method generic
+; function, a contract, not flagged. The call may be wrapped in `::`/`where`, the same
+; signature shapes the short-form and qualified-name patterns enumerate.
+(function_definition) @function
+(function_definition (signature [
+  (call_expression)
+  (typed_expression (call_expression))
+  (where_expression (call_expression))
+  (where_expression (typed_expression (call_expression)))
+  (typed_expression (where_expression (call_expression)))
+])) @requires_body
 (assignment . (call_expression)) @function @short_function
 (assignment . (typed_expression . (call_expression))) @function @short_function
 (assignment . (where_expression . (call_expression))) @function @short_function

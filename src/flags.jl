@@ -80,9 +80,12 @@ True when the function `node` has an empty body. For a brace-bodied language an 
 body is a present block that does no real work; a bodyless declaration (an interface or
 abstract method, a C++ `= default`/`= delete`) is a contract, not flagged. For a
 keyword-delimited language (Julia `function … end`, Ruby `def … end`) an absent block
-is itself the empty body. A short-form `f(x) = expr` has an expression body, which
-always does work. A constructor whose work is signature-level initialization, a PHP
-promoted parameter or a C++ member-initializer list, is not empty though its block is.
+is itself the empty body, except a bare `function f end`, a forward declaration of a
+zero-method generic function whose signature is a name rather than a call, a contract
+left unflagged like a brace-bodied declaration. A short-form `f(x) = expr` has an
+expression body, which always does work. A constructor whose work is signature-level
+initialization, a PHP promoted parameter or a C++ member-initializer list, is not empty
+though its block is.
 """
 function empty_body(node::TreeSitter.Node, index::QueryIndex)
     body = function_body(node, index)
