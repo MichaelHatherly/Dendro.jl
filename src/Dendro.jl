@@ -2,11 +2,13 @@ module Dendro
 
 import NearestNeighbors
 import RelocatableFolders
+import TOML
 import TreeSitter
 
 public analyze, active, errors, github_annotations, mermaid
 public Finding, Findings, Location
 public Rule, BUILTIN_RULES, OPTIONAL_RULES
+public Config
 
 include("resolve.jl")
 include("profile.jl")
@@ -32,8 +34,10 @@ include("scattered.jl")
 include("unreferenced.jl")
 include("cohesion.jl")
 include("ignore.jl")
+include("config.jl")
 include("corpus.jl")
 include("gate.jl")
 include("mermaid.jl")
+include("main.jl")
 
 end # module
