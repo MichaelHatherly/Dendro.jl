@@ -37,7 +37,10 @@ struct Finding
     suppressed::Bool
 end
 
-# Single-location finding, the shape every per-file metric produces.
+# Single-location finding, the shape every per-file metric produces. Its nine
+# parameters mirror the struct's seven fields with the location split into file,
+# line, and unit, so the count tracks the struct, not a wide interface.
+# dendro-ignore: parameter_count
 Finding(file, line, unit, metric, value, absolute, percentile, kind, suppressed) =
     Finding(metric, [Location(file, line, unit)], value, absolute, percentile, kind, suppressed)
 

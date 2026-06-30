@@ -104,9 +104,15 @@ finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment
 suppression hides things silently, it stops being worth trusting.
 
-Dendro eats its own cooking. It runs on its own source (`test/dogfood.jl`) and
-must come back clean. If a change makes Dendro trip its own metrics, fix the code,
-not the test.
+Dendro eats its own cooking. `test/dogfood.jl` asserts `isempty(Dendro.errors(src))`,
+the deterministic error floor: every finding at the `:high` absolute band, high-band
+scalars and all flags, percentile-free. This is a superset of the old hand-listed
+metrics, so it auto-adopts any future high-band metric. Two `parameter_count` sites
+trip it, the `Finding` constructor and `mermaid_coupling`, where the parameter count
+tracks a struct's fields or a genuine set of rendering inputs. Both carry inline
+`dendro-ignore: parameter_count`, suppressed not omitted, so the count stays honest
+and the floor reports them as suppressed. If a change makes Dendro trip its own
+metrics, fix the code, not the test.
 
 ## Where the details live
 

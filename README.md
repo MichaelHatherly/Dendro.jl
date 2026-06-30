@@ -48,6 +48,34 @@ findings = analyze("src")
 high = filter(f -> f.absolute == :high, active(findings))
 ```
 
+### Gating CI
+
+`errors` is the gate companion to `analyze`. Where `analyze` ranks by percentile for
+triage and so is never empty, `errors` returns only the error-severity findings, the
+`:high`-band floor, so it is satisfiable: a clean codebase returns nothing. Assert it
+in your test suite and every `Pkg.test()` run gates on Dendro.
+
+```julia
+@testitem "Dendro quality gate" begin
+    using Dendro
+    errs = Dendro.errors("src"; since = get(ENV, "DENDRO_BASE", nothing))
+    isempty(errs) || show(stdout, MIME"text/plain"(), errs)   # name the findings in the CI log
+    @test isempty(errs)
+end
+```
+
+`show` prints the per-finding report above the assertion, so a failing gate names the
+functions that tripped it instead of just `Evaluated: false`.
+
+`since` turns the floor into a ratchet: the findings at the working tree minus those at
+a base git ref, the answer to "did this change introduce a violation". A finding that
+predates the ref, even on a line the change touched, is not reported, which supports
+adopting Dendro on a codebase that is not yet clean. Set `DENDRO_BASE` in CI to the
+pull request's base (`origin/main`, the merge base) and leave it unset locally, where
+`errors` falls back to the absolute floor. `since` is distinct from `analyze`'s `base`:
+`base` is spatial, scoping annotations to changed lines; `since` is a finding-set
+difference, the gate.
+
 `analyze` returns `Findings`, a vector of `Finding`s that prints as a report. A
 `Finding` carries the metric, its value, the absolute band (`:ok`/`:warn`/`:high`),
 and the corpus percentile:

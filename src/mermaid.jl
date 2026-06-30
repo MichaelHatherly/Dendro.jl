@@ -227,7 +227,8 @@ mermaid(paths; kw...) = mermaid(stdout, paths; kw...)
 
 # The corpus coupling graph as a flowchart: units (or files) as nodes, the cross-file
 # reference edges weighted, the communities as subgraphs, and misplaced/scattered findings
-# overlaid.
+# overlaid. The eight parameters are each a distinct rendering input the graph needs.
+# dendro-ignore: parameter_count
 function mermaid_coupling(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable, granularity::Symbol, cut::Real, focus::Symbol, context::Integer)
     mmd_header(io, view_classes(COUPLING_CLASSES, focus))
     granularity === :unit ? coupling_unit(io, files, graph, table, cut, focus, context) :

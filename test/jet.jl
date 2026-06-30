@@ -31,7 +31,12 @@
 # arguments widen `mermaid`'s kwarg lowering, and the shared `neighbourhood`/`undirected`
 # helpers are generic over the unit-index and file-path node ids, so sound mode analyses
 # their bodies with the type variable unbound to `Any`. Specialising them would reintroduce
-# the duplication the dogfood gate flags; the kinds are the ones already counted.
+# the duplication the dogfood gate flags; the kinds are the ones already counted. The
+# `errors` quality gate (`gate.jl`) raised sound from 550 to 601, opt unchanged: a third
+# public entrypoint carrying `analyze`'s keyword-argument and `Vector{String}` paths
+# machinery, and the `since` ratchet runs a second `analyze` then walks each finding's
+# locations through `fkey`/`ratchet`, the same `Any`-node and function-valued dispatch
+# already counted, just more sites for it.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -39,7 +44,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 550   # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 601   # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 14      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

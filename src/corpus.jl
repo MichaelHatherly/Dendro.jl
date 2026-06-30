@@ -38,6 +38,15 @@ function baseline_from(files::Vector{ParsedFile}, rules = BUILTIN_RULES)
     return baseline
 end
 
+# The git toplevel containing the first of `paths`, found from that path's directory.
+# The repo root the diff scope and the ratchet base both resolve their relative paths
+# against.
+function git_toplevel(paths::Union{AbstractString, AbstractVector{<:AbstractString}})
+    ref = paths isa AbstractString ? paths : first(paths)
+    dir = isdir(ref) ? ref : dirname(ref)
+    return String(strip(read(`git -C $dir rev-parse --show-toplevel`, String)))
+end
+
 # A diff scope: the git toplevel and the changed line ranges per file, relative to
 # that root. Mirrors the per-file shape `changed_ranges` returns.
 struct Scope
@@ -147,8 +156,7 @@ function analyze(
 
     scope::Union{Scope, Nothing} = nothing
     if base !== nothing
-        ref = first(roots)
-        root = String(strip(read(`git -C $(isdir(ref) ? ref : dirname(ref)) rev-parse --show-toplevel`, String)))
+        root = git_toplevel(roots)
         scope = Scope(root, changed_ranges(read(`git -C $root diff $base`, String)))
     end
 
