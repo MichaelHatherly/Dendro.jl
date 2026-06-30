@@ -73,6 +73,49 @@
         "    return $name$n\n"
     )
 
+    # --- Ratchet fixtures -----------------------------------------------------
+    # The gate ratchet (`errors(; since)`) is exercised against throwaway git repos.
+    # `gitrepo()` returns `(root, src)`: an initialised repo with an empty `src/` folder
+    # and a local identity so commits work in CI. `commit!` stages and commits quietly,
+    # so test output stays pristine.
+    function gitrepo()
+        root = mktempdir()
+        run(pipeline(`git -C $root init -q`; stdout = devnull, stderr = devnull))
+        run(pipeline(`git -C $root config user.email dendro@test`; stdout = devnull, stderr = devnull))
+        run(pipeline(`git -C $root config user.name Dendro`; stdout = devnull, stderr = devnull))
+        src = joinpath(root, "src")
+        mkpath(src)
+        return root, src
+    end
+
+    function commit!(root, msg)
+        run(pipeline(`git -C $root add .`; stdout = devnull, stderr = devnull))
+        run(pipeline(`git -C $root commit -q -m $msg`; stdout = devnull, stderr = devnull))
+        return nothing
+    end
+
+    # A single-file Julia module whose exported `run` calls each of `calls`, so every
+    # helper is reachable and the unreferenced pass stays quiet. `defs` is the helper
+    # source spliced after `run`.
+    modsrc(calls, defs) = string("module M\nexport run\nrun() = (", join(calls, "; "), ")\n", defs, "\nend\n")
+
+    # A function nesting six `if` blocks, so its `nesting_depth` of 6 trips the `:high`
+    # band. The argument seeds every guard, keeping the body self-contained.
+    function deepfn(name)
+        body = "return $(name)0"
+        for i in 6:-1:1
+            body = "if $(name)0 > $i\n$body\nend"
+        end
+        return "function $name($(name)0)\n$body\nend\n"
+    end
+
+    # A function with `n` empty `catch` blocks, so it carries `n` `:empty_catch` flags.
+    catchfn(name, n) = string(
+        "function $name($(name)0)\n",
+        join("    try\n        g($(name)0)\n    catch\n    end\n" for _ in 1:n),
+        "    return $(name)0\nend\n"
+    )
+
     # A custom flag rule a caller might supply: comments carrying a BUG marker. Mirrors
     # the built-in stub_marker rule, but names a metric Dendro does not ship.
     bug_markers(index) =

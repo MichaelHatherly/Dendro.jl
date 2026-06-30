@@ -59,6 +59,17 @@ Inline `dendro-ignore` directives apply first, so a suppressed finding lifts the
 gate. Assert `isempty(errors(path))` in a test and every package's `Pkg.test()`
 gates on Dendro for free.
 
+With `since`, a git ref, `errors` becomes a ratchet: the floor at the working tree
+minus the floor at that ref. `base_floor_counts` materialises the base by `git
+archive`ing only the scanned paths at `since` into a tempdir (no worktree or index
+mutation), analyzing that, and counting each finding's `fkey`, the metric paired with
+its location set as `(repo-relative file, unit)`. `ratchet` then walks the HEAD floor
+and emits a finding only when the base multiset has no remaining count for its key, so
+a new violation emits while a pre-existing one, even on a touched line, is matched and
+dropped. Keys are line-independent, so unrelated edits that move code do not
+manufacture deltas; renames key as new, the safe direction for a gate. This is the
+regression measure the spatial diff is not.
+
 This is distinct from the spatial diff. `analyze(; base)` filters findings to
 touched lines and feeds the annotation path; it is spatial, not a regression
 measure. `errors` is the gate.
@@ -162,8 +173,11 @@ Reporting:
 - `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
   that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
 - `gate.jl` defines `errors`, the gate view over `analyze`: `high_floor` keeps the
-  `:high`-band findings, applied after `active`. Built on plain `analyze`, it adds no
-  branch to the pipeline.
+  `:high`-band findings, applied after `active`. With `since`, `base_floor_counts`
+  archives the base revision and `ratchet` subtracts its floor by `fkey`, a
+  line-independent location-set key. Built on plain `analyze`, it adds no branch to
+  the pipeline. `git_toplevel` (`corpus.jl`) resolves the repo root for both the
+  ratchet base and the spatial `base` scope.
 - `clones.jl` defines both duplicate passes over a shared subtree index. `subtrees`
   hashes every named subtree of a function bottom-up. Exact: `anchor_floor` and `cluster_duplicates`
   bucket function- and block-shaped subtrees by hash, with `subsumed` as the

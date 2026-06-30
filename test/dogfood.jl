@@ -9,5 +9,7 @@
     srcdir = joinpath(pkgdir(Dendro), "src")
     @test !isempty(filter(f -> endswith(f, ".jl"), readdir(srcdir)))
 
-    @test isempty(Dendro.errors(srcdir))
+    errs = Dendro.errors(srcdir)
+    isempty(errs) || show(stdout, MIME"text/plain"(), errs)
+    @test isempty(errs)
 end
