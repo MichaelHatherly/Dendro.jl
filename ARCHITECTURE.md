@@ -82,7 +82,10 @@ high-band scalars plus all flags (flags are always `:high`). Percentile-only
 findings carry `:ok`/`:warn` and drop out, so the floor never fails on rank alone.
 Inline `dendro-ignore` directives apply first, so a suppressed finding lifts the
 gate. Assert `isempty(errors(path))` in a test and every package's `Pkg.test()`
-gates on Dendro for free.
+gates on Dendro for free. Like `analyze`, `errors` resolves a `Config` (see
+Configuration), so a repo `.dendro.toml` that retunes a band or toggles a rule reaches
+the gate, and it scores the working tree and the `since` base against the same config,
+so a retune never reads as a regression on its own.
 
 With `since`, a git ref, `errors` becomes a ratchet: the floor at the working tree
 minus the floor at that ref. `base_floor_counts` materialises the base by `git

@@ -52,10 +52,19 @@ end
             @test Dendro.main(["--cut=abc", "."]) == 1            # cut is not a number
             @test Dendro.main(["--config=/no/such.toml", "."]) == 1  # explicit config missing
             @test Dendro.main(["/no/such/path"]) == 1            # path does not exist
+            @test Dendro.main(["--no-config", "--config=x", "."]) == 1  # contradictory flags
             mktempdir() do dir
                 bad = joinpath(dir, ".dendro.toml")
                 write(bad, "cut = =\n")                          # malformed TOML
                 @test Dendro.main(["--config=$bad", dir]) == 1
+            end
+            # A value that parses as TOML but is malformed for its field exits cleanly,
+            # not as a stack trace: the loader's ConfigError is caught like a usage error.
+            mktempdir() do dir
+                write(joinpath(dir, "f.jl"), "function f(x)\n    return x\nend\n")
+                band = joinpath(dir, ".dendro.toml")
+                write(band, "[bands]\ncyclomatic = [5]\n")
+                @test Dendro.main(["--config=$band", dir]) == 1
             end
         end
     end

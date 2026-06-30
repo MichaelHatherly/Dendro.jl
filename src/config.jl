@@ -20,6 +20,20 @@ const DEFAULT_CUT = 0.95
 # `[bands]` table names scalar rules.
 const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced)
 
+# A malformed `.dendro.toml` value: a band that is not two integers, a `cut` that is
+# not a number, a rule toggle that is not a boolean. Carried as one exception type so
+# the CLI reports it cleanly rather than as a stack trace, the same boundary stance the
+# parse errors and usage errors already take.
+struct ConfigError <: Exception
+    msg::String
+end
+
+# The message is bare, like `CLIError`'s: the CLI prepends `dendro: `, an uncaught throw
+# in a REPL reads `Dendro: ` through this `showerror`.
+Base.showerror(io::IO, e::ConfigError) = print(io, "Dendro: ", e.msg)
+
+config_error(msg) = throw(ConfigError(msg))
+
 """
     Config
 
@@ -72,12 +86,36 @@ end
 reband(r::Rule, config::Config) =
     haskey(config.bands, r.name) ? Rule(r.name, r.kind, config.bands[r.name], r.fn) : r
 
-# Coerce a TOML `[warn, high]` array into the band tuple `severity` reads, erroring on
-# a malformed value so a typo'd band fails loud rather than scoring against garbage.
-function band_tuple(value, name, source)
-    value isa AbstractVector && length(value) == 2 && all(v -> v isa Integer, value) ||
-        error("Dendro: band `$name` in $source must be two integers [warn, high], got $value")
-    return (Int(value[1]), Int(value[2]))
+# Coerce a TOML value to the type a config field reads, erroring on a malformed one so a
+# typo fails loud rather than scoring against garbage. The `isa` guard narrows the `Any` a
+# TOML dict yields to a concrete type, so the values reaching `Config` are typed. Inlined:
+# the residual conversion folds into the caller, attributed to Base, rather than reading as
+# a Dendro-side dynamic dispatch the way a wrapper call would.
+#
+# `config_float` and `config_int` are the same guard-and-convert shape with the guard type,
+# converter, and noun swapped, so the clone detector pairs them; folding them into one
+# type-parameterised helper only moves the duplication to four identical call sites, larger
+# and worse. Kept parallel, the float one suppressed.
+@inline config_float(value, key, source)::Float64 =
+    value isa Real ? Float64(value) : config_error("`$key` in $source must be a number, got $value")
+
+# dendro-ignore: duplicate
+@inline config_int(value, key, source)::Int =
+    value isa Integer ? Int(value) : config_error("`$key` in $source must be an integer, got $value")
+
+@inline config_bool(value, key, source)::Bool =
+    value isa Bool ? value : config_error("rule `$key` in $source must be true or false, got $value")
+
+@inline config_table(value, key, source)::Dict{String, Any} =
+    value isa AbstractDict ? Dict{String, Any}(value) : config_error("`$key` in $source must be a table")
+
+# Coerce a TOML `[warn, high]` array into the band tuple `severity` reads.
+@inline function band_tuple(value, name, source)::Tuple{Int, Int}
+    if value isa AbstractVector && length(value) == 2
+        lo, hi = value[1], value[2]
+        lo isa Integer && hi isa Integer && return (Int(lo), Int(hi))
+    end
+    config_error("band `$name` in $source must be two integers [warn, high], got $value")
 end
 
 # The override dicts an analysis accumulates across config layers: scalar bands,
@@ -113,7 +151,7 @@ function apply_rules!(acc, table, source)
     for (name, on) in table
         sym = Symbol(name)
         if sym in known
-            acc.rules[sym] = Bool(on)
+            acc.rules[sym] = config_bool(on, name, source)
         else
             @warn "Dendro: unknown rule in $source, ignored" rule = name
         end
@@ -126,11 +164,11 @@ end
 function apply_clones(scalars, table, source)
     for (key, value) in table
         if key == "min_size"
-            scalars = merge(scalars, (min_size = Int(value),))
+            scalars = merge(scalars, (min_size = config_int(value, key, source),))
         elseif key == "threshold"
-            scalars = merge(scalars, (threshold = Float64(value),))
+            scalars = merge(scalars, (threshold = config_float(value, key, source),))
         elseif key == "radius_factor"
-            scalars = merge(scalars, (radius_factor = Float64(value),))
+            scalars = merge(scalars, (radius_factor = config_float(value, key, source),))
         else
             @warn "Dendro: unknown clones key in $source, ignored" key
         end
@@ -142,16 +180,16 @@ end
 # settings (`cut` and the clone thresholds) it leaves. Only the keys present are
 # touched; an unknown top-level key warns rather than failing, so a file written for a
 # newer Dendro still applies the keys this version knows.
-function apply_toml!(acc, scalars, data, source)
+function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
     for (key, value) in data
         if key == "cut"
-            scalars = merge(scalars, (cut = Float64(value),))
+            scalars = merge(scalars, (cut = config_float(value, key, source),))
         elseif key == "clones"
-            scalars = apply_clones(scalars, value, source)
+            scalars = apply_clones(scalars, config_table(value, key, source), source)
         elseif key == "bands"
-            apply_bands!(acc, value, source)
+            apply_bands!(acc, config_table(value, key, source), source)
         elseif key == "rules"
-            apply_rules!(acc, value, source)
+            apply_rules!(acc, config_table(value, key, source), source)
         else
             @warn "Dendro: unknown key in $source, ignored" key
         end
@@ -186,7 +224,7 @@ function config_files(roots, explicit)
     global_path = global_config_path()
     isfile(global_path) && push!(paths, global_path)
     if explicit !== nothing
-        isfile(explicit) || error("Dendro: config file not found: $explicit")
+        isfile(explicit) || config_error("config file not found: $explicit")
         push!(paths, explicit)
     else
         dir = repo_config_dir(roots)

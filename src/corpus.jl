@@ -156,12 +156,12 @@ function analyze(
         language = nothing, rules = nothing, ignore = String[], config = nothing
     )
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
-    cfg = config === nothing ? discover_config(roots) : config
-    ecut = something(cut, cfg.cut)
-    active_rules = rules === nothing ? resolve_rules(cfg) : rules
-    msize = something(min_size, cfg.min_size)
-    thresh = something(threshold, cfg.threshold)
-    radius = something(radius_factor, cfg.radius_factor)
+    cfg::Config = config === nothing ? discover_config(roots) : config
+    ecut = cut === nothing ? cfg.cut : Float64(cut)
+    active_rules = rules === nothing ? resolve_rules(cfg) : collect(Rule, rules)
+    msize = min_size === nothing ? cfg.min_size : Int(min_size)
+    thresh = threshold === nothing ? cfg.threshold : Float64(threshold)
+    radius = radius_factor === nothing ? cfg.radius_factor : Float64(radius_factor)
 
     corpus = collect_corpus(roots, ignore, language)
     files = parse_corpus(corpus; language, rules = active_rules)

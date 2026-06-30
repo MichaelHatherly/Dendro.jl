@@ -138,9 +138,43 @@ end
 end
 
 @testitem "config errors on a missing explicit file" setup = [Fixtures] tags = [:config] begin
-    using Dendro: discover_config
+    using Dendro: discover_config, ConfigError
 
     mktempdir() do dir
-        @test_throws ErrorException discover_config([dir]; explicit = joinpath(dir, "nope.toml"))
+        @test_throws ConfigError discover_config([dir]; explicit = joinpath(dir, "nope.toml"))
+    end
+end
+
+@testitem "config rejects malformed values with a clean error" setup = [Fixtures] tags = [:config] begin
+    using Dendro: discover_config, ConfigError
+
+    # Each value parses as TOML but is the wrong shape for its field. The loader throws a
+    # `ConfigError`, not a bare coercion failure, so the CLI reports it cleanly. The
+    # global layer is isolated so a developer's own config cannot satisfy the key first.
+    cases = [
+        ("[bands]\ncyclomatic = [5]\n", "two integers"),       # band needs two entries
+        ("[bands]\ncyclomatic = 5\n", "two integers"),         # band is not an array
+        ("cut = \"x\"\n", "must be a number"),                 # cut is not numeric
+        ("[rules]\nnpath = \"yes\"\n", "true or false"),       # toggle is not a boolean
+        ("[clones]\nmin_size = 1.5\n", "must be an integer"),  # min_size is not integral
+        ("bands = 5\n", "must be a table"),                    # section is not a table
+    ]
+    for (toml, frag) in cases
+        mktempdir() do dir
+            f = joinpath(dir, "c.toml")
+            write(f, toml)
+            mktempdir() do xdg
+                withenv("XDG_CONFIG_HOME" => xdg) do
+                    err = try
+                        discover_config([dir]; explicit = f)
+                        nothing
+                    catch e
+                        e
+                    end
+                    @test err isa ConfigError
+                    @test occursin(frag, err.msg)
+                end
+            end
+        end
     end
 end

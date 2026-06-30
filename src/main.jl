@@ -77,6 +77,8 @@ function parse_args(argv)
         end
     end
     isempty(paths) && throw(CLIError("no paths given"))
+    !use_config && config_file !== nothing &&
+        throw(CLIError("--no-config and --config are contradictory"))
     return CLIOptions(paths, base, config_file, use_config, cut, format, check)
 end
 
@@ -149,8 +151,9 @@ function main(argv)
     try
         return Cint(run_cli(parse_args(args)))
     catch err
-        err isa CLIError || err isa TOML.ParserError || rethrow()
-        println(stderr, "dendro: ", err isa CLIError ? err.msg : sprint(showerror, err))
+        err isa CLIError || err isa ConfigError || err isa TOML.ParserError || rethrow()
+        msg = err isa TOML.ParserError ? sprint(showerror, err) : err.msg
+        println(stderr, "dendro: ", msg)
         return Cint(1)
     end
 end
