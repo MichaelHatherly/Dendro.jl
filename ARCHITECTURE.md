@@ -29,10 +29,10 @@ each once, builds a baseline from that corpus, runs the per-file path above
 against it for each file,
 and appends the corpus-relational findings: cross-file duplicates, naturalness
 outliers, low-cohesion files, misplaced units, scattered files, and unreferenced
-private definitions. The active rule set is a value it carries: the
-`rules` keyword defaults to `BUILTIN_RULES` and threads through baseline sampling,
-per-file scoring, and suppression validation, so a caller extends the checks
-without touching the pipeline. The baseline-from-the-corpus step is what makes
+private definitions. The active rule set is a value it carries, resolved from a
+`Config` (see Configuration) unless the `rules` keyword overrides it, and it threads
+through baseline sampling, per-file scoring, and suppression validation, so a caller
+extends the checks without touching the pipeline. The baseline-from-the-corpus step is what makes
 relative scoring work with no setup, for a single file as much as a folder: a
 file's own functions are the distribution it is scored against.
 
@@ -46,6 +46,28 @@ With `base`, `analyze` scopes to a git diff: it parses the diff of the working t
 against that ref via `changed_ranges` and restricts each file's findings (and the
 duplicate clusters, exact and near, through the shared `scope_clusters`) to the
 touched line ranges. Nothing else branches the flow.
+
+## Configuration
+
+The bands a finding is judged against are tunable, the cascade resolved in
+`config.jl`. `Config` holds the percentile `cut`, a scalar-band override dict, the
+four relational bands, and a rule on/off override dict. `discover_config(roots)`
+builds one by deep-copying `DEFAULT_CONFIG` (drawn from the relational band consts and
+the `BUILTIN_RULES` band tuples) and overlaying, in order, a user-global
+`~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`.
+Each layer is `apply_toml!`, which touches only the keys present and warns on an
+unknown one. `analyze` then resolves: `cfg = discover_config(roots)` unless a `config`
+is passed, an explicit `cut` overrides `cfg.cut`, and `resolve_rules(cfg)` builds the
+active rule set, dropping disabled built-ins, adding enabled optionals, and rebanding
+each scalar rule from `cfg.bands`. The relational bands thread into the `cluster_*`
+calls. Discovery is source precedence, never spatial: one corpus, one baseline, one
+set of bands per run, since the percentile half is corpus-global.
+
+`main.jl` is the CLI behind `julia -m Dendro` and the `dendro` app (`[apps.dendro]` in
+`Project.toml`, wired through `@main`). It parses argv into `CLIOptions`, discovers the
+config, runs `analyze`, prints the report or GitHub annotations, and returns an exit
+code, 1 under `--check` when anything is reported. It reads the same cascade, so a repo
+with a `.dendro.toml` gets its bands with no flags passed.
 
 ## Gating
 
@@ -266,6 +288,10 @@ Reporting:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
   Pure path logic, no parsing. Included before `corpus.jl`, which calls it.
+- `config.jl` defines `Config` and the threshold cascade: `DEFAULT_CONFIG`,
+  `discover_config` (the user-global then repo `.dendro.toml` overlay), `apply_toml!`
+  (one layer, warning on unknown keys), and `resolve_rules` (the config's rule set).
+  Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
   folder for analysable files, pruning ignored paths), `collect_corpus` (resolve a
   list of roots to the unique set of file paths to parse, the shared front of
@@ -286,6 +312,10 @@ Reporting:
   the unit-index and file-path node ids. A graph renderer rebuilds the structure it draws
   from the corpus rather than from `Findings`. Included after `corpus.jl`, whose
   `collect_corpus` and `parse_corpus` it reuses.
+- `main.jl` defines the CLI `main` behind `julia -m Dendro` and the `dendro` app:
+  `parse_args` into `CLIOptions`, `run_cli` (discover config, `analyze`, emit, exit
+  code), and the `@main` wiring. Included last, since it calls `analyze`, `active`,
+  and `github_annotations`.
 
 ## Core types
 

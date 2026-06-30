@@ -113,6 +113,50 @@ them, greyed; `:all` keeps everything; `:auto` (the default) filters at `:unit` 
 the whole graph at `:file`. So `granularity = :unit` is readable out of the box, and
 `focus = :all` opts back into the full graph.
 
+## Command line
+
+`julia -m Dendro <path>...` runs the same analysis from a shell, in an environment
+where Dendro is installed. It prints the report and, under `--check`, exits non-zero
+when anything is reported. Installed as an app, it is the `dendro` command.
+
+```bash
+julia -m Dendro src                       # report the findings
+julia -m Dendro --base=origin/main src    # only the lines a change touched
+julia -m Dendro --check src               # exit 1 if anything is reported (CI gate)
+julia -m Dendro --format=github src       # GitHub Actions annotations
+```
+
+`--config=<file>` reads a config file in place of discovery, `--no-config` ignores
+config files, `--cut=<float>` sets the percentile cutoff. `--help` lists every flag.
+
+## Configuration
+
+The bands a finding is judged against are drawn from common complexity guidance.
+They are deliberate opinions, and a project retunes them from a `.dendro.toml` at its
+repo root, no code changes. Discovery is a cascade, merged key by key, last wins: the
+built-in defaults, a user-global `~/.config/dendro/config.toml`, the repo
+`.dendro.toml`, then any explicit `analyze` keyword.
+
+```toml
+# .dendro.toml
+cut = 0.97                 # percentile cutoff for corpus-relative flags
+
+[bands]
+cyclomatic = [15, 30]      # scalar metric: override (warn, high)
+function_length = [60, 120]
+low_cohesion = [5, 7]      # relational metric: override its band
+
+[rules]
+npath = true               # enable an optional rule
+parameter_count = false    # disable a built-in rule
+```
+
+`[bands]` keys are the scalar metric names plus the four relational names
+(`unnatural`, `low_cohesion`, `scattered`, `misplaced`); `[rules]` keys are any rule
+name. An unknown key warns and is ignored, so a typo is visible rather than silent.
+The bands, the `cut`, and rule on/off are configurable; the corpus floors and model
+internals stay fixed.
+
 ## Languages
 
 bash, c, cpp, go, java, javascript, julia, php, python, ruby, rust, typescript.
