@@ -43,6 +43,29 @@ the codebase would confound a historical comparison, so `src/` is not an input.
 The synthetic corpus seeds exact clones and near-misses across several size bands so
 the duplicate passes do real work. Its size is `SYNTH_N` in `benchmarks.jl`.
 
+- **calibration** — a fixed, allocation-free compute kernel of a pinned iteration
+  count. It does identical work every run, so its wall-clock is a direct read of how
+  fast the runner was that day. `compare.jl` divides it out to separate a code change
+  from a slower runner. The iteration count is fixed forever; changing it rebases
+  every future comparison against a different clock.
+
+## Gate and normalizer
+
+A shared CI runner has no performance isolation: the same code can run 20% slower on
+a different day. Two defences keep that noise out of the verdict.
+
+The **gate** decides regressions on allocations and memory first. Those are
+deterministic, the same code over the same input always allocates the same, so a
+change past 1% is real, never noise. Time decides only when allocations and memory
+are flat, which catches a compute regression that touches no allocation.
+
+The **normalizer** removes runner-speed drift from that time signal. Each run measures
+the `calibration` kernel; `compare.jl` scales the current run's times by the ratio of
+the two calibration medians before applying its 10% band. A run on a 20%-slower runner
+no longer reads as a 20% regression.
+
+Run the tooling tests with `just bench-test`.
+
 ## CI workflow
 
 - **Push to `main`**: results stored on the `gh-pages` branch under `benchmarks/`.

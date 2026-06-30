@@ -18,3 +18,6 @@ bench-save name:
 
 bench-compare baseline current:
     julia --project=benchmark -e 'include("benchmark/compare.jl"); compare_and_report("benchmark/results/{{baseline}}.json", "benchmark/results/{{current}}.json", "benchmark/results/comparison.md")'
+
+bench-test:
+    julia --project=benchmark benchmark/test_compare.jl
