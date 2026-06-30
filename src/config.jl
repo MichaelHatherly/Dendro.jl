@@ -20,7 +20,7 @@ const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced)
 """
     Config
 
-Resolved tuning thresholds for one analysis. Built from [`DEFAULT_CONFIG`](@ref) and
+Resolved tuning thresholds for one analysis. Built from the built-in defaults and
 overlaid with the values a `.dendro.toml` sets. `cut` is the percentile cutoff;
 `bands` overrides scalar rule `(warn, high)` tuples by metric name; the four
 relational fields override the relational bands; `rules` toggles a rule on or off by

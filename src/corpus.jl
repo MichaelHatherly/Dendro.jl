@@ -130,8 +130,8 @@ to the one git toplevel and the repo-wide diff scopes them.
 candidate-search radius to a function's size.
 
 Thresholds come from a [`Config`](@ref): the bands, the percentile `cut`, and which
-rules are active. By default `analyze` discovers one with [`discover_config`](@ref),
-merging a user-global config and the repo `.dendro.toml` over the built-in defaults.
+rules are active. By default `analyze` discovers one, merging a user-global config and
+the repo `.dendro.toml` over the built-in defaults.
 Pass `config` to supply one directly and skip discovery. An explicit `cut` or `rules`
 overrides the config, so a caller keeps the final say.
 
