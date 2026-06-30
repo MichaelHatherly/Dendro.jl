@@ -51,9 +51,10 @@ touched line ranges. Nothing else branches the flow.
 
 The bands a finding is judged against are tunable, the cascade resolved in
 `config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
-the four relational bands, and a rule on/off override dict. `discover_config(roots)`
-accumulates each layer's overrides starting from the built-in defaults (the relational
-band consts, `DEFAULT_CUT`, empty override dicts), overlaying a user-global
+the four relational bands, a rule on/off override dict, and the three clone-detection
+thresholds. `discover_config(roots)` accumulates each layer's overrides starting from
+the built-in defaults (the relational band consts, `DEFAULT_CUT`, the clone consts,
+empty override dicts), overlaying a user-global
 `~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`,
 then builds one `Config`. Each layer is `apply_toml!`, which touches only the keys
 present and warns on an unknown one. `analyze` then resolves without mutating: `cfg =

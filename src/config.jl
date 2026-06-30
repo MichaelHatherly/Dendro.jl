@@ -26,8 +26,9 @@ const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced)
 Resolved tuning thresholds for one analysis, built by `discover_config` from the
 built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
 overrides scalar rule `(warn, high)` tuples by metric name; the four relational fields
-override the relational bands; `rules` toggles a rule on or off by name. Immutable:
-pass one to [`analyze`](@ref) with `config =` to skip file discovery.
+override the relational bands; `rules` toggles a rule on or off by name; `min_size`,
+`threshold`, and `radius_factor` are the clone-detection thresholds. Immutable: pass
+one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
     cut::Float64
@@ -37,6 +38,9 @@ struct Config
     scattered::Tuple{Int, Int}
     misplaced::Tuple{Int, Int}
     rules::Dict{Symbol, Bool}
+    min_size::Int
+    threshold::Float64
+    radius_factor::Float64
 end
 
 # The scalar metric names a `[bands]` key may set: every scalar rule, built-in or
@@ -117,14 +121,33 @@ function apply_rules!(acc, table, source)
     return nothing
 end
 
-# Overlay one parsed TOML table onto the accumulating overrides, returning the cut it
-# leaves. Only the keys present are touched; an unknown top-level key warns rather than
-# failing, so a file written for a newer Dendro still applies the keys this version
-# knows.
-function apply_toml!(acc, cut, data, source)
+# Apply a `[clones]` table: the three clone-detection thresholds (`min_size` named-node
+# floor, near-miss `threshold`, candidate `radius_factor`), anything else warns.
+function apply_clones(scalars, table, source)
+    for (key, value) in table
+        if key == "min_size"
+            scalars = merge(scalars, (min_size = Int(value),))
+        elseif key == "threshold"
+            scalars = merge(scalars, (threshold = Float64(value),))
+        elseif key == "radius_factor"
+            scalars = merge(scalars, (radius_factor = Float64(value),))
+        else
+            @warn "Dendro: unknown clones key in $source, ignored" key
+        end
+    end
+    return scalars
+end
+
+# Overlay one parsed TOML table onto the accumulating overrides, returning the scalar
+# settings (`cut` and the clone thresholds) it leaves. Only the keys present are
+# touched; an unknown top-level key warns rather than failing, so a file written for a
+# newer Dendro still applies the keys this version knows.
+function apply_toml!(acc, scalars, data, source)
     for (key, value) in data
         if key == "cut"
-            cut = Float64(value)
+            scalars = merge(scalars, (cut = Float64(value),))
+        elseif key == "clones"
+            scalars = apply_clones(scalars, value, source)
         elseif key == "bands"
             apply_bands!(acc, value, source)
         elseif key == "rules"
@@ -133,7 +156,7 @@ function apply_toml!(acc, cut, data, source)
             @warn "Dendro: unknown key in $source, ignored" key
         end
     end
-    return cut
+    return scalars
 end
 
 # The user-global config path, XDG-respecting, the layer above the built-in defaults.
@@ -183,18 +206,19 @@ file layers, returning the built-in defaults.
 """
 function discover_config(roots; explicit = nothing, use_files = true)
     acc = overrides()
-    cut = DEFAULT_CUT
+    scalars = (cut = DEFAULT_CUT, min_size = DEFAULT_MIN_SIZE, threshold = DEFAULT_THRESHOLD, radius_factor = DEFAULT_RADIUS_FACTOR)
     if use_files
         for path in config_files(roots, explicit)
-            cut = apply_toml!(acc, cut, TOML.parsefile(path), path)
+            scalars = apply_toml!(acc, scalars, TOML.parsefile(path), path)
         end
     end
     return Config(
-        cut, acc.bands,
+        scalars.cut, acc.bands,
         get(acc.relational, :unnatural, UNNATURAL_BAND),
         get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
         get(acc.relational, :scattered, SCATTERED_BAND),
         get(acc.relational, :misplaced, MISPLACED_BAND),
         acc.rules,
+        scalars.min_size, scalars.threshold, scalars.radius_factor,
     )
 end

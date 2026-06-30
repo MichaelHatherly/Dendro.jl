@@ -152,13 +152,19 @@ low_cohesion = [5, 7]      # relational metric: override its band
 [rules]
 npath = true               # enable an optional rule
 parameter_count = false    # disable a built-in rule
+
+[clones]
+min_size = 12              # min named-node subtree to count as a clone
+threshold = 0.9           # near-miss similarity cutoff
+radius_factor = 0.5       # candidate-search radius, as a fraction of function size
 ```
 
 `[bands]` keys are the scalar metric names plus the four relational names
 (`unnatural`, `low_cohesion`, `scattered`, `misplaced`); `[rules]` keys are any rule
-name. An unknown key warns and is ignored, so a typo is visible rather than silent.
-The bands, the `cut`, and rule on/off are configurable; the corpus floors and model
-internals stay fixed.
+name; `[clones]` sets the duplicate-detection thresholds. An unknown key warns and is
+ignored, so a typo is visible rather than silent. The bands, the `cut`, the clone
+thresholds, and rule on/off are configurable; the corpus floors and model internals
+stay fixed.
 
 ## Languages
 

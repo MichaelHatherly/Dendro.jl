@@ -159,9 +159,9 @@ function analyze(
     cfg = config === nothing ? discover_config(roots) : config
     ecut = something(cut, cfg.cut)
     active_rules = rules === nothing ? resolve_rules(cfg) : rules
-    msize = something(min_size, DEFAULT_MIN_SIZE)
-    thresh = something(threshold, DEFAULT_THRESHOLD)
-    radius = something(radius_factor, DEFAULT_RADIUS_FACTOR)
+    msize = something(min_size, cfg.min_size)
+    thresh = something(threshold, cfg.threshold)
+    radius = something(radius_factor, cfg.radius_factor)
 
     corpus = collect_corpus(roots, ignore, language)
     files = parse_corpus(corpus; language, rules = active_rules)

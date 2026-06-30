@@ -37,11 +37,11 @@
 # machinery, and the `since` ratchet runs a second `analyze` then walks each finding's
 # locations through `fkey`/`ratchet`, the same `Any`-node and function-valued dispatch
 # already counted, just more sites for it. The configurable thresholds and the CLI
-# (`config.jl`, `main.jl`) raised sound from 601 to 806 and opt from 14 to 19: the
-# `.dendro.toml` loader walks the `Dict{String, Any}` `TOML.parsefile` returns, and
-# `main`/`run_cli` re-enter `analyze`'s keyword-argument and `Vector{String}` paths
-# machinery, the same `Any`-value and kwarg-lowering dispatch already counted, at new
-# sites.
+# (`config.jl`, `main.jl`) raised sound from 601 to 852 and opt from 14 to 21: the
+# `.dendro.toml` loader walks the `Dict{String, Any}` `TOML.parsefile` returns (every
+# band, rule, and `[clones]` threshold coerced from an `Any` value), and `main`/`run_cli`
+# re-enter `analyze`'s keyword-argument and `Vector{String}` paths machinery, the same
+# `Any`-value and kwarg-lowering dispatch already counted, at new sites.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -49,8 +49,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 806   # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 19      # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 852   # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 21      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))

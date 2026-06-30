@@ -60,6 +60,24 @@ end
     end
 end
 
+@testitem "config sets clone-detection thresholds" setup = [Fixtures] tags = [:config] begin
+    using Dendro: analyze
+
+    # Two renamed clones caught at the default min_size; a raised floor suppresses them.
+    # Both analyses run under an isolated global layer.
+    mktempdir() do dir
+        write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
+        write(joinpath(dir, "b.jl"), "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
+        mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                @test !isempty(filter(f -> f.metric === :duplicate, analyze(dir)))
+                write(joinpath(dir, ".dendro.toml"), "[clones]\nmin_size = 1000\n")
+                @test isempty(filter(f -> f.metric === :duplicate, analyze(dir)))
+            end
+        end
+    end
+end
+
 @testitem "config toggles optional and built-in rules" setup = [Fixtures] tags = [:config] begin
     using Dendro: discover_config, resolve_rules
 
