@@ -1,33 +1,13 @@
 # Run Dendro on its own source so complexity cannot regress unnoticed. Analyzing
 # the whole directory as one corpus also exercises cross-file duplicate detection.
-# The assertions check absolute `:high` bands, presence flags, and duplicate
-# clusters, none of which depend on the corpus distribution, so the result is
-# deterministic.
+# The gate is `errors`: the deterministic floor of `:high`-band findings (high-band
+# scalars and all flags), with inline `dendro-ignore` directives applied first. It is
+# percentile-free, so the result does not depend on the corpus distribution.
 @testitem "dogfood: Dendro's own source" tags = [:dogfood] begin
-    using Dendro: analyze, active
+    using Dendro
 
     srcdir = joinpath(pkgdir(Dendro), "src")
     @test !isempty(filter(f -> endswith(f, ".jl"), readdir(srcdir)))
 
-    findings = active(analyze(srcdir))
-
-    # No genuine complexity smell, no function so structurally surprising it trips the
-    # absolute naturalness floor, no file split into enough disconnected concerns to trip
-    # the absolute cohesion band, no unit coupled enough to another file to trip the
-    # absolute misplacement band, no file whose units scatter across enough other modules
-    # to trip the absolute scattering band, and no private definition unreachable from the
-    # public surface. `:unnatural`, `:low_cohesion`, `:misplaced`, and `:scattered` are
-    # checked on their absolute band only; their percentile flags the top of any
-    # distribution and so is not part of this deterministic gate.
-    smells = filter(findings) do f
-        f.absolute == :high && f.metric in (:cyclomatic, :cognitive_complexity, :nesting_depth, :function_length, :boolean_complexity, :unnatural, :low_cohesion, :misplaced, :scattered, :unreferenced)
-    end
-    @test isempty(smells)
-
-    # Keep our own house clean: no stubs, swallowed errors, duplicated functions
-    # (exact or near), or returns that discard errors from a finally clause.
-    flags = filter(findings) do f
-        f.metric in (:stub_marker, :empty_catch, :empty_body, :duplicate, :near_duplicate, :return_in_finally, :identical_operands, :duplicate_branches)
-    end
-    @test isempty(flags)
+    @test isempty(Dendro.errors(srcdir))
 end

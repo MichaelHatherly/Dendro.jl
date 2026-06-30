@@ -47,6 +47,22 @@ against that ref via `changed_ranges` and restricts each file's findings (and th
 duplicate clusters, exact and near, through the shared `scope_clusters`) to the
 touched line ranges. Nothing else branches the flow.
 
+## Gating
+
+`analyze` answers triage, "where to look", and ranks by corpus percentile, so its
+result is never empty: the worst-N% always exists. A CI gate needs the opposite, a
+pass/fail signal that is satisfiable and stable. `errors` (`gate.jl`) is that view:
+the deterministic floor, every finding at the `:high` absolute band, which is
+high-band scalars plus all flags (flags are always `:high`). Percentile-only
+findings carry `:ok`/`:warn` and drop out, so the floor never fails on rank alone.
+Inline `dendro-ignore` directives apply first, so a suppressed finding lifts the
+gate. Assert `isempty(errors(path))` in a test and every package's `Pkg.test()`
+gates on Dendro for free.
+
+This is distinct from the spatial diff. `analyze(; base)` filters findings to
+touched lines and feeds the annotation path; it is spatial, not a regression
+measure. `errors` is the gate.
+
 Duplicate detection crosses the single-file boundary in two passes, both in
 `clones.jl`, both syntactic, both comparing only structure with no symbol
 resolution. Exact detection (`cluster_duplicates`) hashes every function- or
@@ -145,6 +161,9 @@ Reporting:
   recoverable from findings.
 - `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
   that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
+- `gate.jl` defines `errors`, the gate view over `analyze`: `high_floor` keeps the
+  `:high`-band findings, applied after `active`. Built on plain `analyze`, it adds no
+  branch to the pipeline.
 - `clones.jl` defines both duplicate passes over a shared subtree index. `subtrees`
   hashes every named subtree of a function bottom-up. Exact: `anchor_floor` and `cluster_duplicates`
   bucket function- and block-shaped subtrees by hash, with `subsumed` as the
@@ -479,14 +498,14 @@ so each imports what it uses; `Dendro` and `Test` are auto-imported. Shared
 helpers and the language-fixture tables live in one `@testmodule Fixtures`
 (`test/setup.jl`), reached qualified, e.g. `Fixtures.idx(:julia, src)`.
 
-`test/dogfood.jl` runs Dendro on its own `src/`, gated on `active(...)`, and must
-stay clean: no `:high` complexity findings (cyclomatic, nesting, length, boolean),
-no function so unnatural or file so low in cohesion it trips the absolute band, no
-stub markers, no swallowed errors, no empty bodies, no returns inside a finally
-clause, no duplicates exact or near. `:unnatural` and `:low_cohesion` are checked on
-their absolute band only; their percentile flags the top of any distribution and is
-not part of this deterministic gate. A change that makes Dendro trip its own metrics
-is a signal to fix the code.
+`test/dogfood.jl` runs Dendro on its own `src/` and asserts `isempty(errors(src))`:
+the `:high`-band floor must be clean. This is the all-`:high` superset, a wider gate
+than the metric list it replaced, so it auto-adopts any future high-band metric. The
+floor is percentile-free, so the result does not depend on the corpus distribution. A
+change that makes Dendro trip its own metrics is a signal to fix the code. The two
+`parameter_count` sites the floor surfaces (the `Finding` constructor, `mermaid_coupling`)
+carry inline `dendro-ignore: parameter_count` with a reason, suppressed rather than
+omitted from the gate, so the count stays honest.
 
 `test/jet.jl` is the `:jet` item: basic-mode JET is a zero-tolerance gate on every
 Julia version, sound mode and the optimization analyzer are ratcheted at

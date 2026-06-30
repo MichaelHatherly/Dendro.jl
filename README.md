@@ -48,6 +48,20 @@ findings = analyze("src")
 high = filter(f -> f.absolute == :high, active(findings))
 ```
 
+### Gating CI
+
+`errors` is the gate companion to `analyze`. Where `analyze` ranks by percentile for
+triage and so is never empty, `errors` returns only the error-severity findings, the
+`:high`-band floor, so it is satisfiable: a clean codebase returns nothing. Assert it
+in your test suite and every `Pkg.test()` run gates on Dendro.
+
+```julia
+@testitem "quality gate" begin
+    using Dendro
+    @test isempty(Dendro.errors("src"))
+end
+```
+
 `analyze` returns `Findings`, a vector of `Finding`s that prints as a report. A
 `Finding` carries the metric, its value, the absolute band (`:ok`/`:warn`/`:high`),
 and the corpus percentile:
