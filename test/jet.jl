@@ -26,7 +26,12 @@
 # mermaid graph export (`mermaid.jl`) raised sound from 482 to 505, opt unchanged: a second
 # public entrypoint, `mermaid`, carries `analyze`'s keyword-argument and `Vector{String}`
 # paths machinery, and its three renderers walk the same `Any` nodes the corpus passes do,
-# no new kind of dynamic dispatch, just a second site for it.
+# no new kind of dynamic dispatch, just a second site for it. Focus filtering (the
+# `focus`/`context` keywords) raised sound from 505 to 550, opt unchanged: two more keyword
+# arguments widen `mermaid`'s kwarg lowering, and the shared `neighbourhood`/`undirected`
+# helpers are generic over the unit-index and file-path node ids, so sound mode analyses
+# their bodies with the type variable unbound to `Any`. Specialising them would reintroduce
+# the duplication the dogfood gate flags; the kinds are the ones already counted.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -34,7 +39,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 505   # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 550   # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 14      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
