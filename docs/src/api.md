@@ -16,6 +16,12 @@ github_annotations
 mermaid
 ```
 
+## Gating
+
+```@docs
+errors
+```
+
 ## Findings
 
 ```@docs
