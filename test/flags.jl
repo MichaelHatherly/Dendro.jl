@@ -117,6 +117,20 @@ end
     # A short-form def's expression body always does work, so it is never empty.
     i = Fixtures.idx(:julia, "f(x) = x + 1\n")
     @test !Dendro.empty_body(only(Dendro.functions(i)).node, i)
+
+    # A bare `function f end` has a name but no call signature: a forward declaration of a
+    # zero-method generic function, a contract, not an empty implementation.
+    i = Fixtures.idx(:julia, "function f end\n")
+    @test !Dendro.empty_body(only(Dendro.functions(i)).node, i)
+
+    # A zero-argument method with an empty body is a real empty implementation: its
+    # signature is the call `f()`, distinguishing it from the forward declaration above.
+    i = Fixtures.idx(:julia, "function f() end\n")
+    @test Dendro.empty_body(only(Dendro.functions(i)).node, i)
+
+    # A `where`-qualified empty method keeps its call signature, so it stays flagged.
+    i = Fixtures.idx(:julia, "function f(x) where T end\n")
+    @test Dendro.empty_body(only(Dendro.functions(i)).node, i)
 end
 
 @testitem "empty_body across languages" setup = [Fixtures] tags = [:flags] begin
