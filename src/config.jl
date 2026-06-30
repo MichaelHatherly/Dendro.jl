@@ -7,26 +7,29 @@
 #
 #     built-in defaults  ->  ~/.config/dendro/config.toml  ->  repo .dendro.toml  ->  analyze kwargs
 #
-# The file populates a `Config`; `analyze` threads it through scoring. Discovery is
-# source precedence, never spatial scoping: one corpus, one baseline, one set of
-# bands per run, since the corpus-relative score is global and per-subtree bands
-# would be incoherent with it.
+# `discover_config` accumulates each layer's overrides and builds one immutable
+# `Config`; `analyze` reads it, resolving an explicit `cut` kwarg over the file value
+# without mutating the struct. Discovery is source precedence, never spatial scoping:
+# one corpus, one baseline, one set of bands per run, since the corpus-relative score
+# is global and per-subtree bands would be incoherent with it.
 
-# The four relational metrics carry their band as a `Config` field rather than the
-# `bands` override dict, since they are not rules. A `[bands]` key naming one of these
-# sets the field; any other `[bands]` key names a scalar rule.
+# The percentile cutoff a corpus-relative metric flags above, absent a `.dendro.toml`.
+const DEFAULT_CUT = 0.95
+
+# The four relational metrics whose band a `[bands]` key may set. The rest of a
+# `[bands]` table names scalar rules.
 const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced)
 
 """
     Config
 
-Resolved tuning thresholds for one analysis. Built from the built-in defaults and
-overlaid with the values a `.dendro.toml` sets. `cut` is the percentile cutoff;
-`bands` overrides scalar rule `(warn, high)` tuples by metric name; the four
-relational fields override the relational bands; `rules` toggles a rule on or off by
-name. Pass one to [`analyze`](@ref) with `config =` to skip file discovery.
+Resolved tuning thresholds for one analysis, built by [`discover_config`](@ref) from
+the built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
+overrides scalar rule `(warn, high)` tuples by metric name; the four relational fields
+override the relational bands; `rules` toggles a rule on or off by name. Immutable:
+pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
-mutable struct Config
+struct Config
     cut::Float64
     bands::Dict{Symbol, Tuple{Int, Int}}
     unnatural::Tuple{Int, Int}
@@ -35,24 +38,6 @@ mutable struct Config
     misplaced::Tuple{Int, Int}
     rules::Dict{Symbol, Bool}
 end
-
-"""
-    DEFAULT_CONFIG :: Config
-
-The built-in defaults, the base layer of the cascade. Drawn from the same constants
-the metrics read: the relational band consts and the `(warn, high)` tuples already in
-[`BUILTIN_RULES`](@ref). `bands` and `rules` start empty; an absent override falls
-back to a rule's own band and default on/off state.
-"""
-const DEFAULT_CONFIG = Config(
-    0.95,
-    Dict{Symbol, Tuple{Int, Int}}(),
-    UNNATURAL_BAND,
-    LOW_COHESION_BAND,
-    SCATTERED_BAND,
-    MISPLACED_BAND,
-    Dict{Symbol, Bool}(),
-)
 
 # The scalar metric names a `[bands]` key may set: every scalar rule, built-in or
 # optional. Flag rules carry no band, so naming one under `[bands]` is an error.
@@ -91,53 +76,55 @@ function band_tuple(value, name, source)
     return (Int(value[1]), Int(value[2]))
 end
 
-# Apply a `[bands]` table: a relational name sets its field, a scalar name sets the
-# override dict, anything else warns and is dropped, as a typo'd directive does.
-function apply_bands!(config::Config, table, source)
+# Apply a `[bands]` table into the override dicts: a relational name lands in
+# `relational`, a scalar name in `bands`, anything else warns and is dropped, as a
+# typo'd directive does.
+function apply_bands!(bands, relational, table, source)
     scalars = scalar_metric_names()
     for (name, value) in table
         sym = Symbol(name)
         if sym in RELATIONAL_BANDS
-            setfield!(config, sym, band_tuple(value, name, source))
+            relational[sym] = band_tuple(value, name, source)
         elseif sym in scalars
-            config.bands[sym] = band_tuple(value, name, source)
+            bands[sym] = band_tuple(value, name, source)
         else
             @warn "Dendro: unknown band in $source, ignored" band = name
         end
     end
-    return config
+    return nothing
 end
 
 # Apply a `[rules]` table: each known rule name toggles on or off, anything else warns.
-function apply_rules!(config::Config, table, source)
+function apply_rules!(rules, table, source)
     known = rule_names()
     for (name, on) in table
         sym = Symbol(name)
         if sym in known
-            config.rules[sym] = Bool(on)
+            rules[sym] = Bool(on)
         else
             @warn "Dendro: unknown rule in $source, ignored" rule = name
         end
     end
-    return config
+    return nothing
 end
 
-# Overlay one parsed TOML table onto a config. Only the keys present are touched;
-# an unknown top-level key warns rather than failing, so a forward-compatible file
-# written for a newer Dendro still applies the keys this version knows.
-function apply_toml!(config::Config, data, source)
+# Overlay one parsed TOML table onto the accumulating overrides, returning the cut it
+# leaves. Only the keys present are touched; an unknown top-level key warns rather than
+# failing, so a file written for a newer Dendro still applies the keys this version
+# knows.
+function apply_toml!(bands, relational, rules, cut, data, source)
     for (key, value) in data
         if key == "cut"
-            config.cut = Float64(value)
+            cut = Float64(value)
         elseif key == "bands"
-            apply_bands!(config, value, source)
+            apply_bands!(bands, relational, value, source)
         elseif key == "rules"
-            apply_rules!(config, value, source)
+            apply_rules!(rules, value, source)
         else
             @warn "Dendro: unknown key in $source, ignored" key
         end
     end
-    return config
+    return cut
 end
 
 # The user-global config path, XDG-respecting, the layer above the built-in defaults.
@@ -159,27 +146,48 @@ function repo_config_dir(roots)
     end
 end
 
+# The config files to overlay, in cascade order: the user-global one, then either an
+# explicit file (which must exist) or the discovered repo `.dendro.toml`. Missing
+# discovered files are skipped; a missing explicit file is an error.
+function config_files(roots, explicit)
+    paths = String[]
+    global_path = global_config_path()
+    isfile(global_path) && push!(paths, global_path)
+    if explicit !== nothing
+        isfile(explicit) || error("Dendro: config file not found: $explicit")
+        push!(paths, explicit)
+    else
+        dir = repo_config_dir(roots)
+        repo_path = dir === nothing ? nothing : joinpath(dir, ".dendro.toml")
+        repo_path !== nothing && isfile(repo_path) && push!(paths, repo_path)
+    end
+    return paths
+end
+
 """
     discover_config(roots; explicit=nothing, use_files=true) -> Config
 
 The resolved [`Config`](@ref) for analyzing `roots`: the built-in defaults overlaid
 with the user-global config, then the repo `.dendro.toml`. `explicit` names a file to
-read in place of the discovered repo one and must exist. `use_files = false` skips
-all file layers, returning the built-in defaults.
+read in place of the discovered repo one and must exist. `use_files = false` skips all
+file layers, returning the built-in defaults.
 """
 function discover_config(roots; explicit = nothing, use_files = true)
-    config = deepcopy(DEFAULT_CONFIG)
-    use_files || return config
-    global_path = global_config_path()
-    isfile(global_path) && apply_toml!(config, TOML.parsefile(global_path), global_path)
-    if explicit !== nothing
-        isfile(explicit) || error("Dendro: config file not found: $explicit")
-        apply_toml!(config, TOML.parsefile(explicit), explicit)
-    else
-        dir = repo_config_dir(roots)
-        repo_path = dir === nothing ? nothing : joinpath(dir, ".dendro.toml")
-        repo_path !== nothing && isfile(repo_path) &&
-            apply_toml!(config, TOML.parsefile(repo_path), repo_path)
+    cut = DEFAULT_CUT
+    bands = Dict{Symbol, Tuple{Int, Int}}()
+    relational = Dict{Symbol, Tuple{Int, Int}}()
+    rules = Dict{Symbol, Bool}()
+    if use_files
+        for path in config_files(roots, explicit)
+            cut = apply_toml!(bands, relational, rules, cut, TOML.parsefile(path), path)
+        end
     end
-    return config
+    return Config(
+        cut, bands,
+        get(relational, :unnatural, UNNATURAL_BAND),
+        get(relational, :low_cohesion, LOW_COHESION_BAND),
+        get(relational, :scattered, SCATTERED_BAND),
+        get(relational, :misplaced, MISPLACED_BAND),
+        rules,
+    )
 end

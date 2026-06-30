@@ -156,12 +156,12 @@ function analyze(
         language = nothing, rules = nothing, ignore = String[], config = nothing
     )
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
-    cfg = config === nothing ? discover_config(roots) : deepcopy(config)
-    cut === nothing || (cfg.cut = cut)
+    cfg = config === nothing ? discover_config(roots) : config
+    ecut = something(cut, cfg.cut)
     active_rules = rules === nothing ? resolve_rules(cfg) : rules
-    msize = min_size === nothing ? DEFAULT_MIN_SIZE : min_size
-    thresh = threshold === nothing ? DEFAULT_THRESHOLD : threshold
-    radius = radius_factor === nothing ? DEFAULT_RADIUS_FACTOR : radius_factor
+    msize = something(min_size, DEFAULT_MIN_SIZE)
+    thresh = something(threshold, DEFAULT_THRESHOLD)
+    radius = something(radius_factor, DEFAULT_RADIUS_FACTOR)
 
     corpus = collect_corpus(roots, ignore, language)
     files = parse_corpus(corpus; language, rules = active_rules)
@@ -181,7 +181,7 @@ function analyze(
             haskey(scope.ranges, rel) || continue
             within = scope.ranges[rel]
         end
-        scan = Scan(f.index, f.file; rules = active_rules, baseline = bl, cut = cfg.cut, within = within, directives = f.directives)
+        scan = Scan(f.index, f.file; rules = active_rules, baseline = bl, cut = ecut, within = within, directives = f.directives)
         append!(findings, findings_for(scan))
     end
 
@@ -191,13 +191,13 @@ function analyze(
             cluster_near_duplicates(files; min_size = msize, threshold = thresh, radius_factor = radius), scope
         )
     )
-    append!(findings, scope_clusters(cluster_unnatural(files; cut = cfg.cut, band = cfg.unnatural), scope))
+    append!(findings, scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope))
 
     table = corpus_symbols(files)
     graph = build_corpus_graph(files, table)
-    append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = cfg.cut, band = cfg.low_cohesion), scope))
-    append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = cfg.cut, band = cfg.misplaced), scope))
-    append!(findings, scope_clusters(cluster_scattered(files, graph; cut = cfg.cut, band = cfg.scattered), scope))
+    append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = ecut, band = cfg.low_cohesion), scope))
+    append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
+    append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
     append!(findings, scope_clusters(cluster_unreferenced(files, table), scope))
     return Findings(findings)
 end

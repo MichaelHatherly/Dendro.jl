@@ -18,13 +18,11 @@ end
 
         # cut above 1 disables percentile scoring, isolating the absolute band.
         base = discover_config([dir]; use_files = false)
-        base.cut = 1.01
-        @test isempty(filter(f -> f.metric === :cyclomatic, analyze(dir; config = base)))
+        @test isempty(filter(f -> f.metric === :cyclomatic, analyze(dir; config = base, cut = 1.01)))
 
         tight = discover_config([dir]; use_files = false)
-        tight.cut = 1.01
         tight.bands[:cyclomatic] = (3, 4)
-        hit = only(filter(f -> f.metric === :cyclomatic, analyze(dir; config = tight)))
+        hit = only(filter(f -> f.metric === :cyclomatic, analyze(dir; config = tight, cut = 1.01)))
         @test hit.absolute === :high
     end
 end
@@ -60,9 +58,8 @@ end
         write(joinpath(dir, "f.jl"), Fixtures.guards("f", 6))
 
         cfg = discover_config([dir]; use_files = false)
-        cfg.cut = 1.01
         cfg.rules[:cyclomatic] = false
-        @test isempty(filter(f -> f.metric === :cyclomatic, analyze(dir; config = cfg)))
+        @test isempty(filter(f -> f.metric === :cyclomatic, analyze(dir; config = cfg, cut = 1.01)))
 
         # An explicit rule set restores the metric and an explicit cut beats the
         # config's, so the lone function's percentile flags it again.

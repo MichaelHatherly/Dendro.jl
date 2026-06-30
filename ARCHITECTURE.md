@@ -50,18 +50,20 @@ touched line ranges. Nothing else branches the flow.
 ## Configuration
 
 The bands a finding is judged against are tunable, the cascade resolved in
-`config.jl`. `Config` holds the percentile `cut`, a scalar-band override dict, the
-four relational bands, and a rule on/off override dict. `discover_config(roots)`
-builds one by deep-copying `DEFAULT_CONFIG` (drawn from the relational band consts and
-the `BUILTIN_RULES` band tuples) and overlaying, in order, a user-global
-`~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`.
-Each layer is `apply_toml!`, which touches only the keys present and warns on an
-unknown one. `analyze` then resolves: `cfg = discover_config(roots)` unless a `config`
-is passed, an explicit `cut` overrides `cfg.cut`, and `resolve_rules(cfg)` builds the
-active rule set, dropping disabled built-ins, adding enabled optionals, and rebanding
-each scalar rule from `cfg.bands`. The relational bands thread into the `cluster_*`
-calls. Discovery is source precedence, never spatial: one corpus, one baseline, one
-set of bands per run, since the percentile half is corpus-global.
+`config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
+the four relational bands, and a rule on/off override dict. `discover_config(roots)`
+accumulates each layer's overrides starting from the built-in defaults (the relational
+band consts, `DEFAULT_CUT`, empty override dicts), overlaying a user-global
+`~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`,
+then builds one `Config`. Each layer is `apply_toml!`, which touches only the keys
+present and warns on an unknown one. `analyze` then resolves without mutating: `cfg =
+discover_config(roots)` unless a `config` is passed, an explicit `cut` resolves over
+`cfg.cut` (`something(cut, cfg.cut)`), and `resolve_rules(cfg)` builds the active rule
+set, dropping disabled built-ins, adding enabled optionals, and rebanding each scalar
+rule from `cfg.bands`. The relational bands thread into the `cluster_*` calls. Reading
+the config rather than mutating it means no copy is needed, even when a caller passes
+their own. Discovery is source precedence, never spatial: one corpus, one baseline,
+one set of bands per run, since the percentile half is corpus-global.
 
 `main.jl` is the CLI behind `julia -m Dendro` and the `dendro` app (`[apps.dendro]` in
 `Project.toml`, wired through `@main`). It parses argv into `CLIOptions`, discovers the
@@ -288,10 +290,10 @@ Reporting:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
   Pure path logic, no parsing. Included before `corpus.jl`, which calls it.
-- `config.jl` defines `Config` and the threshold cascade: `DEFAULT_CONFIG`,
-  `discover_config` (the user-global then repo `.dendro.toml` overlay), `apply_toml!`
-  (one layer, warning on unknown keys), and `resolve_rules` (the config's rule set).
-  Included before `corpus.jl`, which calls it.
+- `config.jl` defines the immutable `Config` and the threshold cascade:
+  `discover_config` (accumulate the user-global then repo `.dendro.toml` overrides and
+  build one `Config`), `apply_toml!` (one layer, warning on unknown keys), and
+  `resolve_rules` (the config's rule set). Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
   folder for analysable files, pruning ignored paths), `collect_corpus` (resolve a
   list of roots to the unique set of file paths to parse, the shared front of

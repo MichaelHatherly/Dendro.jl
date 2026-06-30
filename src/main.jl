@@ -85,8 +85,7 @@ end
 # report exits 1, the CI gate; otherwise the run exits 0 and the report is the output.
 function run_cli(options::CLIOptions)
     config = discover_config(options.paths; explicit = options.config_file, use_files = options.use_config)
-    options.cut === nothing || (config.cut = options.cut)
-    findings = active(analyze(options.paths; base = options.base, config = config))
+    findings = active(analyze(options.paths; base = options.base, config = config, cut = options.cut))
     emit_report(findings, options.format)
     return options.check && !isempty(findings) ? 1 : 0
 end
