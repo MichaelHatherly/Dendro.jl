@@ -13,6 +13,7 @@ CurrentModule = Dendro
 analyze
 active
 github_annotations
+mermaid
 ```
 
 ## Findings

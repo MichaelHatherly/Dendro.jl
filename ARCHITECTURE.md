@@ -140,7 +140,9 @@ Reporting:
   scoring, and suppression meet. Two renderers walk `Findings`: the `show`
   method for `text/plain`, and `github_annotations`, a standalone function (not a
   `show` method) that emits GitHub Actions workflow commands for inline PR
-  annotations. Both share `score_suffix`.
+  annotations. Both share `score_suffix`. A finding renderer takes `Findings`; a
+  graph renderer (`mermaid`, `mermaid.jl`) takes the corpus, since a graph is not
+  recoverable from findings.
 - `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
   that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
 - `clones.jl` defines both duplicate passes over a shared subtree index. `subtrees`
@@ -232,15 +234,25 @@ Reporting:
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
   Pure path logic, no parsing. Included before `corpus.jl`, which calls it.
 - `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
-  folder for analysable files, pruning ignored paths), `parse_corpus` (parse each
-  path once and build its query index into a `Vector{ParsedFile}`),
-  `baseline_from`, `scope_clusters` (the shared diff filter for the relational
-  passes), and `analyze` (the public entrypoint, orchestrating corpus, baseline,
-  per-file findings, exact and near duplicates, naturalness, then the corpus graph and
-  the three passes that read it, low cohesion, cross-file placement, scattering, and
-  optional diff scoping). It is included after `report.jl`, `diff.jl`, `clones.jl`,
-  `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`, `placement.jl`, `scattered.jl`, and
-  `cohesion.jl` so everything it calls is defined first.
+  folder for analysable files, pruning ignored paths), `collect_corpus` (resolve a
+  list of roots to the unique set of file paths to parse, the shared front of
+  `analyze` and `mermaid`), `parse_corpus` (parse each path once and build its query
+  index into a `Vector{ParsedFile}`), `baseline_from`, `scope_clusters` (the shared
+  diff filter for the relational passes), and `analyze` (the public entrypoint,
+  orchestrating corpus, baseline, per-file findings, exact and near duplicates,
+  naturalness, then the corpus graph and the three passes that read it, low cohesion,
+  cross-file placement, scattering, and optional diff scoping). It is included after
+  `report.jl`, `diff.jl`, `clones.jl`, `naturalness.jl`, `linkage.jl`,
+  `corpus_graph.jl`, `placement.jl`, `scattered.jl`, and `cohesion.jl` so everything it
+  calls is defined first.
+- `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
+  graph, the dead-code reachability graph, and the clone clusters into mermaid
+  `flowchart` text, with `:file` and `:unit` granularity and active findings overlaid.
+  `focus` trims a view to the flagged nodes grown `context` hops over the graph, so the
+  unit views stay legible and renderable; `neighbourhood` does the growth, generic over
+  the unit-index and file-path node ids. A graph renderer rebuilds the structure it draws
+  from the corpus rather than from `Findings`. Included after `corpus.jl`, whose
+  `collect_corpus` and `parse_corpus` it reuses.
 
 ## Core types
 

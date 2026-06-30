@@ -79,6 +79,27 @@ function source_files(dir::AbstractString, ignore = String[])
     return files
 end
 
+# Resolve a list of roots into the unique set of file paths to parse. A directory is
+# walked for analyzable source under `ignore`; a named file is taken as-is, but only
+# when its language can be inferred or `language` forces one. The shared front of
+# `analyze` and `mermaid`, so both see the same corpus from the same roots.
+function collect_corpus(roots::Vector{String}, ignore, language)
+    isempty(roots) && error("Dendro: no paths given")
+    corpus = String[]
+    for path in roots
+        ispath(path) || error("Dendro: no such path $path")
+        if isdir(path)
+            append!(corpus, source_files(path, ignore))
+        else
+            language === nothing && language_for_path(path) === nothing &&
+                error("Dendro: cannot infer language for $path; pass `language=`.")
+            push!(corpus, path)
+        end
+    end
+    unique!(corpus)
+    return corpus
+end
+
 """
     analyze(path; base=nothing, cut=0.95, min_size=$DEFAULT_MIN_SIZE, threshold=$DEFAULT_THRESHOLD, radius_factor=$DEFAULT_RADIUS_FACTOR, language=nothing, rules=BUILTIN_RULES, ignore=String[]) -> Findings
     analyze(paths::AbstractVector; ...) -> Findings
@@ -120,19 +141,7 @@ function analyze(
         rules = BUILTIN_RULES, ignore = String[]
     )
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
-    isempty(roots) && error("Dendro: no paths given")
-    corpus = String[]
-    for path in roots
-        ispath(path) || error("Dendro: no such path $path")
-        if isdir(path)
-            append!(corpus, source_files(path, ignore))
-        else
-            language === nothing && language_for_path(path) === nothing &&
-                error("Dendro: cannot infer language for $path; pass `language=`.")
-            push!(corpus, path)
-        end
-    end
-    unique!(corpus)
+    corpus = collect_corpus(roots, ignore, language)
     files = parse_corpus(corpus; language, rules)
     bl = baseline_from(files, rules)
 
