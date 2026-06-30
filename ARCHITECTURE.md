@@ -248,9 +248,11 @@ Reporting:
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, and the clone clusters into mermaid
   `flowchart` text, with `:file` and `:unit` granularity and active findings overlaid.
-  A graph renderer rebuilds the structure it draws from the corpus rather than from
-  `Findings`. Included after `corpus.jl`, whose `collect_corpus` and `parse_corpus` it
-  reuses.
+  `focus` trims a view to the flagged nodes grown `context` hops over the graph, so the
+  unit views stay legible and renderable; `neighbourhood` does the growth, generic over
+  the unit-index and file-path node ids. A graph renderer rebuilds the structure it draws
+  from the corpus rather than from `Findings`. Included after `corpus.jl`, whose
+  `collect_corpus` and `parse_corpus` it reuses.
 
 ## Core types
 

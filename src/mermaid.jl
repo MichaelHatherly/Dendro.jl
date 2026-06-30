@@ -92,9 +92,10 @@ function emit_node_groups(io::IO, rows::Vector{Tuple{String, String, String, Str
     return nothing
 end
 
-# One node per file, sorted, the file-level reachability and clone views share.
-function file_nodes(io::IO, fids::Dict{String, String})
+# One node per kept file, sorted, the file-level reachability and clone views share.
+function file_nodes(io::IO, fids::Dict{String, String}, keep::Set{String})
     for file in sort!(collect(keys(fids)))
+        file in keep || continue
         println(io, "  ", fids[file], "[\"", mmd_label(basename(file)), "\"]")
     end
     return nothing
@@ -112,8 +113,62 @@ const COUPLING_CLASSES = ["misplaced" => "fill:#ffe0e0,stroke:#d33", "scattered"
 const REACH_CLASSES = ["root" => "fill:#e0f5e0,stroke:#3a3", "dead" => "fill:#eee,stroke:#999,stroke-dasharray:3 3"]
 const CLONE_CLASSES = ["exact" => "fill:#e0ecff,stroke:#36c", "near" => "fill:#fff3d6,stroke:#d90"]
 
+# The overlay style for a node kept only as context around a finding, not flagged itself.
+# Added to the header when focusing so the eye separates the finding from its surroundings.
+const CONTEXT_CLASS = "context" => "fill:#f4f4f4,stroke:#bbb"
+
+# The kept node set when focusing on findings: the flagged nodes grown by `hops` steps over
+# the undirected adjacency `adj`. `hops` of 0 keeps only the flagged nodes. Generic over the
+# node id type, since the file views key by path and the unit views by index.
+function neighbourhood(flagged::Set{T}, adj::Dict{T, Vector{T}}, hops::Integer) where {T}
+    keep = copy(flagged)
+    frontier = collect(flagged)
+    for _ in 1:hops
+        nxt = T[]
+        for n in frontier
+            haskey(adj, n) || continue
+            for m in adj[n]
+                m in keep && continue
+                push!(keep, m)
+                push!(nxt, m)
+            end
+        end
+        frontier = nxt
+    end
+    return keep
+end
+
+# The header class list for a view, the context style appended when focusing so a kept
+# neighbour reads as background.
+view_classes(base::Vector{Pair{String, String}}, focus::Symbol) =
+    focus === :findings ? [base; CONTEXT_CLASS] : base
+
+# The undirected adjacency of directed edge pairs, self-loops dropped, the seed structure
+# `neighbourhood` walks. Generic over the node id, since the unit views key by index and
+# the file views by path.
+function undirected(pairs::AbstractVector{Tuple{V, V}}) where {V}
+    adj = Dict{V, Vector{V}}()
+    for (a, b) in pairs
+        a == b && continue
+        push!(get!(() -> V[], adj, a), b)
+        push!(get!(() -> V[], adj, b), a)
+    end
+    return adj
+end
+
+# Class each kept file that carries no finding as context, so a focused file view greys its
+# surroundings. A no-op when not focusing.
+function file_context(io::IO, fids::Dict{String, String}, keep::Set{String}, flagged::Set{String}, focus::Symbol)
+    focus === :findings || return nothing
+    for file in sort!(collect(keep))
+        (file in flagged || !haskey(fids, file)) && continue
+        println(io, "  class ", fids[file], " context")
+    end
+    return nothing
+end
+
 """
-    mermaid(io, paths; graph=:coupling, granularity=:file, ...)
+    mermaid(io, paths; graph=:coupling, granularity=:file, focus=:auto, context=1, ...)
     mermaid(paths; ...) -> nothing
 
 Render one of Dendro's graphs over `paths` as a mermaid `flowchart`, written to `io`.
@@ -124,6 +179,14 @@ the duplicate clusters. `granularity` is `:file` (units collapsed to their file)
 nodes are classed, the misplaced suggested home drawn as a dashed edge, dead definitions
 and public roots classed.
 
+`focus` trims the diagram to what the findings touch. `:findings` keeps only flagged nodes
+and the `context` hops of graph neighbours around them, drawn greyed, so a unit-level graph
+of a real corpus stays small enough to read and to render. `:all` keeps every node. `:auto`
+(the default) resolves to `:findings` at `:unit` granularity, where the full graph is a
+hairball, and `:all` at `:file`, where it is already legible. `context` is the neighbour
+radius: `0` keeps only the flagged nodes, `1` their immediate neighbours. `:clones` is
+already finding-only, so `focus` does not change it.
+
 Unlike `github_annotations`, which renders `Findings`, this takes the corpus and rebuilds
 the structure it draws, since a graph is not recoverable from findings. Redirect `io` to a
 `.mmd` file to save the diagram, as the CI workflow does for annotations. The keyword
@@ -132,6 +195,7 @@ options match `analyze`'s clone and ignore tuning.
 function mermaid(
         io::IO, paths::Union{AbstractString, AbstractVector{<:AbstractString}};
         graph::Symbol = :coupling, granularity::Symbol = :file,
+        focus::Symbol = :auto, context::Integer = 1,
         ignore = String[], language = nothing, rules = BUILTIN_RULES, cut::Real = 0.95,
         min_size::Integer = DEFAULT_MIN_SIZE, threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR
@@ -140,13 +204,17 @@ function mermaid(
         error("Dendro: graph must be :coupling, :reachability or :clones, got :$graph")
     granularity in (:file, :unit) ||
         error("Dendro: granularity must be :file or :unit, got :$granularity")
+    focus in (:auto, :all, :findings) ||
+        error("Dendro: focus must be :auto, :all or :findings, got :$focus")
+    context >= 0 || error("Dendro: context must be >= 0, got $context")
+    resolved = focus === :auto ? (granularity === :unit ? :findings : :all) : focus
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
     files = parse_corpus(collect_corpus(roots, ignore, language); language, rules)
     if graph === :coupling
         table = corpus_symbols(files)
-        mermaid_coupling(io, files, build_corpus_graph(files, table), table, granularity, cut)
+        mermaid_coupling(io, files, build_corpus_graph(files, table), table, granularity, cut, resolved, context)
     elseif graph === :reachability
-        mermaid_reachability(io, files, corpus_symbols(files), granularity)
+        mermaid_reachability(io, files, corpus_symbols(files), granularity, resolved, context)
     else
         mermaid_clones(io, files, granularity, min_size, threshold, radius_factor)
     end
@@ -160,60 +228,107 @@ mermaid(paths; kw...) = mermaid(stdout, paths; kw...)
 # The corpus coupling graph as a flowchart: units (or files) as nodes, the cross-file
 # reference edges weighted, the communities as subgraphs, and misplaced/scattered findings
 # overlaid.
-function mermaid_coupling(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable, granularity::Symbol, cut::Real)
-    mmd_header(io, COUPLING_CLASSES)
-    granularity === :unit ? coupling_unit(io, files, graph, table, cut) : coupling_file(io, files, graph, cut)
+function mermaid_coupling(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable, granularity::Symbol, cut::Real, focus::Symbol, context::Integer)
+    mmd_header(io, view_classes(COUPLING_CLASSES, focus))
+    granularity === :unit ? coupling_unit(io, files, graph, table, cut, focus, context) :
+        coupling_file(io, files, graph, cut, focus, context)
     return nothing
 end
 
-function coupling_unit(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable, cut::Real)
-    comm = communities(graph)
-    plur = community_plurality(graph, comm)
-    rows = Tuple{String, String, String, String}[]
-    for i in eachindex(comm)
-        c = comm[i]
-        push!(rows, (string("community_", c), mmd_label(basename(get(plur, c, ""))), string("u", i), graph.units[i].name))
-    end
-    emit_node_groups(io, rows)
-    for (a, b) in sort!(collect(keys(graph.edges)))
-        println(io, "  u", a, " -->|", round(graph.edges[(a, b)]; digits = 1), "| u", b)
-    end
-    coupling_overlay(io, files, graph, table, cut)
-    return nothing
-end
-
-# The misplaced and scattered overlay at unit granularity: each misplaced unit classed and
-# linked to its suggested home, each unit of a scattered file classed.
-function coupling_overlay(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable, cut::Real)
+# The misplaced sources, each paired with its suggested-home node (`0` when the finding
+# carries no home), and the units of scattered files. Computed once so the unit view can
+# both seed the focus neighbourhood and draw the overlay from the same findings.
+function coupling_flags(files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable, cut::Real)
     node_at = Dict{Tuple{String, Int}, Int}()
     for (i, u) in enumerate(graph.units)
         node_at[(u.file, u.line)] = i
     end
+    misplaced = Tuple{Int, Int}[]
     for f in cluster_misplaced(files, graph, table; cut)
         f.suppressed && continue
         src = first(f.locations)
         n = get(node_at, (src.file, src.line), 0)
         n == 0 && continue
-        println(io, "  class u", n, " misplaced")
-        length(f.locations) >= 2 || continue
-        tgt = f.locations[2]
-        m = get(node_at, (tgt.file, tgt.line), 0)
-        m == 0 && continue
-        println(io, "  u", n, " -.->|move| u", m)
+        m = 0
+        if length(f.locations) >= 2
+            tgt = f.locations[2]
+            m = get(node_at, (tgt.file, tgt.line), 0)
+        end
+        push!(misplaced, (n, m))
     end
-    scattered = scattered_files(files, graph, cut)
+    scattered = Set{Int}()
+    sfiles = scattered_files(files, graph, cut)
     for (i, u) in enumerate(graph.units)
-        u.file in scattered && println(io, "  class u", i, " scattered")
+        u.file in sfiles && push!(scattered, i)
+    end
+    return misplaced, scattered
+end
+
+function coupling_unit(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, table::SymbolTable, cut::Real, focus::Symbol, context::Integer)
+    comm = communities(graph)
+    plur = community_plurality(graph, comm)
+    misplaced, scattered = coupling_flags(files, graph, table, cut)
+    keep = if focus === :findings
+        seed = copy(scattered)
+        for (n, m) in misplaced
+            push!(seed, n)
+            m == 0 || push!(seed, m)
+        end
+        neighbourhood(seed, undirected(collect(keys(graph.edges))), context)
+    else
+        Set(eachindex(graph.units))
+    end
+    rows = Tuple{String, String, String, String}[]
+    for i in eachindex(comm)
+        i in keep || continue
+        c = comm[i]
+        push!(rows, (string("community_", c), mmd_label(basename(get(plur, c, ""))), string("u", i), graph.units[i].name))
+    end
+    emit_node_groups(io, rows)
+    for (a, b) in sort!(collect(keys(graph.edges)))
+        (a in keep && b in keep) || continue
+        println(io, "  u", a, " -->|", round(graph.edges[(a, b)]; digits = 1), "| u", b)
+    end
+    for (n, m) in misplaced
+        n in keep && println(io, "  class u", n, " misplaced")
+        (m != 0 && n in keep && m in keep) && println(io, "  u", n, " -.->|move| u", m)
+    end
+    for i in keep
+        i in scattered && println(io, "  class u", i, " scattered")
+    end
+    coupling_context(io, keep, scattered, misplaced, focus)
+    return nothing
+end
+
+# Class each kept unit that carries no finding as context, so a focused view greys its
+# surroundings. A no-op when not focusing.
+function coupling_context(io::IO, keep::Set{Int}, scattered::Set{Int}, misplaced::Vector{Tuple{Int, Int}}, focus::Symbol)
+    focus === :findings || return nothing
+    flagged = copy(scattered)
+    for (n, _) in misplaced
+        push!(flagged, n)
+    end
+    for i in sort!(collect(keep))
+        i in flagged || println(io, "  class u", i, " context")
     end
     return nothing
 end
 
-function coupling_file(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, cut::Real)
+function coupling_file(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, cut::Real, focus::Symbol, context::Integer)
     comm = communities(graph)
     plur = community_plurality(graph, comm)
     fids = file_ids(item_files(graph.units))
+    agg = Dict{Tuple{String, String}, Float64}()
+    for ((a, b), w) in graph.edges
+        fa, fb = graph.units[a].file, graph.units[b].file
+        fa == fb && continue
+        agg[(fa, fb)] = get(agg, (fa, fb), 0.0) + w
+    end
+    sfiles = scattered_files(files, graph, cut)
+    keep = focus === :findings ? neighbourhood(sfiles, undirected(collect(keys(agg))), context) : Set(keys(fids))
     by_comm = Dict{Int, Vector{String}}()
     for (file, c) in file_community(graph, comm)
+        file in keep || continue
         push!(get!(() -> String[], by_comm, c), file)
     end
     subs = Tuple{String, String, Vector{String}}[]
@@ -225,16 +340,12 @@ function coupling_file(io::IO, files::Vector{ParsedFile}, graph::CorpusGraph, cu
         push!(subs, (string("community_", c), mmd_label(basename(get(plur, c, ""))), lines))
     end
     emit_subgraphs(io, subs)
-    agg = Dict{Tuple{String, String}, Float64}()
-    for ((a, b), w) in graph.edges
-        fa, fb = graph.units[a].file, graph.units[b].file
-        fa == fb && continue
-        agg[(fa, fb)] = get(agg, (fa, fb), 0.0) + w
-    end
     for (a, b) in sort!(collect(keys(agg)))
+        (a in keep && b in keep) || continue
         println(io, "  ", fids[a], " -->|", round(agg[(a, b)]; digits = 1), "| ", fids[b])
     end
-    class_files(io, fids, scattered_files(files, graph, cut), "scattered")
+    class_files(io, fids, sfiles, "scattered")
+    file_context(io, fids, keep, sfiles, focus)
     return nothing
 end
 
@@ -270,48 +381,64 @@ end
 
 # The dead-code reachability graph as a flowchart: definitions (or files) as nodes, the
 # reference edges directed, public roots and unreachable definitions classed.
-function mermaid_reachability(io::IO, files::Vector{ParsedFile}, table::SymbolTable, granularity::Symbol)
-    mmd_header(io, REACH_CLASSES)
+function mermaid_reachability(io::IO, files::Vector{ParsedFile}, table::SymbolTable, granularity::Symbol, focus::Symbol, context::Integer)
+    mmd_header(io, view_classes(REACH_CLASSES, focus))
     adj, roots = reach_graph(files, table)
     seen = reachable(adj, roots)
-    granularity === :unit ? reach_unit(io, table, adj, roots, seen) : reach_file(io, table, adj, seen)
+    granularity === :unit ? reach_unit(io, table, adj, roots, seen, focus, context) :
+        reach_file(io, table, adj, seen, focus, context)
     return nothing
 end
 
-function reach_unit(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, roots::Set{Int}, seen::BitVector)
+# The directed reference edges as pairs, the seed `undirected` folds for a focus
+# neighbourhood.
+function reach_pairs(adj::Vector{Vector{Int}})
+    pairs = Tuple{Int, Int}[]
+    for i in eachindex(adj), j in adj[i]
+        push!(pairs, (i, j))
+    end
+    return pairs
+end
+
+function reach_unit(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, roots::Set{Int}, seen::BitVector, focus::Symbol, context::Integer)
+    dead = Set{Int}()
+    for i in eachindex(table.defs)
+        seen[i] || push!(dead, i)
+    end
+    keep = focus === :findings ? neighbourhood(dead, undirected(reach_pairs(adj)), context) : Set(eachindex(table.defs))
     fids = file_ids(item_files(table.defs))
     rows = Tuple{String, String, String, String}[]
     for (i, d) in enumerate(table.defs)
+        i in keep || continue
         push!(rows, (fids[d.file], mmd_label(basename(d.file)), string("d", i), d.name))
     end
     emit_node_groups(io, rows)
     edges = Set{Tuple{Int, Int}}()
     for i in eachindex(adj), j in adj[i]
-        i == j || push!(edges, (i, j))
+        (i == j || !(i in keep) || !(j in keep)) && continue
+        push!(edges, (i, j))
     end
     for (i, j) in sort!(collect(edges))
         println(io, "  d", i, " --> d", j)
     end
-    for i in eachindex(table.defs)
-        if !seen[i]
+    for i in sort!(collect(keep))
+        if i in dead
             println(io, "  class d", i, " dead")
         elseif i in roots
             println(io, "  class d", i, " root")
+        elseif focus === :findings
+            println(io, "  class d", i, " context")
         end
     end
     return nothing
 end
 
-function reach_file(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, seen::BitVector)
+function reach_file(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, seen::BitVector, focus::Symbol, context::Integer)
     fids = file_ids(item_files(table.defs))
-    file_nodes(io, fids)
     edges = Set{Tuple{String, String}}()
     for i in eachindex(adj), j in adj[i]
         fa, fb = table.defs[i].file, table.defs[j].file
         fa == fb || push!(edges, (fa, fb))
-    end
-    for (a, b) in sort!(collect(edges))
-        println(io, "  ", fids[a], " --> ", fids[b])
     end
     alive = Set{String}()
     for i in eachindex(table.defs)
@@ -321,7 +448,14 @@ function reach_file(io::IO, table::SymbolTable, adj::Vector{Vector{Int}}, seen::
     for file in keys(fids)
         file in alive || push!(dead, file)
     end
+    keep = focus === :findings ? neighbourhood(dead, undirected(collect(edges)), context) : Set(keys(fids))
+    file_nodes(io, fids, keep)
+    for (a, b) in sort!(collect(edges))
+        (a in keep && b in keep) || continue
+        println(io, "  ", fids[a], " --> ", fids[b])
+    end
     class_files(io, fids, dead, "dead")
+    file_context(io, fids, keep, dead, focus)
     return nothing
 end
 
@@ -380,7 +514,7 @@ function clones_file(io::IO, clusters::Vector{Finding})
         push!(fileset, loc.file)
     end
     fids = file_ids(fileset)
-    file_nodes(io, fids)
+    file_nodes(io, fids, Set(keys(fids)))
     edges = Set{Tuple{String, String, Bool}}()
     for cl in clusters
         spans = String[]

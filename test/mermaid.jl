@@ -10,7 +10,7 @@
     table = Dendro.corpus_symbols(files)
     graph = Dendro.build_corpus_graph(files, table)
     io = IOBuffer()
-    Dendro.mermaid_coupling(io, files, graph, table, :unit, 0.95)
+    Dendro.mermaid_coupling(io, files, graph, table, :unit, 0.95, :all, 1)
     out = String(take!(io))
     @test startswith(out, "flowchart LR")
     @test occursin("entry", out)
@@ -27,7 +27,7 @@ end
     table = Dendro.corpus_symbols(files)
     graph = Dendro.build_corpus_graph(files, table)
     io = IOBuffer()
-    Dendro.mermaid_coupling(io, files, graph, table, :file, 0.95)
+    Dendro.mermaid_coupling(io, files, graph, table, :file, 0.95, :all, 1)
     out = String(take!(io))
     @test startswith(out, "flowchart LR")
     @test occursin("a.jl", out)
@@ -39,7 +39,7 @@ end
     a = Fixtures.parsedfile(:julia, "export keep\nkeep() = 1\ndead() = 2\n"; file = "a.jl")
     table = Dendro.corpus_symbols([a])
     io = IOBuffer()
-    Dendro.mermaid_reachability(io, [a], table, :unit)
+    Dendro.mermaid_reachability(io, [a], table, :unit, :all, 1)
     out = String(take!(io))
     @test startswith(out, "flowchart LR")
     @test occursin("dead", out)
@@ -58,6 +58,59 @@ end
     @test occursin("subgraph clone_", out)
     @test occursin("foo", out)
     @test occursin("bar", out)
+end
+
+@testitem "mermaid reachability focus keeps dead defs and one hop of context" setup = [Fixtures] tags = [:mermaid] begin
+    a = Fixtures.parsedfile(:julia, "export keep\nkeep() = util()\nutil() = 1\ndead() = util()\n"; file = "a.jl")
+    table = Dendro.corpus_symbols([a])
+    io = IOBuffer()
+    Dendro.mermaid_reachability(io, [a], table, :unit, :findings, 1)
+    out = String(take!(io))
+    @test occursin("dead", out)
+    @test occursin("util", out)
+    @test occursin(r"^  class \w+ dead$"m, out)
+    @test occursin(r"^  class \w+ context$"m, out)
+    @test !occursin("keep", out)
+end
+
+@testitem "mermaid reachability focus with no context keeps only the finding" setup = [Fixtures] tags = [:mermaid] begin
+    a = Fixtures.parsedfile(:julia, "export keep\nkeep() = util()\nutil() = 1\ndead() = util()\n"; file = "a.jl")
+    table = Dendro.corpus_symbols([a])
+    io = IOBuffer()
+    Dendro.mermaid_reachability(io, [a], table, :unit, :findings, 0)
+    out = String(take!(io))
+    @test occursin("dead", out)
+    @test !occursin("util", out)
+    @test !occursin(r"^  class \w+ context$"m, out)
+end
+
+@testitem "mermaid coupling focus drops nodes when nothing is flagged" setup = [Fixtures] tags = [:mermaid] begin
+    a = Fixtures.parsedfile(:julia, "export entry\nentry() = shared()\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "shared() = 1\n"; file = "b.jl")
+    files = [a, b]
+    table = Dendro.corpus_symbols(files)
+    graph = Dendro.build_corpus_graph(files, table)
+    io = IOBuffer()
+    Dendro.mermaid_coupling(io, files, graph, table, :unit, 0.95, :findings, 1)
+    @test !occursin("subgraph community", String(take!(io)))
+    Dendro.mermaid_coupling(io, files, graph, table, :unit, 0.95, :all, 1)
+    @test occursin("subgraph community", String(take!(io)))
+end
+
+@testitem "mermaid focus defaults on at unit granularity, off at file" setup = [Fixtures] tags = [:mermaid] begin
+    mktempdir() do dir
+        write(joinpath(dir, "a.jl"), "export keep\nkeep() = util()\nutil() = 1\ndead() = util()\n")
+        io = IOBuffer()
+        Dendro.mermaid(io, dir; graph = :reachability, granularity = :unit)
+        @test !occursin("keep", String(take!(io)))
+        Dendro.mermaid(io, dir; graph = :reachability, granularity = :unit, focus = :all)
+        @test occursin("keep", String(take!(io)))
+    end
+end
+
+@testitem "mermaid public entrypoint validates focus and context" tags = [:mermaid] begin
+    @test_throws ErrorException Dendro.mermaid(IOBuffer(), "src"; focus = :nope)
+    @test_throws ErrorException Dendro.mermaid(IOBuffer(), "src"; context = -1)
 end
 
 @testitem "mermaid escapes a quote in a node label" setup = [Fixtures] tags = [:mermaid] begin
