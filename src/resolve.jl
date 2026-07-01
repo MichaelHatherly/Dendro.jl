@@ -137,11 +137,14 @@ function imports_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
     end
 end
 
-# Populate the imports-query cache for `langs` single-threaded, before a parallel linkage
-# fan-out first-touches it. The cache is a plain Dict filled by `get!`, unsafe under
-# concurrent first-touch; the node and scopes queries are already warm from parsing.
-function warm_imports(langs)
+# Populate every lazy per-language cache for `langs` single-threaded, before a parallel
+# fan-out first-touches one. The parser JLL loads through `Base.require` and each query is
+# cached in a plain Dict filled by `get!`; both corrupt under concurrent first-touch.
+function warm_languages(langs)
     for lang in langs
+        parser_for(lang)
+        query_for(lang)
+        scopes_query_for(lang)
         imports_query_for(lang)
     end
     return nothing

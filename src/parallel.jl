@@ -40,3 +40,15 @@ function map_range!(f::F, out::AbstractVector, idxs) where {F}
     end
     return out
 end
+
+# Run `work!(chunk, idxs)` once per chunk, across threads when the corpus clears the
+# threshold, else as a single chunk. For fan-outs that carry per-chunk state (a parser pool,
+# a partial baseline) rather than one value per item. `chunk` indexes `1:n_chunks(n)`.
+function parallel_chunks(work!::F, n::Integer) where {F}
+    parallel_enabled(n) || return (work!(1, 1:n); nothing)
+    chunks = chunk_indices(n, n_chunks(n))
+    @sync for c in eachindex(chunks)
+        Threads.@spawn work!(c, chunks[c])
+    end
+    return nothing
+end
