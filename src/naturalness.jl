@@ -148,18 +148,32 @@ struct NaturalnessUnit
 end
 
 # Collect every function in the corpus as a NaturalnessUnit, grouped by language so a
-# model never mixes grammars.
+# model never mixes grammars. Tokenizing each file is the pass's largest cost and is
+# independent, so it fans out per file; the grouping then appends in file order.
 function naturalness_units(files::Vector{ParsedFile})
+    n = length(files)
+    perfile = Vector{Vector{NaturalnessUnit}}(undef, n)
+    parallel_map!(perfile, n) do i
+        file_naturalness_units(files[i])
+    end
     bylang = Dict{Symbol, Vector{NaturalnessUnit}}()
-    for f in files
-        for unit in functions(f.index)
-            tokens = token_stream(unit, f.index)
-            loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
-            sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.unnatural)
-            push!(get!(() -> NaturalnessUnit[], bylang, f.language), NaturalnessUnit(tokens, loc, sup))
-        end
+    for i in 1:n
+        append!(get!(() -> NaturalnessUnit[], bylang, files[i].language), perfile[i])
     end
     return bylang
+end
+
+# One file's functions as NaturalnessUnits. Read-only over the file, so it runs per file
+# in parallel from `naturalness_units`.
+function file_naturalness_units(f::ParsedFile)
+    units = NaturalnessUnit[]
+    for unit in functions(f.index)
+        tokens = token_stream(unit, f.index)
+        loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
+        sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.unnatural)
+        push!(units, NaturalnessUnit(tokens, loc, sup))
+    end
+    return units
 end
 
 # Per-file cache models: a trigram model over the token streams in each file, the
@@ -175,9 +189,15 @@ function file_caches(units::Vector{NaturalnessUnit})
         end
         push!(streams, u.tokens)
     end
+    # Build each file's model in parallel; the models are independent and order-free.
+    order = collect(keys(byfile))
+    models = Vector{NGramModel}(undef, length(order))
+    parallel_map!(models, length(order)) do i
+        build_model(byfile[order[i]])
+    end
     caches = Dict{String, NGramModel}()
-    for (file, streams) in byfile
-        caches[file] = build_model(streams)
+    for (i, file) in enumerate(order)
+        caches[file] = models[i]
     end
     return caches
 end
@@ -192,10 +212,10 @@ function unnatural_in_language!(
     sum(length(u.tokens) for u in units; init = 0) < min_tokens && return findings
     global_model = build_model([u.tokens for u in units])
     caches = file_caches(units)
-    # A plain loop, not a comprehension, so the captured models stay concretely typed.
+    # Scoring each unit is independent, so it fans out into the preallocated vector.
     entropies = Vector{Float64}(undef, length(units))
-    for (i, u) in enumerate(units)
-        entropies[i] = interpolated_cross_entropy(u.tokens, global_model, caches[u.location.file], CACHE_LAMBDA)
+    parallel_map!(entropies, length(units)) do i
+        interpolated_cross_entropy(units[i].tokens, global_model, caches[units[i].location.file], CACHE_LAMBDA)
     end
     sorted = sort(entropies)
     for (u, h) in zip(units, entropies)
