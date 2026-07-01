@@ -13,6 +13,12 @@
 import BenchmarkTools
 import Dendro
 
+# Timings are only comparable single-threaded: `analyze` fans out across threads above a
+# corpus-size floor, and the calibration normalizer assumes identical work every run. The
+# `just bench*` recipes pass `-t1`; fail loud if something starts the suite with more.
+Threads.nthreads() == 1 ||
+    error("benchmarks must run single-threaded (nthreads=$(Threads.nthreads())); run with `-t1`")
+
 const SUITE = BenchmarkTools.BenchmarkGroup()
 
 const CORPUS_DIR = joinpath(@__DIR__, "..", "test", "corpus")
