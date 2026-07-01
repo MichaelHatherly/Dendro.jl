@@ -132,6 +132,18 @@ triage view. `--check` instead gates on the `:high` floor, the error-severity fi
 1. `--config=<file>` reads a config file in place of discovery, `--no-config` ignores
 config files, `--cut=<float>` sets the percentile cutoff. `--help` lists every flag.
 
+## Performance
+
+Analysis parallelises across threads on a large corpus. Start Julia with `-t auto`
+(or `-tN`, or set `JULIA_NUM_THREADS`) and `analyze` fans the parsing, scoring,
+duplicate, and cross-file passes out over the available threads. Below a small
+corpus-size floor, or single-threaded, it runs serially, so a diff or single-file
+gate pays no overhead. The findings are identical whatever the thread count.
+
+```bash
+julia -t auto -m Dendro src    # parallel scan on a large project
+```
+
 ## Configuration
 
 The bands a finding is judged against are drawn from common complexity guidance.

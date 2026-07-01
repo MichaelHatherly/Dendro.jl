@@ -45,7 +45,13 @@
 # coercion through the inlined, `isa`-guarded `config_*` helpers then dropped sound from
 # 852 to 836 and opt from 21 to 20: the guard narrows each `Any` TOML value to a concrete
 # type before conversion, and inlining folds the residual conversion into the caller,
-# attributed to Base, off the Dendro-scoped opt count.
+# attributed to Base, off the Dendro-scoped opt count. Threading the corpus fan-outs
+# (`parallel.jl`, and the parallelised passes in `clones.jl`, `linkage.jl`, `naturalness.jl`,
+# `corpus.jl`, `placement.jl`) raised sound from 836 to 1020 and opt from 20 to 21:
+# `Threads.@spawn` schedules a Task closure and `parallel_map!`/`parallel_chunks` dispatch
+# through a function-valued argument, so each fan-out's `Any`-node walk is analysed inside a
+# spawned closure too, the same intentional dynamic dispatch already counted, at new sites
+# across the fan-outs.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -53,8 +59,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 836   # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 20      # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 1020  # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 21      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))

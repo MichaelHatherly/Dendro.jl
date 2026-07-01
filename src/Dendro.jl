@@ -11,6 +11,7 @@ public Rule, BUILTIN_RULES, OPTIONAL_RULES
 public Config
 
 include("resolve.jl")
+include("parallel.jl")
 include("profile.jl")
 include("profiles.jl")
 include("bindings.jl")

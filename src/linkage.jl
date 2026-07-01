@@ -296,9 +296,14 @@ types, macros, and consts visible at its module scope, skipping locals and langu
 with no scopes query.
 """
 function corpus_symbols(files::Vector{ParsedFile})
+    n = length(files)
+    partials = Vector{Vector{CorpusDef}}(undef, n)
+    parallel_map!(partials, n) do i
+        file_symbols!(SymbolTable(), files[i]).defs
+    end
     table = SymbolTable()
-    for file in files
-        file_symbols!(table, file)
+    for i in 1:n
+        append!(table.defs, partials[i])
     end
     return table
 end
@@ -660,6 +665,21 @@ function merge_visible(a::Dict{String, Vector{Int}}, b::Dict{String, Vector{Int}
     return out
 end
 
+# The corpus-wide indexes `visible_defs` shares across files when resolving each file's
+# cross-file candidates: the symbol table and corpus path set, the inclusion roots with their
+# per-component definition lists (splice), and the per-file, per-directory definition and
+# export lookups (import, directory, package). Grouped so the per-file resolver takes one
+# context, not a long parameter list. Concrete fields, so `file_visible` dispatches statically.
+struct VisibilityIndex
+    table::SymbolTable
+    corpus::Corpus
+    roots::Dict{String, Int}
+    bycomp::Dict{Int, Vector{Int}}
+    defs_by_dir::Dict{String, Vector{Int}}
+    defs_by_file::Dict{String, Vector{Int}}
+    exports_by_file::Dict{String, Set{String}}
+end
+
 """
     visible_defs(files, table, corpus) -> Dict{String, Dict{String, Vector{Int}}}
 
@@ -681,26 +701,37 @@ function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Cor
         push!(get!(() -> Int[], defs_by_file, to_posix(d.file)), di)
         push!(get!(() -> Int[], defs_by_dir, dirname(d.file)), di)
     end
-    exports_by_file = Dict{String, Set{String}}(to_posix(f.file) => file_exports(f) for f in files)
+    n = length(files)
+    exps = Vector{Set{String}}(undef, n)
+    parallel_map!(exps, n) do i
+        file_exports(files[i])
+    end
+    exports_by_file = Dict{String, Set{String}}(to_posix(files[i].file) => exps[i] for i in 1:n)
+    vi = VisibilityIndex(table, corpus, roots, bycomp, defs_by_dir, defs_by_file, exports_by_file)
+    entries = Vector{Dict{String, Vector{Int}}}(undef, n)
+    parallel_map!(entries, n) do i
+        file_visible(files[i], vi)
+    end
     visible = Dict{String, Dict{String, Vector{Int}}}()
-    for f in files
-        link = get(LINKAGES, f.language, nothing)
-        visible[f.file] = if link === nothing
-            Dict{String, Vector{Int}}()
-        elseif link.model === :splice
-            member_visible(f, table, link, get(bycomp, roots[f.file], Int[]))
-        elseif link.model === :directory
-            member_visible(f, table, link, get(defs_by_dir, dirname(f.file), Int[]))
-        elseif link.model === :package
-            merge_visible(
-                import_visible(f, table, link, corpus, defs_by_file, exports_by_file),
-                package_visible(f, table, get(defs_by_dir, dirname(f.file), Int[])),
-            )
-        else
-            import_visible(f, table, link, corpus, defs_by_file, exports_by_file)
-        end
+    for i in 1:n
+        visible[files[i].file] = entries[i]
     end
     return visible
+end
+
+# The corpus definitions one file can reference across the boundary, indexed by name. The
+# linkage model selects the resolver; every input is read-only, so this runs per file in
+# parallel from `visible_defs`.
+function file_visible(f::ParsedFile, vi::VisibilityIndex)
+    link = get(LINKAGES, f.language, nothing)
+    link === nothing && return Dict{String, Vector{Int}}()
+    link.model === :splice && return member_visible(f, vi.table, link, get(vi.bycomp, vi.roots[f.file], Int[]))
+    link.model === :directory && return member_visible(f, vi.table, link, get(vi.defs_by_dir, dirname(f.file), Int[]))
+    link.model === :package && return merge_visible(
+        import_visible(f, vi.table, link, vi.corpus, vi.defs_by_file, vi.exports_by_file),
+        package_visible(f, vi.table, get(vi.defs_by_dir, dirname(f.file), Int[])),
+    )
+    return import_visible(f, vi.table, link, vi.corpus, vi.defs_by_file, vi.exports_by_file)
 end
 
 """
@@ -716,14 +747,22 @@ edge. A name matching several visible definitions yields all of them.
 function corpus_references(files::Vector{ParsedFile}, table::SymbolTable)
     corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
     visible = visible_defs(files, table, corpus)
-    out = Tuple{ParsedFile, UnboundRef, Vector{Int}}[]
-    for f in files
+    n = length(files)
+    perfile = Vector{Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}}(undef, n)
+    parallel_map!(perfile, n) do i
+        f = files[i]
         names = visible[f.file]
+        acc = Tuple{ParsedFile, UnboundRef, Vector{Int}}[]
         for ref in unbound_references(f)
             candidates = get(names, ref.name, nothing)
             candidates === nothing && continue
-            push!(out, (f, ref, candidates))
+            push!(acc, (f, ref, candidates))
         end
+        acc
+    end
+    out = Tuple{ParsedFile, UnboundRef, Vector{Int}}[]
+    for i in 1:n
+        append!(out, perfile[i])
     end
     return out
 end
@@ -739,7 +778,12 @@ set; its convention or modifier predicate decides publicness without consulting 
 """
 function public_surface(files::Vector{ParsedFile})
     corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
-    own = Dict{String, Set{String}}(f.file => file_exports(f) for f in files)
+    n = length(files)
+    exps = Vector{Set{String}}(undef, n)
+    parallel_map!(exps, n) do i
+        file_exports(files[i])
+    end
+    own = Dict{String, Set{String}}(files[i].file => exps[i] for i in 1:n)
     components = inclusion_components(files, corpus)
     by_component = Dict{Int, Set{String}}()
     for f in files

@@ -10,32 +10,75 @@
 # every path, as `analyze` does.
 function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothing, rules = BUILTIN_RULES)
     forced = language === nothing ? nothing : Symbol(lowercase(String(language)))
-    parsers = Dict{Symbol, TreeSitter.Parser}()
-    files = ParsedFile[]
+    entries = Tuple{String, Symbol}[]
     for path in paths
         lang = forced === nothing ? language_for_path(path) : forced
         lang === nothing && continue
         haskey(PROFILES, lang) || continue
+        push!(entries, (String(path), lang))
+    end
+    n = length(entries)
+    files = Vector{ParsedFile}(undef, n)
+    # Warm every language's caches single-threaded before the parallel parse first-touches
+    # them; this also leaves the imports query warm for the linkage passes downstream.
+    parallel_enabled(n) && warm_languages(unique(last(e) for e in entries))
+    parallel_chunks(n) do _, idxs
+        parse_chunk!(files, entries, idxs, rules)
+    end
+    return files
+end
+
+# Parse one chunk of files with a task-local parser pool: a `TreeSitter.Parser` is stateful,
+# so each chunk keeps its own, reused across its files. Writes into the shared preallocated
+# `files` at each entry's index, so the corpus order matches the serial path.
+function parse_chunk!(files::Vector{ParsedFile}, entries::Vector{Tuple{String, Symbol}}, idxs, rules)
+    parsers = Dict{Symbol, TreeSitter.Parser}()
+    for i in idxs
+        path, lang = entries[i]
         parser = get!(() -> parser_for(lang), parsers, lang)
         source = read(path, String)
         tree = parse(parser, source)
         index = build_index(tree, lang, source, query_for(lang), scopes_query_for(lang))
         directives = suppressions(index; file = path, rules)
-        push!(files, ParsedFile(lang, source, String(path), tree, index, directives))
+        files[i] = ParsedFile(lang, source, path, tree, index, directives)
     end
-    return files
+    return nothing
 end
 
-# Baseline over already-parsed corpus records.
+# Baseline over already-parsed corpus records. Each chunk samples into its own partial
+# baseline; the merge concatenates per `(language, metric)` and the final `sort!` fixes the
+# order, so the sorted samples are identical to the serial path at any thread count.
 function baseline_from(files::Vector{ParsedFile}, rules = BUILTIN_RULES)
-    baseline = Baseline()
-    for f in files
-        add_samples!(baseline, f.index, rules)
+    n = length(files)
+    partials = [Baseline() for _ in 1:n_chunks(n)]
+    parallel_chunks(n) do c, idxs
+        sample_chunk!(partials[c], files, idxs, rules)
     end
+    baseline = merge_baselines(partials)
     for samples in values(baseline.samples)
         sort!(samples)
     end
     return baseline
+end
+
+# Sample one chunk of files into a partial baseline.
+function sample_chunk!(baseline::Baseline, files::Vector{ParsedFile}, idxs, rules)
+    for i in idxs
+        add_samples!(baseline, files[i].index, rules)
+    end
+    return baseline
+end
+
+# Concatenate partial baselines per `(language, metric)`. The caller sorts the merged
+# samples, so the append order does not affect the result.
+function merge_baselines(partials::Vector{Baseline})
+    merged = Baseline()
+    for p in partials
+        for (k, v) in p.samples
+            append!(get!(() -> Float64[], merged.samples, k), v)
+        end
+    end
+    return merged
 end
 
 # The git toplevel containing the first of `paths`, found from that path's directory.
@@ -173,16 +216,21 @@ function analyze(
         scope = Scope(root, changed_ranges(read(`git -C $root diff $base`, String)))
     end
 
-    findings = Finding[]
-    for f in files
+    perfile = Vector{Vector{Finding}}(undef, length(files))
+    parallel_map!(perfile, length(files)) do i
+        f = files[i]
         within = nothing
         if scope !== nothing
             rel = relpath(realpath(f.file), scope.root)
-            haskey(scope.ranges, rel) || continue
+            haskey(scope.ranges, rel) || return Finding[]
             within = scope.ranges[rel]
         end
         scan = Scan(f.index, f.file; rules = active_rules, baseline = bl, cut = ecut, within = within, directives = f.directives)
-        append!(findings, findings_for(scan))
+        findings_for(scan)
+    end
+    findings = Finding[]
+    for pf in perfile
+        append!(findings, pf)
     end
 
     append!(findings, scope_clusters(cluster_duplicates(files; min_size = msize), scope))
