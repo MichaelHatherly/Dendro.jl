@@ -267,18 +267,13 @@ function pair_similarity(units::Vector{CloneUnit}, i::Int, j::Int, threshold::Fl
     return clone_similarity(a, b)
 end
 
-# Candidate pairs within one language, confirmed by LCS similarity. A characteristic-
-# vector radius query (DECKARD) proposes pairs cheaply; size banding keeps the radius
-# meaningful, querying each band against itself and the next size up so a pair
-# straddling a band boundary is still seen. A size-ratio prefilter drops mismatched
-# pairs before the LCS, and each surviving pair becomes an edge weighted by its
-# similarity. Exact clones (equal digest) are left to the exact path, never re-reported.
-function near_miss_edges!(
-        edges::Vector{Tuple{Int, Int, Float64}}, units::Vector{CloneUnit}, idxs::Vector{Int},
-        threshold::Float64, radius_factor::Float64
-    )
-    length(idxs) < 2 && return edges
-
+# The candidate pairs a radius query proposes within one language, deduped and with exact
+# clones dropped. A characteristic-vector radius query (DECKARD) proposes pairs cheaply;
+# size banding keeps the radius meaningful, querying each band against itself and the next
+# size up so a pair straddling a band boundary is still seen. Cheap relative to the LCS
+# verdict, so it stays serial; the traversal order is deterministic (bands sorted, hits in
+# query order), which fixes the pair order the parallel scoring reads.
+function candidate_pairs(units::Vector{CloneUnit}, idxs::Vector{Int}, radius_factor::Float64)
     vocab = Dict{String, Int}()
     for i in idxs, t in keys(units[i].histogram)
         get!(vocab, t, length(vocab) + 1)
@@ -289,6 +284,7 @@ function near_miss_edges!(
         push!(get!(() -> Int[], bands, floor(Int, log2(units[i].size))), i)
     end
 
+    pairs = Tuple{Int, Int}[]
     seen = Set{Tuple{Int, Int}}()
     for b in sort!(collect(keys(bands)))
         query = bands[b]
@@ -308,10 +304,31 @@ function near_miss_edges!(
                 pair in seen && continue
                 push!(seen, pair)
                 units[pair[1]].digest == units[pair[2]].digest && continue
-                score = pair_similarity(units, pair[1], pair[2], threshold)
-                score >= threshold && push!(edges, (pair[1], pair[2], score))
+                push!(pairs, pair)
             end
         end
+    end
+    return pairs
+end
+
+# Candidate pairs within one language, confirmed by LCS similarity, appended as weighted
+# edges. `candidate_pairs` proposes cheaply; the LCS verdict is the dominant cost, so it
+# runs in parallel over the proposed pairs (a size-ratio prefilter inside `pair_similarity`
+# drops mismatched lengths before the O(n*m) work). Scores are written to a preallocated
+# vector and read back in pair order, so the edge set is identical to the serial path.
+# Exact clones (equal digest) are already dropped by `candidate_pairs`, never re-reported.
+function near_miss_edges!(
+        edges::Vector{Tuple{Int, Int, Float64}}, units::Vector{CloneUnit}, idxs::Vector{Int},
+        threshold::Float64, radius_factor::Float64
+    )
+    length(idxs) < 2 && return edges
+    pairs = candidate_pairs(units, idxs, radius_factor)
+    scores = Vector{Float64}(undef, length(pairs))
+    parallel_map!(scores, length(pairs)) do k
+        pair_similarity(units, pairs[k][1], pairs[k][2], threshold)
+    end
+    for k in eachindex(pairs)
+        scores[k] >= threshold && push!(edges, (pairs[k][1], pairs[k][2], scores[k]))
     end
     return edges
 end
