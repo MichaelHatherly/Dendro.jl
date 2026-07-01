@@ -60,11 +60,13 @@ chunk.
 
 The parallel fronts, in cost order: the near-miss LCS confirmation
 (`near_miss_edges!`, the dominant pass), the cross-file symbol resolution
-(`corpus_symbols`, `visible_defs`, `corpus_references`, `own_affinity`), and the
-three per-file steps at the front of `analyze`, parsing (`parse_corpus`, one stateful
+(`corpus_symbols`, `visible_defs`, `corpus_references`, `own_affinity`), naturalness
+(tokenizing, the per-file cache models, and cross-entropy scoring), and the three
+per-file steps at the front of `analyze`, parsing (`parse_corpus`, one stateful
 `TreeSitter.Parser` per chunk), baseline sampling (`baseline_from`, per-chunk partials
-merged), and per-file scoring. The corpus-global joins stay serial: the
-inclusion-component and clone union-finds, and community detection.
+merged), and per-file scoring. The serial remainders are the corpus-global joins, the
+inclusion-component and clone union-finds and community detection, and the naturalness
+global model, a trigram-dict reduction where a parallel merge would not pay.
 
 Two invariants hold it together. The lazy per-language caches (`parser_for` and the
 query caches in `resolve.jl`) and `Base.require` corrupt under concurrent
