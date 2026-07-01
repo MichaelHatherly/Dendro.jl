@@ -153,9 +153,7 @@ end
 function naturalness_units(files::Vector{ParsedFile})
     n = length(files)
     perfile = Vector{Vector{NaturalnessUnit}}(undef, n)
-    parallel_map!(perfile, n) do i
-        file_naturalness_units(files[i])
-    end
+    parallel_map!(i -> file_naturalness_units(files[i]), perfile)
     bylang = Dict{Symbol, Vector{NaturalnessUnit}}()
     for i in 1:n
         append!(get!(() -> NaturalnessUnit[], bylang, files[i].language), perfile[i])
@@ -192,14 +190,8 @@ function file_caches(units::Vector{NaturalnessUnit})
     # Build each file's model in parallel; the models are independent and order-free.
     order = collect(keys(byfile))
     models = Vector{NGramModel}(undef, length(order))
-    parallel_map!(models, length(order)) do i
-        build_model(byfile[order[i]])
-    end
-    caches = Dict{String, NGramModel}()
-    for (i, file) in enumerate(order)
-        caches[file] = models[i]
-    end
-    return caches
+    parallel_map!(i -> build_model(byfile[order[i]]), models)
+    return Dict{String, NGramModel}(zip(order, models))
 end
 
 # Naturalness findings for one language's units, scored against a global model
@@ -214,7 +206,7 @@ function unnatural_in_language!(
     caches = file_caches(units)
     # Scoring each unit is independent, so it fans out into the preallocated vector.
     entropies = Vector{Float64}(undef, length(units))
-    parallel_map!(entropies, length(units)) do i
+    parallel_map!(entropies) do i
         interpolated_cross_entropy(units[i].tokens, global_model, caches[units[i].location.file], CACHE_LAMBDA)
     end
     sorted = sort(entropies)

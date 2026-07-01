@@ -296,15 +296,11 @@ types, macros, and consts visible at its module scope, skipping locals and langu
 with no scopes query.
 """
 function corpus_symbols(files::Vector{ParsedFile})
-    n = length(files)
-    partials = Vector{Vector{CorpusDef}}(undef, n)
-    parallel_map!(partials, n) do i
-        file_symbols!(SymbolTable(), files[i]).defs
-    end
     table = SymbolTable()
-    for i in 1:n
-        append!(table.defs, partials[i])
-    end
+    append!(
+        table.defs,
+        parallel_flatmap(i -> file_symbols!(SymbolTable(), files[i]).defs, length(files), CorpusDef),
+    )
     return table
 end
 
@@ -528,6 +524,14 @@ function file_exports(file::ParsedFile)
     return exports
 end
 
+# Every file's export set, computed per file in parallel, aligned with `files`. Shared by
+# the visibility and public-surface passes, which key it differently.
+function corpus_exports(files::Vector{ParsedFile})
+    exps = Vector{Set{String}}(undef, length(files))
+    parallel_map!(i -> file_exports(files[i]), exps)
+    return exps
+end
+
 # The `from <module> import <names>` statements in one file, each as the module string
 # and the set of names it brings into scope. A name is paired to the statement whose
 # byte range contains it, the same geometric test the module regions use.
@@ -702,16 +706,11 @@ function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Cor
         push!(get!(() -> Int[], defs_by_dir, dirname(d.file)), di)
     end
     n = length(files)
-    exps = Vector{Set{String}}(undef, n)
-    parallel_map!(exps, n) do i
-        file_exports(files[i])
-    end
+    exps = corpus_exports(files)
     exports_by_file = Dict{String, Set{String}}(to_posix(files[i].file) => exps[i] for i in 1:n)
     vi = VisibilityIndex(table, corpus, roots, bycomp, defs_by_dir, defs_by_file, exports_by_file)
     entries = Vector{Dict{String, Vector{Int}}}(undef, n)
-    parallel_map!(entries, n) do i
-        file_visible(files[i], vi)
-    end
+    parallel_map!(i -> file_visible(files[i], vi), entries)
     visible = Dict{String, Dict{String, Vector{Int}}}()
     for i in 1:n
         visible[files[i].file] = entries[i]
@@ -747,9 +746,7 @@ edge. A name matching several visible definitions yields all of them.
 function corpus_references(files::Vector{ParsedFile}, table::SymbolTable)
     corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
     visible = visible_defs(files, table, corpus)
-    n = length(files)
-    perfile = Vector{Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}}(undef, n)
-    parallel_map!(perfile, n) do i
+    return parallel_flatmap(length(files), Tuple{ParsedFile, UnboundRef, Vector{Int}}) do i
         f = files[i]
         names = visible[f.file]
         acc = Tuple{ParsedFile, UnboundRef, Vector{Int}}[]
@@ -760,11 +757,6 @@ function corpus_references(files::Vector{ParsedFile}, table::SymbolTable)
         end
         acc
     end
-    out = Tuple{ParsedFile, UnboundRef, Vector{Int}}[]
-    for i in 1:n
-        append!(out, perfile[i])
-    end
-    return out
 end
 
 """
@@ -778,12 +770,8 @@ set; its convention or modifier predicate decides publicness without consulting 
 """
 function public_surface(files::Vector{ParsedFile})
     corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
-    n = length(files)
-    exps = Vector{Set{String}}(undef, n)
-    parallel_map!(exps, n) do i
-        file_exports(files[i])
-    end
-    own = Dict{String, Set{String}}(files[i].file => exps[i] for i in 1:n)
+    exps = corpus_exports(files)
+    own = Dict{String, Set{String}}(files[i].file => exps[i] for i in eachindex(files))
     components = inclusion_components(files, corpus)
     by_component = Dict{Int, Set{String}}()
     for f in files

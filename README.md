@@ -136,9 +136,10 @@ config files, `--cut=<float>` sets the percentile cutoff. `--help` lists every f
 
 Analysis parallelises across threads on a large corpus. Start Julia with `-t auto`
 (or `-tN`, or set `JULIA_NUM_THREADS`) and `analyze` fans the parsing, scoring,
-duplicate, and cross-file passes out over the available threads. Below a small
-corpus-size floor, or single-threaded, it runs serially, so a diff or single-file
-gate pays no overhead. The findings are identical whatever the thread count.
+duplicate, and cross-file passes out over the available threads. Each pass falls
+back to serial below a small size floor on its own item count (files, clone pairs,
+functions), or single-threaded, so a small diff or single-file gate pays little to
+no overhead. The findings are identical whatever the thread count.
 
 ```bash
 julia -t auto -m Dendro src    # parallel scan on a large project

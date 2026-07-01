@@ -51,7 +51,11 @@
 # `Threads.@spawn` schedules a Task closure and `parallel_map!`/`parallel_chunks` dispatch
 # through a function-valued argument, so each fan-out's `Any`-node walk is analysed inside a
 # spawned closure too, the same intentional dynamic dispatch already counted, at new sites
-# across the fan-outs.
+# across the fan-outs. Folding the per-item fan-outs through `parallel_flatmap` and
+# assigning `analyze`'s `scope` once then dropped sound from 1020 to 980 and opt from 21
+# to 20: the shared fold replaces per-site append loops over `Any`-inferable partials, and
+# the single assignment lets the scoring closure capture `scope` concretely instead of as
+# a `Core.Box`.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -59,8 +63,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1020  # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 21      # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 980   # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 20      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))

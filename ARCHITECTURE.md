@@ -49,14 +49,18 @@ touched line ranges. Nothing else branches the flow.
 
 ## Parallelism
 
-Analysis fans out across threads when the corpus clears a size floor
-(`PARALLEL_MIN`) and Julia runs with more than one thread. Below the floor, or
-single-threaded, the serial path runs unchanged, so the diff and single-file gate
-pay no task overhead. `src/parallel.jl` holds the primitives: `parallel_map!` writes
-one value per item into a preallocated indexed vector, and `parallel_chunks` runs a
-worker per chunk for fan-outs that carry per-chunk state (a parser pool, a partial
-baseline). Both split work round-robin, so a large file or function does not skew a
-chunk.
+Each fan-out runs across threads when its own item count, files, candidate clone
+pairs, or naturalness units, clears a size floor (`PARALLEL_MIN`) and Julia runs
+with more than one thread. Below the floor, or single-threaded, that fan-out runs
+serially. The floor is per fan-out, not per run: a small diff or single-file gate
+pays no task overhead in the per-file passes, but a single file with enough
+functions still fans its pair- and unit-level passes out. `src/parallel.jl` holds
+the primitives: `parallel_map!` writes one value per item into a preallocated
+indexed vector, `parallel_flatmap` concatenates per-item vectors in index order,
+and `parallel_chunks` runs a worker per chunk, giving each its own state (a parser
+pool, a partial baseline) and returning the states in chunk order. All split work
+round-robin, so a large file or function does not skew a chunk, and a failed task
+rethrows its own exception, so errors surface identically to the serial path.
 
 The parallel fronts, in cost order: the near-miss LCS confirmation
 (`near_miss_edges!`, the dominant pass), the cross-file symbol resolution
@@ -69,10 +73,12 @@ inclusion-component and clone union-finds and community detection, and the natur
 global model, a trigram-dict reduction where a parallel merge would not pay.
 
 Two invariants hold it together. The lazy per-language caches (`parser_for` and the
-query caches in `resolve.jl`) and `Base.require` corrupt under concurrent
-first-touch, so `warm_languages` populates them single-threaded before any fan-out.
-Every parallel path writes into a preallocated indexed vector, or merges then sorts,
-so the findings are byte-identical to the serial path at any thread count. That
+query caches in `resolve.jl`) are guarded by `CACHE_LOCK`, so a concurrent
+first-touch is safe from any fan-out; `warm_languages` fills them before the parse
+so no task pays a JLL load or query compile mid fan-out. Every parallel path writes
+into a preallocated indexed vector, folds in index order through `parallel_flatmap`,
+or merges then sorts, so the findings are byte-identical to the serial path at any
+thread count. That
 determinism is tested in `test/parallel.jl`; the dogfood gate and the benchmark trend
 both rely on it, and the benchmark suite pins itself to one thread.
 
@@ -154,12 +160,14 @@ Resolution and configuration:
   survives precompilation) and compiles it against that grammar, caching both
   lazily. A missing grammar errors with an install hint. `scopes_query_for` reads the
   optional `src/queries/<lang>.scopes.scm` the same way, returning `nothing` for a
-  language that ships none. `warm_languages` populates every lazy cache
-  single-threaded before a parallel fan-out first-touches one.
+  language that ships none. The caches are guarded by `CACHE_LOCK`;
+  `warm_languages` fills them for a language set up front so fan-out tasks find
+  them warm.
 - `parallel.jl` defines the threading primitives the corpus fan-outs share:
-  `PARALLEL_MIN` and `parallel_enabled`, `chunk_indices` (round-robin partition),
-  `parallel_map!` (one value per item into a preallocated vector), and
-  `parallel_chunks` (a worker per chunk for per-chunk state). Included after
+  `PARALLEL_MIN` and `parallel_enabled`, `chunk_indices` (round-robin partition
+  into strided ranges), `parallel_map!` (one value per item into a preallocated
+  vector), `parallel_flatmap` (per-item vectors folded in index order), and
+  `parallel_chunks` (a worker per chunk, each with its own state). Included after
   `resolve.jl`, whose cache functions `warm_languages` calls. See Parallelism.
 - `profile.jl` defines `LanguageProfile`, now just a language `name`. The node types
   it measures live in the language's query, not in this type.

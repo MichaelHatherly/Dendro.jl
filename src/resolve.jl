@@ -58,7 +58,7 @@ function language_module(name::Symbol)
         "Dendro: no parser for language :$name. Add it with " *
             "`import Pkg; Pkg.add(\"$pkgname\")`.",
     )
-    return Base.require(id)
+    return lock(() -> Base.require(id), CACHE_LOCK)
 end
 
 """
@@ -76,6 +76,11 @@ parser_for(mod::Module) = TreeSitter.Parser(mod)
 # precompilation or when the package is moved.
 const QUERIES_DIR = RelocatableFolders.@path joinpath(@__DIR__, "queries")
 
+# Guards the JLL load and the lazy query caches against concurrent first-touch: `get!` on a
+# plain Dict corrupts it under a concurrent resize. Reentrant, since a cache fill loads the
+# language module inside the lock; uncontended once a language is warm.
+const CACHE_LOCK = ReentrantLock()
+
 # Compiled queries cached per language. Populated lazily at runtime: a `Query` wraps
 # a C pointer that cannot survive precompilation, so it is built on first use.
 const QUERY_CACHE = Dict{Symbol, TreeSitter.Query}()
@@ -88,9 +93,11 @@ The compiled node-identification query for `language`, read from
 query compiles on first use against the freshly loaded grammar.
 """
 function query_for(name::Symbol)
-    return get!(QUERY_CACHE, name) do
-        source = read(joinpath(QUERIES_DIR, "$(name).scm"), String)
-        TreeSitter.Query(language_module(name), source)
+    return lock(CACHE_LOCK) do
+        get!(QUERY_CACHE, name) do
+            source = read(joinpath(QUERIES_DIR, "$(name).scm"), String)
+            TreeSitter.Query(language_module(name), source)
+        end
     end
 end
 
@@ -107,10 +114,12 @@ language without a scopes query carries no bindings, and the cohesion metric ski
 it rather than treating every function as isolated.
 """
 function scopes_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
-    return get!(SCOPES_QUERY_CACHE, name) do
-        path = joinpath(QUERIES_DIR, "$(name).scopes.scm")
-        isfile(path) || return nothing
-        TreeSitter.Query(language_module(name), read(path, String))
+    return lock(CACHE_LOCK) do
+        get!(SCOPES_QUERY_CACHE, name) do
+            path = joinpath(QUERIES_DIR, "$(name).scopes.scm")
+            isfile(path) || return nothing
+            TreeSitter.Query(language_module(name), read(path, String))
+        end
     end
 end
 
@@ -130,16 +139,17 @@ binding graph reads to resolve a reference across files.
 # the two share a shape with nothing left to extract.
 # dendro-ignore: duplicate
 function imports_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
-    return get!(IMPORTS_QUERY_CACHE, name) do
-        path = joinpath(QUERIES_DIR, "$(name).imports.scm")
-        isfile(path) || return nothing
-        TreeSitter.Query(language_module(name), read(path, String))
+    return lock(CACHE_LOCK) do
+        get!(IMPORTS_QUERY_CACHE, name) do
+            path = joinpath(QUERIES_DIR, "$(name).imports.scm")
+            isfile(path) || return nothing
+            TreeSitter.Query(language_module(name), read(path, String))
+        end
     end
 end
 
-# Populate every lazy per-language cache for `langs` single-threaded, before a parallel
-# fan-out first-touches one. The parser JLL loads through `Base.require` and each query is
-# cached in a plain Dict filled by `get!`; both corrupt under concurrent first-touch.
+# Populate every lazy per-language cache for `langs` before the corpus fan-outs, so no
+# parallel task pays the JLL load or a query compile behind `CACHE_LOCK` mid fan-out.
 function warm_languages(langs)
     for lang in langs
         parser_for(lang)
