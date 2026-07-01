@@ -23,6 +23,9 @@ function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothin
         directives = suppressions(index; file = path, rules)
         push!(files, ParsedFile(lang, source, String(path), tree, index, directives))
     end
+    # Warm the imports-query cache so the parallel linkage passes downstream never first-touch
+    # it concurrently. Parsing already warmed the node and scopes queries.
+    parallel_enabled(length(files)) && warm_imports(unique(f.language for f in files))
     return files
 end
 

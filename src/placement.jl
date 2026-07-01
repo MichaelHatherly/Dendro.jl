@@ -26,19 +26,32 @@ const MIN_MISPLACED_FILES = 5
 # variables bind inside the unit and are excluded; they say nothing about where the unit
 # belongs. Read from the lexical bindings, keyed by graph unit index.
 function own_affinity(files::Vector{ParsedFile}, graph::CorpusGraph)
+    n = length(files)
+    partials = Vector{Dict{Int, Float64}}(undef, n)
+    parallel_map!(partials, n) do i
+        file_own_affinity(files[i], graph)
+    end
     own = Dict{Int, Float64}()
-    for f in files
-        units = f.index.functions
-        isempty(units) && continue
-        ranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
-        for (refid, defid) in f.index.bindings
-            ur = containing_unit(ranges, refid[1], refid[2])
-            ur == 0 && continue
-            containing_unit(ranges, defid[1], defid[2]) == ur && continue
-            gi = get(graph.unit_index, (f.file, ur), 0)
-            gi == 0 && continue
-            own[gi] = get(own, gi, 0.0) + 1.0
-        end
+    for i in 1:n
+        merge!(own, partials[i])
+    end
+    return own
+end
+
+# One file's unit-to-own-file coupling, keyed by graph unit index. Each file's units carry
+# distinct indices, so the per-file maps merge without collision. Read-only over the graph.
+function file_own_affinity(f::ParsedFile, graph::CorpusGraph)
+    own = Dict{Int, Float64}()
+    units = f.index.functions
+    isempty(units) && return own
+    ranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    for (refid, defid) in f.index.bindings
+        ur = containing_unit(ranges, refid[1], refid[2])
+        ur == 0 && continue
+        containing_unit(ranges, defid[1], defid[2]) == ur && continue
+        gi = get(graph.unit_index, (f.file, ur), 0)
+        gi == 0 && continue
+        own[gi] = get(own, gi, 0.0) + 1.0
     end
     return own
 end

@@ -136,3 +136,13 @@ function imports_query_for(name::Symbol)::Union{TreeSitter.Query, Nothing}
         TreeSitter.Query(language_module(name), read(path, String))
     end
 end
+
+# Populate the imports-query cache for `langs` single-threaded, before a parallel linkage
+# fan-out first-touches it. The cache is a plain Dict filled by `get!`, unsafe under
+# concurrent first-touch; the node and scopes queries are already warm from parsing.
+function warm_imports(langs)
+    for lang in langs
+        imports_query_for(lang)
+    end
+    return nothing
+end
