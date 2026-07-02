@@ -43,6 +43,9 @@
 
 (method_invocation) @call
 
+; A call's target name.
+(method_invocation name: (identifier) @callee)
+
 (binary_expression) @binary_expr
 
 [(if_statement) (switch_expression)] @conditional

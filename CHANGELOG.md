@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `catch (...)`, Ruby `rescue Exception`, PHP `catch (Throwable)`. The merely-wide
   tier (`except Exception`, `catch (Exception)`) is not flagged, and a language
   whose only catch form is untyped (JavaScript, Julia) reports nothing.
+- Optional rule `fan_out`: distinct callables a function invokes, by called name,
+  a member call counted by its final name, recursion excluded. Band 12/20,
+  anchored at the p95/p99 of a six-corpus calibration; opt-in because no fixed
+  band separates a smell from a legitimate orchestrator.
 - `analyze(path; base, cut, min_size, language)` takes a file or folder. A folder
   recurses for analysable files; either way a baseline is built from the corpus
   (the folder's files, or the single file's own functions), so relative scoring

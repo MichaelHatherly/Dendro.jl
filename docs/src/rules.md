@@ -39,5 +39,8 @@ pylint's too-many-locals) likewise wants per-project tuning. `shadowed_variable`
 flags a fresh local binding hiding an enclosing one; a Julia statement assignment in
 a nested scope rebinds rather than shadows and never reports, but a method local
 matching a class attribute does, an idiom some codebases use routinely, so the rule
-is opt-in. Opt in with
+is opt-in. `fan_out` (distinct callables a function invokes, by called name with a
+member call counted by its final name, band 12/20 anchored at the p95/p99 of a
+six-corpus calibration) is opt-in because no fixed band separates a smell from a
+legitimate orchestrator: idiomatic corpora run p99 anywhere from 9 to 26. Opt in with
 `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.

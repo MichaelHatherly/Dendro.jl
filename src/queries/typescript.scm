@@ -51,6 +51,10 @@
 
 (call_expression) @call
 
+; A call's target name: the called identifier, or a member call's property name.
+(call_expression function: (identifier) @callee)
+(call_expression function: (member_expression property: (property_identifier) @callee))
+
 (binary_expression) @binary_expr
 
 [(if_statement) (switch_statement)] @conditional

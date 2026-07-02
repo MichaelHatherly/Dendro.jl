@@ -51,6 +51,10 @@
 
 (call) @call
 
+; A call's target name: the called identifier, or a method call's final name.
+(call function: (identifier) @callee)
+(call function: (attribute attribute: (identifier) @callee))
+
 [(comparison_operator) (boolean_operator) (binary_operator)] @binary_expr
 
 [(if_statement) (match_statement)] @conditional

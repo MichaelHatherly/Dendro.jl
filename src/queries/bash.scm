@@ -23,4 +23,7 @@
 
 (command) @call
 
+; A call's target name: the command word.
+(command name: (command_name (word) @callee))
+
 [(if_statement) (case_statement)] @conditional

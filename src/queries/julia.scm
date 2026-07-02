@@ -139,6 +139,12 @@
 
 (call_expression) @call
 
+; A call's target name: the called identifier, or a qualified call's final name
+; (`Base.push!` counts as `push!`). Feeds the `fan_out` scalar; the signature's own
+; call shape is excluded there by name.
+(call_expression . (identifier) @callee)
+(call_expression . (field_expression (_) (identifier) @callee))
+
 (binary_expression) @binary_expr
 
 ; Julia spells a binary operator as a named child of the expression, unlike the

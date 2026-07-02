@@ -64,6 +64,12 @@
 
 (call_expression) @call
 
+; A call's target name: the called identifier, a member call's field name, or a
+; qualified call's final name (`std::h` counts as `h`).
+(call_expression function: (identifier) @callee)
+(call_expression function: (field_expression field: (field_identifier) @callee))
+(call_expression function: (qualified_identifier name: (identifier) @callee))
+
 (binary_expression) @binary_expr
 
 [(if_statement) (switch_statement)] @conditional

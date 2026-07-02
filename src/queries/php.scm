@@ -48,6 +48,12 @@
 
 (function_call_expression) @call
 
+; A call's target name: the called name, a namespaced call's final name, or a
+; member call's method name.
+(function_call_expression function: (name) @callee)
+(function_call_expression function: (qualified_name (name) @callee))
+(member_call_expression name: (name) @callee)
+
 (binary_expression) @binary_expr
 
 [(if_statement) (switch_statement)] @conditional

@@ -55,8 +55,10 @@ Rules a caller can opt into but that are off by default: `return_count` needs
 per-project band tuning, `trivial_wrapper` has a higher false-positive rate,
 `unreachable_after_jump` flags code after an unconditional jump, `npath` grows
 multiplicatively so its band wants per-project tuning, `local_count` likewise,
-and `shadowed_variable` reads name collisions some idioms make routine (a method
-local matching a class attribute). Use them with
+`shadowed_variable` reads name collisions some idioms make routine (a method
+local matching a class attribute), and `fan_out` cannot separate a smell from a
+legitimate orchestrator by any fixed band (idiomatic corpora run p99 from 9 to
+26 distinct callees). Use them with
 `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 """
 const OPTIONAL_RULES = Rule[
@@ -66,6 +68,7 @@ const OPTIONAL_RULES = Rule[
     Rule(:npath, :scalar, (200, 1000), (u, i) -> npath(u.node, i)),
     Rule(:local_count, :scalar, (10, 15), (u, i) -> local_count(u, i)),
     Rule(:shadowed_variable, :flag, nothing, shadowed_variables),
+    Rule(:fan_out, :scalar, (12, 20), (u, i) -> fan_out(u, i)),
 ]
 
 # The active rules of one kind (`:scalar` or `:flag`), in order.

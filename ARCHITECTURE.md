@@ -203,7 +203,9 @@ Measurement:
   scattering share. `containing_unit` finds the innermost unit spanning a byte range;
   `binding_groups` reads `index.bindings` into the groups of local units that share a
   definition, dropping a binding referenced by more than `COHESION_UBIQUITY` of the
-  file's units. The corpus graph folds these into `within_edges`. Included after
+  file's units. The corpus graph folds these into `within_edges`. The `fan_out`
+  scalar lives here beside the coupling substrate it complements: distinct `@callee`
+  names a unit invokes, the per-unit efferent-coupling reading. Included after
   `units.jl` (it calls `functions`), before `corpus_graph.jl` reads it.
 - `metrics.jl` defines the scalar metrics and `severity`: `cyclomatic`,
   `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
@@ -388,6 +390,7 @@ and `function_ids` (the no-descend boundary), plus one `Concept` per measured
 construct (decision points, short-circuit operators, nesting, parameters, parameter
 names, bodies,
 catches, broad catches, comments, names, trivial statements, returns, finally clauses, calls,
+callee names,
 binary expressions, binary operators, conditionals, terminals, short-form
 definitions, and the NPath construct families: loops, switches, ternaries, tries,
 cases). A `Concept`

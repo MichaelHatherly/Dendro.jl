@@ -49,6 +49,10 @@
 
 (call) @call
 
+; A call's target name. A bare identifier is ambiguous between a variable read and
+; a zero-argument call, so only explicit call nodes count.
+(call method: (identifier) @callee)
+
 (binary) @binary_expr
 
 [(if) (unless) (case)] @conditional

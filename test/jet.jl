@@ -60,7 +60,8 @@
 # function-valued rule vector, whose `Any`-typed findings feed the same kwarg-lowering
 # and `Any`-collection sites already counted, no new kind. The optional
 # `shadowed_variable`/`local_count` rules raised sound to 989: one more site of the
-# same rule-vector dispatch.
+# same rule-vector dispatch. The optional `fan_out` rule raised sound to 990: the
+# same again.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -68,7 +69,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 989   # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 990   # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 20      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

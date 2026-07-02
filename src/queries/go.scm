@@ -37,6 +37,10 @@
 
 (call_expression) @call
 
+; A call's target name: the called identifier, or a selector call's field name.
+(call_expression function: (identifier) @callee)
+(call_expression function: (selector_expression field: (field_identifier) @callee))
+
 (binary_expression) @binary_expr
 
 [(if_statement) (expression_switch_statement) (type_switch_statement)] @conditional
