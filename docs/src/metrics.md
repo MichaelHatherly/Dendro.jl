@@ -53,9 +53,9 @@ invokes). See [Custom rules](@ref).
 Each metric is a [rule](@ref "Custom rules"). The set above is the default; a caller
 can add their own or opt into rules that are off by default.
 
-Relational (computed across the corpus, not per function): duplicates
-([below](@ref "Duplicate detection")), naturalness, within-file cohesion, and
-cross-file placement. Naturalness scores each function's token sequence against a
+Relational (computed across the corpus, not per function): duplicates and opt-in
+reimplementation candidates ([below](@ref "Duplicate detection")), naturalness,
+within-file cohesion, and cross-file placement. Naturalness scores each function's token sequence against a
 per-language trigram model of the rest of the corpus, in bits per token. The corpus
 model is interpolated with a per-file cache model (after Tu et al., "On the Localness
 of Software"), so a function is read against its own file's idiom, not just the

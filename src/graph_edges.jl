@@ -70,17 +70,32 @@ edges cohesion reads; zero for a language with no `@callee` capture.
 """
 function fan_out(unit::FunctionUnit, index::QueryIndex)
     isempty(index.callee.nodes) && return 0
-    ranges = unit_ranges(index)
     span = TreeSitter.byte_range(unit.node)
-    own = unit_name(unit, index)
-    names = Set{String}()
+    for (i, u) in enumerate(functions(index))
+        TreeSitter.byte_range(u.node) == span && return length(callees_by_unit(index)[i])
+    end
+    return 0
+end
+
+# Each unit's distinct callee names from one pass over the `@callee` captures, in
+# `functions(index)` order. The single source of what counts as a unit's callee:
+# a call is attributed to its innermost unit, and a unit's own name never counts.
+# `fan_out` reads one entry; the reimplementation fingerprints read them all.
+function callees_by_unit(index::QueryIndex)
+    units = functions(index)
+    out = [Set{String}() for _ in units]
+    isempty(index.callee.nodes) && return out
+    ranges = unit_ranges(index)
     for n in index.callee.nodes
         nid = nodeid(n)
         ui = containing_unit(ranges, nid[1], nid[2])
-        (ui != 0 && ranges[ui] == span) || continue
+        ui == 0 && continue
         name = String(strip(TreeSitter.slice(index.source, n)))
-        (isempty(name) || name == own) && continue
-        push!(names, name)
+        isempty(name) && continue
+        push!(out[ui], name)
     end
-    return length(names)
+    for (i, u) in enumerate(units)
+        delete!(out[i], unit_name(u, index))
+    end
+    return out
 end

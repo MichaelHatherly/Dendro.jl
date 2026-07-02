@@ -146,6 +146,17 @@ keeping only the maximal clone. Near-miss detection (`cluster_near_duplicates`)
 catches functions that are close but not identical, the copy-paste-then-edit, and
 emits `:near_duplicate`.
 
+A third pass, opt-in and in `reimplementation.jl`, reads vocabulary where the other
+two read structure: a helper rewritten with a different shape shares no subtrees
+with the original but keeps its callee names and identifier words. Each function's
+terms (callee names, namespaced apart, plus identifier subtokens) are weighted by
+scan-time corpus IDF; an inverted index over rare terms proposes pairs, and a pair
+whose IDF-weighted Jaccard clears the config's threshold emits `:reimplementation`,
+unless a gate claims it first: already reported by a clone pass, equal digest, same
+name, one calling the other, or a 2:1 size mismatch. Still name-based and
+corpus-derived, no types and no pretrained model, and off by default because
+vocabulary evidence is proposal-strength.
+
 ## Layers
 
 Three layers, low to high. `src/Dendro.jl` includes them in dependency order, and
@@ -203,10 +214,12 @@ Measurement:
   scattering share. `containing_unit` finds the innermost unit spanning a byte range;
   `binding_groups` reads `index.bindings` into the groups of local units that share a
   definition, dropping a binding referenced by more than `COHESION_UBIQUITY` of the
-  file's units. The corpus graph folds these into `within_edges`. The `fan_out`
-  scalar lives here beside the coupling substrate it complements: distinct `@callee`
-  names a unit invokes, the per-unit efferent-coupling reading. Included after
-  `units.jl` (it calls `functions`), before `corpus_graph.jl` reads it.
+  file's units. The corpus graph folds these into `within_edges`. Callee attribution
+  lives here beside the coupling substrate it complements: `callees_by_unit` reads
+  each unit's distinct `@callee` names in one pass (a call belongs to its innermost
+  unit, a unit's own name never counts), the `fan_out` scalar is one entry's length,
+  and the reimplementation fingerprints read them all. Included after `units.jl` (it
+  calls `functions`), before `corpus_graph.jl` reads it.
 - `metrics.jl` defines the scalar metrics and `severity`: `cyclomatic`,
   `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
   `boolean_complexity`, `return_count`, and `npath` (NPath complexity, a recursion
@@ -271,6 +284,16 @@ Reporting:
   prefilter over `NearestNeighbors`, confirmed by `pair_similarity`), and
   `cluster_near_duplicates` (union-find over confirmed pairs into `:near_duplicate`
   findings). Included before `corpus.jl`, which calls it.
+- `reimplementation.jl` defines the opt-in vocabulary pass. `subtokens` splits an
+  identifier into lowercase word fragments; `reimpl_units` fingerprints each
+  function (callee names via `callees_by_unit` from `graph_edges.jl`, identifier
+  subtokens attributed to their innermost unit, digest and size from the `clones.jl`
+  subtree walk); `term_stats` builds the per-language IDF table and rare-term set;
+  `reimpl_candidates` proposes pairs from an inverted index on rare terms;
+  `reimpl_score` is the IDF-weighted Jaccard; `cluster_reimplementations` applies
+  the gates and emits `:reimplementation` findings. Serial throughout, the scoring
+  is linear in term-set size over an already-pruned candidate list. Included after
+  `clones.jl`, whose `subtrees` it reuses, before `corpus.jl`, which calls it.
 - `naturalness.jl` defines cross-entropy scoring, the other corpus-relational pass.
   `token_stream` reduces a function to leaf tokens (identifier and literal text
   abstracted, the grammar's anonymous tokens kept); `build_model` counts a per-language
@@ -360,12 +383,13 @@ Reporting:
   `analyze` and `mermaid`), `parse_corpus` (parse each path once and build its query
   index into a `Vector{ParsedFile}`), `baseline_from`, `scope_clusters` (the shared
   diff filter for the relational passes), and `analyze` (the public entrypoint,
-  orchestrating corpus, baseline, per-file findings, exact and near duplicates,
+  orchestrating corpus, baseline, per-file findings, exact and near duplicates, the
+  config-gated reimplementation pass fed the clone findings it defers to,
   naturalness, then the corpus graph and the three passes that read it, low cohesion,
   cross-file placement, scattering, and optional diff scoping). It is included after
-  `report.jl`, `diff.jl`, `clones.jl`, `naturalness.jl`, `linkage.jl`,
-  `corpus_graph.jl`, `placement.jl`, `scattered.jl`, and `cohesion.jl` so everything it
-  calls is defined first.
+  `report.jl`, `diff.jl`, `clones.jl`, `reimplementation.jl`, `naturalness.jl`,
+  `linkage.jl`, `corpus_graph.jl`, `placement.jl`, `scattered.jl`, and `cohesion.jl`
+  so everything it calls is defined first.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, and the clone clusters into mermaid
   `flowchart` text, with `:file` and `:unit` granularity and active findings overlaid.

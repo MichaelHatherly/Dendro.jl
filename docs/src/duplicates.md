@@ -49,3 +49,45 @@ src/parser.jl:40  read_header  near_duplicate 88 (high)
 A near-miss stays syntactic and within one language, like exact detection. Pass
 `threshold` higher to demand closer matches, `radius_factor` to widen or narrow the
 candidate search.
+
+## Reimplementation candidates
+
+Both structural passes miss the rewrite: a helper reimplemented with different
+structure, a loop against straight-line code, shares no subtree shape with the
+original. It usually keeps the vocabulary, the same callees and the same domain
+words in its identifiers, and that is what the `:reimplementation` pass reads. Each
+function is fingerprinted by its callee names plus the word fragments of its
+identifiers, every term weighted by rarity in the scanned corpus (IDF, rebuilt on
+each scan). Two functions pair when the rare vocabulary they share outweighs the
+rest of their combined vocabulary, the finding's value that overlap as a percent:
+
+```
+src/fetch.jl:12  fetch_once  reimplementation 74 (high)
+    also at src/retry.jl:30  fetch_with_retry
+```
+
+The evidence is vocabulary, not structure, so the finding is a proposal: two
+functions that talk about the same things in different shapes. The pass is off by
+default and opts in through a `.dendro.toml`:
+
+```toml
+[rules]
+reimplementation = true
+
+[reimplementation]
+threshold = 0.6   # overlap a pair must reach, the one knob
+```
+
+Four gates keep the proposals worth reading. A pair the clone passes already
+report is theirs, never repeated here. A pair where one function calls the other
+by name is a caller and its helper, not a rewrite. Same-named functions never
+pair, since overloads and interface implementations share vocabulary
+legitimately. And a pair whose sizes differ beyond a 2:1 ratio is a fragment
+against a whole. Deliberately parallel families still pair, per-language
+implementations of one operation are vocabulary twins by design, so expect a
+codebase with such families to surface them; suppress with
+`dendro-ignore: reimplementation` where they are intended.
+
+The pass stays name-based and corpus-derived, like the rest of Dendro: no types,
+no call graph, no pretrained model. A rewrite that also renames the domain
+vocabulary stays invisible to it.
