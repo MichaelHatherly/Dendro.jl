@@ -55,7 +55,10 @@
 # assigning `analyze`'s `scope` once then dropped sound from 1020 to 980 and opt from 21
 # to 20: the shared fold replaces per-site append loops over `Any`-inferable partials, and
 # the single assignment lets the scoring closure capture `scope` concretely instead of as
-# a `Core.Box`.
+# a `Core.Box`. The unused-binding flags (`unused_parameters`, `unused_locals`) raised
+# sound from 980 to 988, opt unchanged: two more rules dispatched through the
+# function-valued rule vector, whose `Any`-typed findings feed the same kwarg-lowering
+# and `Any`-collection sites already counted, no new kind.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -63,7 +66,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 980   # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 988   # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 20      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
