@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Flag metrics `unused_parameter` and `unused_local`: a parameter or local binding
+  whose name nothing in its function references. The use-test is by name over the
+  whole unit, so a reference in a nested closure counts; a leading underscore opts
+  a name out. Bodyless declarations, empty and stub bodies, and top-level bindings
+  are not reported (the latter belong to `unreferenced`). Both are built-in rules,
+  suppressible inline and toggleable from `[rules]` in `.dendro.toml`.
+- The Julia scopes query captures a local binding only from a statement-position
+  assignment, so a call-site keyword argument (`sort!(xs; by = f)`) and a
+  NamedTuple field (`(added = true,)`) no longer read as bindings. The bash scopes
+  query captures `variable_name` references, so `$x` resolves to its assignment.
+- Optional rules `local_count` (distinct local names bound in a function, band
+  10/15) and `shadowed_variable` (a fresh local binding hiding an enclosing one).
+  The Julia scopes query splits binding kinds to support the latter: a `for`/`let`
+  head is a fresh binding, a statement assignment rebinds an enclosing local, so
+  the accumulator idiom never reads as a shadow.
+- Flag metric `broad_catch`: a handler broad enough to swallow interrupts and
+  exits. A bare `except:`, `except BaseException`, Java `catch (Throwable)`, C++
+  `catch (...)`, Ruby `rescue Exception`, PHP `catch (Throwable)`. The merely-wide
+  tier (`except Exception`, `catch (Exception)`) is not flagged, and a language
+  whose only catch form is untyped (JavaScript, Julia) reports nothing.
+- Optional rule `fan_out`: distinct callables a function invokes, by called name,
+  a member call counted by its final name, recursion excluded. Band 12/20,
+  anchored at the p95/p99 of a six-corpus calibration; opt-in because no fixed
+  band separates a smell from a legitimate orchestrator.
 - `analyze(path; base, cut, min_size, language)` takes a file or folder. A folder
   recurses for analysable files; either way a baseline is built from the corpus
   (the folder's files, or the single file's own functions), so relative scoring

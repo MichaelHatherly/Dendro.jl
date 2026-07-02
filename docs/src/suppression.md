@@ -25,7 +25,8 @@ Metric names are the active rules' names plus the relational `duplicate` and
 `near_duplicate`: by default `cyclomatic`, `cognitive_complexity`,
 `function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
 `empty_catch`, `stub_marker`, `empty_body`, `return_in_finally`,
-`identical_operands`, `duplicate_branches`, `duplicate`, `near_duplicate`,
+`identical_operands`, `duplicate_branches`, `unused_parameter`, `unused_local`,
+`broad_catch`, `duplicate`, `near_duplicate`,
 `unnatural`, `low_cohesion`, `misplaced`, `scattered`. A custom rule's
 name is accepted too. An unknown name warns, so a typo does not silently disable a
 check. `dendro-ignore-file: low_cohesion` is the usual way to accept a file that is

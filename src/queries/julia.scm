@@ -47,6 +47,84 @@
 
 (argument_list) @parameter
 
+; A parameter's name, anchored to a definition's signature so a call site's
+; arguments never match. Julia reuses `argument_list` for both, so each signature
+; wrapper (`::T`, `where`) repeats the same parameter shapes: a plain name, a typed
+; name, a default (an inner assignment), a typed default, and a slurp. An unnamed
+; dispatch-only parameter (`::Int`, a `unary_typed_expression`) has no name to tag.
+(function_definition (signature [
+  (call_expression (argument_list [
+    (identifier) @parameter_name
+    (typed_expression . (identifier) @parameter_name)
+    (assignment . (identifier) @parameter_name)
+    (assignment . (typed_expression . (identifier) @parameter_name))
+    (splat_expression (identifier) @parameter_name)
+  ]))
+  (typed_expression (call_expression (argument_list [
+    (identifier) @parameter_name
+    (typed_expression . (identifier) @parameter_name)
+    (assignment . (identifier) @parameter_name)
+    (assignment . (typed_expression . (identifier) @parameter_name))
+    (splat_expression (identifier) @parameter_name)
+  ])))
+  (where_expression (call_expression (argument_list [
+    (identifier) @parameter_name
+    (typed_expression . (identifier) @parameter_name)
+    (assignment . (identifier) @parameter_name)
+    (assignment . (typed_expression . (identifier) @parameter_name))
+    (splat_expression (identifier) @parameter_name)
+  ])))
+  (where_expression (typed_expression (call_expression (argument_list [
+    (identifier) @parameter_name
+    (typed_expression . (identifier) @parameter_name)
+    (assignment . (identifier) @parameter_name)
+    (assignment . (typed_expression . (identifier) @parameter_name))
+    (splat_expression (identifier) @parameter_name)
+  ]))))
+  (typed_expression (where_expression (call_expression (argument_list [
+    (identifier) @parameter_name
+    (typed_expression . (identifier) @parameter_name)
+    (assignment . (identifier) @parameter_name)
+    (assignment . (typed_expression . (identifier) @parameter_name))
+    (splat_expression (identifier) @parameter_name)
+  ]))))
+]))
+(assignment . (call_expression (argument_list [
+  (identifier) @parameter_name
+  (typed_expression . (identifier) @parameter_name)
+  (assignment . (identifier) @parameter_name)
+  (assignment . (typed_expression . (identifier) @parameter_name))
+  (splat_expression (identifier) @parameter_name)
+])))
+(assignment . (typed_expression . (call_expression (argument_list [
+  (identifier) @parameter_name
+  (typed_expression . (identifier) @parameter_name)
+  (assignment . (identifier) @parameter_name)
+  (assignment . (typed_expression . (identifier) @parameter_name))
+  (splat_expression (identifier) @parameter_name)
+]))))
+(assignment . (where_expression . (call_expression (argument_list [
+  (identifier) @parameter_name
+  (typed_expression . (identifier) @parameter_name)
+  (assignment . (identifier) @parameter_name)
+  (assignment . (typed_expression . (identifier) @parameter_name))
+  (splat_expression (identifier) @parameter_name)
+]))))
+(assignment . (where_expression . (typed_expression . (call_expression (argument_list [
+  (identifier) @parameter_name
+  (typed_expression . (identifier) @parameter_name)
+  (assignment . (identifier) @parameter_name)
+  (assignment . (typed_expression . (identifier) @parameter_name))
+  (splat_expression (identifier) @parameter_name)
+])))))
+(assignment . (typed_expression . (where_expression . (call_expression (argument_list [
+  (identifier) @parameter_name
+  (typed_expression . (identifier) @parameter_name)
+  (assignment . (identifier) @parameter_name)
+  (assignment . (typed_expression . (identifier) @parameter_name))
+  (splat_expression (identifier) @parameter_name)
+])))))
+
 (block) @body
 
 (catch_clause) @catch
@@ -60,6 +138,12 @@
 (finally_clause) @finally
 
 (call_expression) @call
+
+; A call's target name: the called identifier, or a qualified call's final name
+; (`Base.push!` counts as `push!`). Feeds the `fan_out` scalar; the signature's own
+; call shape is excluded there by name.
+(call_expression . (identifier) @callee)
+(call_expression . (field_expression (_) (identifier) @callee))
 
 (binary_expression) @binary_expr
 

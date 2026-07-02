@@ -16,6 +16,13 @@
 
 (formal_parameters) @parameter
 
+; A parameter's name, plain and variadic forms. A promoted parameter initializes a
+; property by existing, so its name is never unused and is not tagged.
+(formal_parameters [
+  (simple_parameter name: (variable_name (name) @parameter_name))
+  (variadic_parameter name: (variable_name (name) @parameter_name))
+])
+
 ; A promoted constructor parameter does the constructor's work in the signature, so an
 ; empty body is not an empty implementation.
 (property_promotion_parameter) @init
@@ -23,6 +30,13 @@
 (compound_statement) @body
 
 (catch_clause) @catch
+
+; `catch (Throwable)` swallows errors as well as exceptions, plain or
+; namespace-qualified. `catch (Exception)` is merely wide and not tagged.
+(catch_clause type: (type_list (named_type (name) @broad_catch))
+  (#eq? @broad_catch "Throwable"))
+(catch_clause type: (type_list (named_type (qualified_name (name) @broad_catch)))
+  (#eq? @broad_catch "Throwable"))
 
 (comment) @comment
 
@@ -33,6 +47,12 @@
 (finally_clause) @finally
 
 (function_call_expression) @call
+
+; A call's target name: the called name, a namespaced call's final name, or a
+; member call's method name.
+(function_call_expression function: (name) @callee)
+(function_call_expression function: (qualified_name (name) @callee))
+(member_call_expression name: (name) @callee)
 
 (binary_expression) @binary_expr
 

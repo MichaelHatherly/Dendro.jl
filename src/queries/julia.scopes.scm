@@ -18,6 +18,7 @@
 (let_statement) @scope
 (do_clause) @scope
 (comprehension_expression) @scope
+(generator) @scope
 
 ; --- Function and macro names (hoisted to the enclosing scope) ---
 (function_definition (signature (call_expression . (identifier) @definition.function)))
@@ -46,11 +47,22 @@
 (abstract_definition (type_head . (binary_expression . (parametrized_type_expression . (identifier) @definition.struct))))
 
 ; --- const and local bindings ---
+; Two binding kinds mirror Julia's scope rule. A `for`/`let` head always binds a
+; fresh variable, `definition.local`; a statement assignment binds a fresh
+; variable only when no enclosing local carries the name, otherwise it rebinds
+; that one, `definition.assign`. The resolver treats both as definitions;
+; `shadowed_variables` reads the split, since only a fresh-binding form can hide
+; an enclosing name.
 (const_statement (assignment . (identifier) @definition.const))
 (for_binding . (identifier) @definition.local)
-; A plain assignment introduces a local. Its first child is the bound identifier;
-; short-form defs have a call_expression first, so they never match here.
-(assignment . (identifier) @definition.local)
+(let_statement (assignment . (identifier) @definition.local))
+; A statement-position assignment: one directly under a source file or a block.
+; Its first child is the bound identifier; short-form defs have a call_expression
+; first, so they never match here. The statement anchor keeps a call-site keyword
+; argument (`sort!(xs; by = f)`) and a NamedTuple field (`(added = true,)`) from
+; reading as bindings: both are assignment-shaped, neither binds a name.
+(source_file (assignment . (identifier) @definition.assign))
+(block (assignment . (identifier) @definition.assign))
 
 ; --- References: every identifier use ---
 (identifier) @reference

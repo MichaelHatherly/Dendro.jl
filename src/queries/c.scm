@@ -12,6 +12,14 @@
 
 (parameter_list) @parameter
 
+; A parameter's name identifier, through one or two pointer levels. A function-pointer
+; parameter's inner name is left untagged; its shape carries no simple name.
+(parameter_list (parameter_declaration declarator: [
+  (identifier) @parameter_name
+  (pointer_declarator declarator: (identifier) @parameter_name)
+  (pointer_declarator declarator: (pointer_declarator declarator: (identifier) @parameter_name))
+]))
+
 (compound_statement) @body
 
 (comment) @comment
@@ -27,6 +35,10 @@
 (return_statement) @return
 
 (call_expression) @call
+
+; A call's target name: the called identifier, or a member call's field name.
+(call_expression function: (identifier) @callee)
+(call_expression function: (field_expression field: (field_identifier) @callee))
 
 (binary_expression) @binary_expr
 

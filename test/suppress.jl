@@ -100,6 +100,24 @@ end
     end
 end
 
+@testitem "unused-binding findings are suppressible" tags = [:suppress] begin
+    mktempdir() do dir
+        # An unused parameter accepted for an interface's sake.
+        path = joinpath(dir, "p.jl")
+        write(path, "# dendro-ignore: unused_parameter\nfunction f(x, y)\n    return x\nend\n")
+        findings = Dendro.analyze(path)
+        @test any(f -> f.metric == :unused_parameter && f.suppressed, findings)
+        @test isempty(filter(f -> f.metric == :unused_parameter, Dendro.active(findings)))
+
+        # An unused local kept deliberately.
+        path = joinpath(dir, "l.jl")
+        write(path, "function f()\n    x = g()  # dendro-ignore: unused_local\n    return 1\nend\n")
+        findings = Dendro.analyze(path)
+        @test any(f -> f.metric == :unused_local && f.suppressed, findings)
+        @test isempty(filter(f -> f.metric == :unused_local, Dendro.active(findings)))
+    end
+end
+
 @testitem "suppression is language-agnostic" tags = [:suppress] begin
     mktempdir() do dir
         # Python: a hash comment.

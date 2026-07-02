@@ -342,3 +342,96 @@ end
     @test band(:parameter_count) == (5, 8)
     @test band(:function_length) == (50, 100)
 end
+
+@testitem "local_count (julia)" setup = [Fixtures] tags = [:metrics] begin
+    function count_of(src)
+        i = Fixtures.idx(:julia, src)
+        u = first(Dendro.functions(i))
+        return Dendro.local_count(u, i)
+    end
+
+    # Every distinct bound name in the unit counts: plain locals, loop bindings,
+    # and locals in nested soft scopes.
+    @test count_of("function f(n)\n    a = 1\n    b = 2\n    for i in 1:n\n        c = i\n    end\n    return a + b\nend\n") == 4
+
+    # A rebinding is the same variable.
+    @test count_of("function f()\n    x = 1\n    x = 2\n    return x\nend\n") == 1
+
+    # Parameters are not locals; a function with no bindings counts zero.
+    @test count_of("function f(x, y)\n    return x + y\nend\n") == 0
+end
+
+@testitem "local_count across languages" setup = [Fixtures] tags = [:metrics] begin
+    function count_of(lang, src)
+        i = Fixtures.idx(lang, src)
+        u = first(Dendro.functions(i))
+        return Dendro.local_count(u, i)
+    end
+
+    @test count_of(:python, "def f():\n    a = 1\n    b = 2\n    return a + b\n") == 2
+    @test count_of(:javascript, "function f() { const a = 1, b = 2; return a + b; }") == 2
+    @test count_of(:rust, "fn f() -> i32 {\n  let a = 1;\n  let b = 2;\n  a + b\n}\n") == 2
+
+    # PHP's scopes query captures no local bindings, so the count is zero, the
+    # honest skip.
+    @test count_of(:php, "<?php function f() { \$x = 1; \$y = 2; return \$x + \$y; }") == 0
+end
+
+@testitem "shadowed_variable and local_count are optional rules" tags = [:metrics] begin
+    names(rules) = [r.name for r in rules]
+    @test :shadowed_variable in names(Dendro.OPTIONAL_RULES)
+    @test :local_count in names(Dendro.OPTIONAL_RULES)
+    @test :shadowed_variable ∉ names(Dendro.BUILTIN_RULES)
+    @test :local_count ∉ names(Dendro.BUILTIN_RULES)
+    @test only(r.band for r in Dendro.OPTIONAL_RULES if r.name == :local_count) == (10, 15)
+end
+
+@testitem "fan_out (julia)" setup = [Fixtures] tags = [:metrics] begin
+    function fout(src)
+        i = Fixtures.idx(:julia, src)
+        u = first(Dendro.functions(i))
+        return Dendro.fan_out(u, i)
+    end
+
+    # Distinct callables invoked, repeats counted once.
+    @test fout("function f(x)\n    a(x)\n    b(x)\n    a(x)\nend\n") == 2
+
+    # A qualified call counts by its final name, so `Base.push!` is `push!`.
+    @test fout("function f(x)\n    g(x)\n    Base.push!(x, 1)\nend\n") == 2
+
+    # Recursion is not fan-out, and the signature's own call shape never counts.
+    @test fout("function f(x)\n    return x <= 1 ? 1 : f(x - 1)\nend\n") == 0
+    @test fout("function f()\n    return 1\nend\n") == 0
+
+    # A nested unit's calls belong to it.
+    @test fout("function f(a)\n    helper(b) = g(h(b))\n    return helper(a)\nend\n") == 1
+end
+
+@testitem "fan_out across languages" setup = [Fixtures] tags = [:metrics] begin
+    function fout(lang, src)
+        i = Fixtures.idx(lang, src)
+        u = first(Dendro.functions(i))
+        return Dendro.fan_out(u, i)
+    end
+
+    @test fout(:python, "def f(x):\n    a(x)\n    obj.b(x)\n    a(x)\n") == 2
+    @test fout(:javascript, "function f(x) { a(x); obj.b(x); a(x); }") == 2
+    @test fout(:go, "func f() {\n  g()\n  x.M()\n}\n") == 2
+    @test fout(:java, "class C { void f() { g(); h(); g(); } }") == 2
+    @test fout(:c, "int f() { g(); s.h(); return 0; }") == 2
+    @test fout(:cpp, "void f() { g(); x.m(); std::h(); }") == 3
+    @test fout(:rust, "fn f() { g(); x.m(); a::b::h(); }") == 3
+    @test fout(:ruby, "def f\n  g(1)\n  x.m(1)\nend\n") == 2
+    @test fout(:php, "<?php function f() { g(); \$x->m(); A\\h(); }") == 3
+    @test fout(:bash, "f() {\n  echo hi\n  grep foo bar\n}\n") == 2
+
+    # The method name is the callee; the receiver is not part of the fan.
+    @test fout(:python, "def f(x, y):\n    x.push(1)\n    y.push(2)\n") == 1
+end
+
+@testitem "fan_out is an optional rule" tags = [:metrics] begin
+    names(rules) = [r.name for r in rules]
+    @test :fan_out in names(Dendro.OPTIONAL_RULES)
+    @test :fan_out ∉ names(Dendro.BUILTIN_RULES)
+    @test only(r.band for r in Dendro.OPTIONAL_RULES if r.name == :fan_out) == (12, 20)
+end

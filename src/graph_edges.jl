@@ -13,6 +13,10 @@
 # binding (1.0 never drops) and dogfood tunes it down only if needed.
 const COHESION_UBIQUITY = 1.0
 
+# Byte ranges of a file's units, the containment table `containing_unit` scans.
+unit_ranges(index::QueryIndex) =
+    Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in functions(index)]
+
 # The innermost function unit whose byte span contains `[from, to]`, or 0 when the
 # position lies in no function (top-level code). Units are few per file, so a scan.
 function containing_unit(ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
@@ -36,7 +40,7 @@ end
 function binding_groups(index::QueryIndex, ubiquity::Float64)
     units = functions(index)
     n = length(units)
-    ranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    ranges = unit_ranges(index)
     # Units referencing one definition, keyed by the definition's identity.
     groups = Dict{NodeId, Vector{Int}}()
     for (refid, defid) in index.bindings
@@ -52,4 +56,31 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
         push!(out, owner == 0 ? members : push!(copy(members), owner))
     end
     return out
+end
+
+"""
+    fan_out(unit, index) -> Int
+
+Number of distinct callables the function invokes, from the `@callee` capture: the
+called identifier, or a member/qualified call's final name, so `x.push(1)` and
+`y.push(2)` are one target. Repeats count once, a nested unit's calls belong to it,
+and the unit's own name never counts, which excludes both recursion and Julia's
+call-shaped signature. The per-unit efferent-coupling scalar beside the binding
+edges cohesion reads; zero for a language with no `@callee` capture.
+"""
+function fan_out(unit::FunctionUnit, index::QueryIndex)
+    isempty(index.callee.nodes) && return 0
+    ranges = unit_ranges(index)
+    span = TreeSitter.byte_range(unit.node)
+    own = unit_name(unit, index)
+    names = Set{String}()
+    for n in index.callee.nodes
+        nid = nodeid(n)
+        ui = containing_unit(ranges, nid[1], nid[2])
+        (ui != 0 && ranges[ui] == span) || continue
+        name = String(strip(TreeSitter.slice(index.source, n)))
+        (isempty(name) || name == own) && continue
+        push!(names, name)
+    end
+    return length(names)
 end

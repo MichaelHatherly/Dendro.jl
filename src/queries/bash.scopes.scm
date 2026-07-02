@@ -13,4 +13,8 @@
 (variable_assignment name: (variable_name) @definition.local)
 
 ; --- References ---
+; A variable use is an expansion (`$x`, `${x}`), whose `variable_name` is the
+; reference; a `word` covers command names and bare arguments. An assignment's own
+; `variable_name` is also a definition, so the resolver skips it as a use.
 (word) @reference
+(variable_name) @reference

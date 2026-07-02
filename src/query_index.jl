@@ -50,6 +50,7 @@ const CONCEPT_NAMES = (
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
+    :parameter_name, :broad_catch, :callee,
 )
 
 """
@@ -103,6 +104,19 @@ struct QueryIndex
     # Ruby `def … end`), so an absent block is an empty implementation, not a declaration.
     # A brace-bodied language leaves this empty: there, an absent block is a contract.
     requires_body::Concept
+    # A parameter's name identifier, anchored to a callable's signature so a call
+    # site's arguments never match. Empty for a language whose parameters carry no
+    # names (bash).
+    parameter_name::Concept
+    # A handler broad enough to swallow interrupts and exits: a bare `except:`,
+    # `except BaseException`, Java `catch (Throwable)`, C++ `catch (...)`, Ruby
+    # `rescue Exception`, PHP `catch (Throwable)`. The query decides broadness, so a
+    # language whose only catch form is untyped (JavaScript, Julia) tags nothing.
+    broad_catch::Concept
+    # A call's target name: the called identifier, or a member/qualified call's
+    # final name, so `x.push` and `Base.push!` count by what they invoke. Feeds the
+    # `fan_out` scalar.
+    callee::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -124,7 +138,8 @@ struct QueryIndex
         finally_clause, call, binary_expr, conditional = Concept(), Concept(), Concept(), Concept()
         terminal, operator, loop, switch = Concept(), Concept(), Concept(), Concept()
         ternary, try_stmt, case = Concept(), Concept(), Concept()
-        def_name, init, requires_body = Concept(), Concept(), Concept()
+        def_name, init, requires_body, parameter_name = Concept(), Concept(), Concept(), Concept()
+        broad_catch, callee = Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "nesting" => nesting,
@@ -135,14 +150,16 @@ struct QueryIndex
             "conditional" => conditional, "terminal" => terminal, "operator" => operator,
             "loop" => loop, "switch" => switch, "ternary" => ternary, "try" => try_stmt,
             "case" => case, "def_name" => def_name, "init" => init,
-            "requires_body" => requires_body,
+            "requires_body" => requires_body, "parameter_name" => parameter_name,
+            "broad_catch" => broad_catch, "callee" => callee,
         )
         return new(
             language, source, FunctionUnit[], Set{NodeId}(),
             short_function, decision, continuation, nesting, short_circuit, parameter,
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
-            try_stmt, case, def_name, init, requires_body, by_name, Dict{NodeId, NodeId}(), scope_captures,
+            try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
+            callee, by_name, Dict{NodeId, NodeId}(), scope_captures,
         )
     end
 end

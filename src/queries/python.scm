@@ -16,9 +16,28 @@
 
 (parameters) @parameter
 
+; A parameter's name identifier: plain, typed, defaulted, and splat forms. Lambda
+; parameters are not tagged; a lambda is not a unit, so its names belong to no
+; measured signature.
+(parameters [
+  (identifier) @parameter_name
+  (typed_parameter . (identifier) @parameter_name)
+  (default_parameter name: (identifier) @parameter_name)
+  (typed_default_parameter name: (identifier) @parameter_name)
+  (list_splat_pattern (identifier) @parameter_name)
+  (dictionary_splat_pattern (identifier) @parameter_name)
+])
+
 (block) @body
 
 (except_clause) @catch
+
+; A handler broad enough to swallow interrupts and exits: a bare `except:` (no
+; value at all), or `except BaseException`, plain or `as`-aliased. `except
+; Exception` is merely wide and not tagged.
+((except_clause) @broad_catch (#match? @broad_catch "^except\\s*:"))
+(except_clause value: (identifier) @broad_catch (#eq? @broad_catch "BaseException"))
+(except_clause value: (as_pattern . (identifier) @broad_catch) (#eq? @broad_catch "BaseException"))
 
 (comment) @comment
 
@@ -31,6 +50,10 @@
 (finally_clause) @finally
 
 (call) @call
+
+; A call's target name: the called identifier, or a method call's final name.
+(call function: (identifier) @callee)
+(call function: (attribute attribute: (identifier) @callee))
 
 [(comparison_operator) (boolean_operator) (binary_operator)] @binary_expr
 

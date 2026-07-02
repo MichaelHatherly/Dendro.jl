@@ -14,6 +14,23 @@
 
 (parameter_list) @parameter
 
+; A parameter's name identifier: plain, pointer, reference, and defaulted forms. A
+; function-pointer parameter's inner name is left untagged; its shape carries no
+; simple name.
+(parameter_list [
+  (parameter_declaration declarator: [
+    (identifier) @parameter_name
+    (pointer_declarator declarator: (identifier) @parameter_name)
+    (pointer_declarator declarator: (pointer_declarator declarator: (identifier) @parameter_name))
+    (reference_declarator (identifier) @parameter_name)
+  ])
+  (optional_parameter_declaration declarator: [
+    (identifier) @parameter_name
+    (pointer_declarator declarator: (identifier) @parameter_name)
+    (reference_declarator (identifier) @parameter_name)
+  ])
+])
+
 ; A member-initializer list does the constructor's work before the body, so an empty
 ; body is not an empty implementation. A project macro between the return type and the
 ; name (`FMT_INLINE T(int x) : x_(x) {}`) defeats the parse, leaving the initializer
@@ -25,6 +42,9 @@
 (compound_statement) @body
 
 (catch_clause) @catch
+
+; `catch (...)` handles every exception with no way to inspect it.
+((catch_clause parameters: (parameter_list "...")) @broad_catch)
 
 (comment) @comment
 
@@ -43,6 +63,12 @@
 (return_statement) @return
 
 (call_expression) @call
+
+; A call's target name: the called identifier, a member call's field name, or a
+; qualified call's final name (`std::h` counts as `h`).
+(call_expression function: (identifier) @callee)
+(call_expression function: (field_expression field: (field_identifier) @callee))
+(call_expression function: (qualified_identifier name: (identifier) @callee))
 
 (binary_expression) @binary_expr
 

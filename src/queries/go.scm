@@ -14,6 +14,14 @@
 
 (parameter_list) @parameter
 
+; A parameter's name identifier, covering a grouped declaration's every name and
+; the variadic form. The method receiver is a parameter_list too, so an unused
+; receiver name is tagged like any parameter.
+(parameter_list [
+  (parameter_declaration name: (identifier) @parameter_name)
+  (variadic_parameter_declaration name: (identifier) @parameter_name)
+])
+
 (block) @body
 
 (comment) @comment
@@ -28,6 +36,10 @@
 (return_statement) @return
 
 (call_expression) @call
+
+; A call's target name: the called identifier, or a selector call's field name.
+(call_expression function: (identifier) @callee)
+(call_expression function: (selector_expression field: (field_identifier) @callee))
 
 (binary_expression) @binary_expr
 

@@ -20,6 +20,16 @@
 
 (formal_parameters) @parameter
 
+; A parameter's name identifier: plain, defaulted, and rest forms, plus the bare
+; single-parameter arrow that carries no parameter list. A destructuring pattern
+; introduces no single name and is not tagged.
+(formal_parameters [
+  (identifier) @parameter_name
+  (assignment_pattern left: (identifier) @parameter_name)
+  (rest_pattern (identifier) @parameter_name)
+])
+(arrow_function parameter: (identifier) @parameter_name)
+
 (statement_block) @body
 
 (catch_clause) @catch
@@ -40,6 +50,10 @@
 (finally_clause) @finally
 
 (call_expression) @call
+
+; A call's target name: the called identifier, or a member call's property name.
+(call_expression function: (identifier) @callee)
+(call_expression function: (member_expression property: (property_identifier) @callee))
 
 (binary_expression) @binary_expr
 
