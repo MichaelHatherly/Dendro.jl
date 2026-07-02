@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The Julia scopes query splits binding kinds to support the latter: a `for`/`let`
   head is a fresh binding, a statement assignment rebinds an enclosing local, so
   the accumulator idiom never reads as a shadow.
+- Flag metric `broad_catch`: a handler broad enough to swallow interrupts and
+  exits. A bare `except:`, `except BaseException`, Java `catch (Throwable)`, C++
+  `catch (...)`, Ruby `rescue Exception`, PHP `catch (Throwable)`. The merely-wide
+  tier (`except Exception`, `catch (Exception)`) is not flagged, and a language
+  whose only catch form is untyped (JavaScript, Julia) reports nothing.
 - `analyze(path; base, cut, min_size, language)` takes a file or folder. A folder
   recurses for analysable files; either way a baseline is built from the corpus
   (the folder's files, or the single file's own functions), so relative scoring

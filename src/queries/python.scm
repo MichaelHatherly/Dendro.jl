@@ -32,6 +32,13 @@
 
 (except_clause) @catch
 
+; A handler broad enough to swallow interrupts and exits: a bare `except:` (no
+; value at all), or `except BaseException`, plain or `as`-aliased. `except
+; Exception` is merely wide and not tagged.
+((except_clause) @broad_catch (#match? @broad_catch "^except\\s*:"))
+(except_clause value: (identifier) @broad_catch (#eq? @broad_catch "BaseException"))
+(except_clause value: (as_pattern . (identifier) @broad_catch) (#eq? @broad_catch "BaseException"))
+
 (comment) @comment
 
 (identifier) @name

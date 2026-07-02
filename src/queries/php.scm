@@ -31,6 +31,13 @@
 
 (catch_clause) @catch
 
+; `catch (Throwable)` swallows errors as well as exceptions, plain or
+; namespace-qualified. `catch (Exception)` is merely wide and not tagged.
+(catch_clause type: (type_list (named_type (name) @broad_catch))
+  (#eq? @broad_catch "Throwable"))
+(catch_clause type: (type_list (named_type (qualified_name (name) @broad_catch)))
+  (#eq? @broad_catch "Throwable"))
+
 (comment) @comment
 
 (name) @name

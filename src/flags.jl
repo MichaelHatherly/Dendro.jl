@@ -225,6 +225,17 @@ empty_catches(index::QueryIndex) =
     [n for n in index.catch_clause.nodes if empty_block(first_child_in(n, index.body), index)]
 
 """
+    broad_catches(index) -> Vector{TreeSitter.Node}
+
+Handlers broad enough to swallow interrupts and exits: a bare `except:`, `except
+BaseException`, Java `catch (Throwable)`, C++ `catch (...)`, Ruby `rescue
+Exception`, PHP `catch (Throwable)`. The query decides broadness, so a language
+whose only catch form is untyped (JavaScript, Julia) reports nothing, and the
+merely-wide tier (`except Exception`, `catch (Exception)`) is left alone.
+"""
+broad_catches(index::QueryIndex) = index.broad_catch.nodes
+
+"""
     stub_markers(index) -> Vector{TreeSitter.Node}
 
 Comment nodes carrying a stub marker (`TODO`, `FIXME`, `XXX`, `HACK`).

@@ -213,7 +213,9 @@ Measurement:
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
   `unreachable_statements`, `identical_operands`, `duplicate_branches`,
-  `unused_parameters`, `unused_locals`, and `shadowed_variables` (a fresh
+  `unused_parameters`, `unused_locals`, `broad_catches` (the `@broad_catch`
+  concept's nodes verbatim: the query decides which handlers are broad), and
+  `shadowed_variables` (a fresh
   `:local`-kind binding whose name an enclosing scope already binds; Julia's
   `:assign`-kind statement assignments rebind rather than shadow and never
   report). The scalar `local_count` lives here too, beside the unused flags whose
@@ -385,7 +387,7 @@ in its query, not here.
 and `function_ids` (the no-descend boundary), plus one `Concept` per measured
 construct (decision points, short-circuit operators, nesting, parameters, parameter
 names, bodies,
-catches, comments, names, trivial statements, returns, finally clauses, calls,
+catches, broad catches, comments, names, trivial statements, returns, finally clauses, calls,
 binary expressions, binary operators, conditionals, terminals, short-form
 definitions, and the NPath construct families: loops, switches, ternaries, tries,
 cases). A `Concept`

@@ -43,6 +43,9 @@
 
 (catch_clause) @catch
 
+; `catch (...)` handles every exception with no way to inspect it.
+((catch_clause parameters: (parameter_list "...")) @broad_catch)
+
 (comment) @comment
 
 (identifier) @name

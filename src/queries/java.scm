@@ -23,6 +23,11 @@
 
 (catch_clause) @catch
 
+; `catch (Throwable t)` swallows errors and interrupts, not just exceptions. A
+; multi-catch tags when Throwable is among its types.
+(catch_clause (catch_formal_parameter (catch_type (type_identifier) @broad_catch))
+  (#eq? @broad_catch "Throwable"))
+
 [(line_comment) (block_comment)] @comment
 
 (identifier) @name

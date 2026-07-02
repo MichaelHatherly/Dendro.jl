@@ -295,6 +295,37 @@ end
     @test unused(:php, "<?php function f() { \$x = 1; return 2; }") == 0
 end
 
+@testitem "broad_catches across languages" setup = [Fixtures] tags = [:flags] begin
+    broad(lang, src) = length(Dendro.broad_catches(Fixtures.idx(lang, src)))
+
+    # The egregious tier only: handlers that swallow interrupts and exits, not the
+    # merely-wide `except Exception` every service loop uses.
+    @test broad(:python, "try:\n    f()\nexcept:\n    pass\n") == 1
+    @test broad(:python, "try:\n    f()\nexcept BaseException:\n    pass\n") == 1
+    @test broad(:python, "try:\n    f()\nexcept Exception:\n    pass\n") == 0
+    @test broad(:python, "try:\n    f()\nexcept ValueError:\n    pass\n") == 0
+    @test broad(:python, "try:\n    f()\nexcept BaseException as e:\n    log(e)\n") == 1
+
+    @test broad(:java, "class C { void f() { try { g(); } catch (Throwable t) { } } }") == 1
+    @test broad(:java, "class C { void f() { try { g(); } catch (Exception e) { } } }") == 0
+    @test broad(:java, "class C { void f() { try { g(); } catch (IOException e) { } } }") == 0
+
+    @test broad(:cpp, "void f() { try { g(); } catch (...) { } }") == 1
+    @test broad(:cpp, "void f() { try { g(); } catch (const std::exception& e) { } }") == 0
+
+    @test broad(:php, "<?php try { f(); } catch (\\Throwable \$e) { }") == 1
+    @test broad(:php, "<?php try { f(); } catch (Throwable \$e) { }") == 1
+    @test broad(:php, "<?php try { f(); } catch (Exception \$e) { }") == 0
+
+    @test broad(:ruby, "begin\n  f\nrescue Exception => e\n  log(e)\nend\n") == 1
+    @test broad(:ruby, "begin\n  f\nrescue => e\n  log(e)\nend\n") == 0
+    @test broad(:ruby, "begin\n  f\nrescue StandardError => e\n  log(e)\nend\n") == 0
+
+    # An untyped catch is the language's only form, not a choice: no finding.
+    @test broad(:javascript, "function f() { try { g(); } catch (e) { } }") == 0
+    @test broad(:julia, "function f()\n    try\n        g()\n    catch e\n    end\nend\n") == 0
+end
+
 @testitem "shadowed_variables (julia)" setup = [Fixtures] tags = [:flags] begin
     shadowed(src) = length(Dendro.shadowed_variables(Fixtures.idx(:julia, src)))
 

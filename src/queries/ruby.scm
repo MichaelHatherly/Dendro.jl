@@ -1,6 +1,11 @@
 ; Ruby node identification. begin/rescue keeps the handler body inline rather than
 ; in a block node, so swallowed-rescue detection does not fit the block model and
 ; @catch has no pattern. The default `when` branch is excluded from @decision.
+
+; `rescue Exception` swallows interrupts and exits; a bare `rescue` catches
+; StandardError, the idiomatic default, and is not tagged.
+(rescue exceptions: (exceptions (constant) @broad_catch)
+  (#eq? @broad_catch "Exception"))
 ; Ruby branch bodies are `then`/inline statements, not block nodes, so the NPath
 ; construct families (@loop/@switch/@ternary/@try/@case) are not wired; npath on Ruby
 ; reduces to a sequence count.
