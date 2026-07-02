@@ -342,3 +342,46 @@ end
     @test band(:parameter_count) == (5, 8)
     @test band(:function_length) == (50, 100)
 end
+
+@testitem "local_count (julia)" setup = [Fixtures] tags = [:metrics] begin
+    function count_of(src)
+        i = Fixtures.idx(:julia, src)
+        u = first(Dendro.functions(i))
+        return Dendro.local_count(u, i)
+    end
+
+    # Every distinct bound name in the unit counts: plain locals, loop bindings,
+    # and locals in nested soft scopes.
+    @test count_of("function f(n)\n    a = 1\n    b = 2\n    for i in 1:n\n        c = i\n    end\n    return a + b\nend\n") == 4
+
+    # A rebinding is the same variable.
+    @test count_of("function f()\n    x = 1\n    x = 2\n    return x\nend\n") == 1
+
+    # Parameters are not locals; a function with no bindings counts zero.
+    @test count_of("function f(x, y)\n    return x + y\nend\n") == 0
+end
+
+@testitem "local_count across languages" setup = [Fixtures] tags = [:metrics] begin
+    function count_of(lang, src)
+        i = Fixtures.idx(lang, src)
+        u = first(Dendro.functions(i))
+        return Dendro.local_count(u, i)
+    end
+
+    @test count_of(:python, "def f():\n    a = 1\n    b = 2\n    return a + b\n") == 2
+    @test count_of(:javascript, "function f() { const a = 1, b = 2; return a + b; }") == 2
+    @test count_of(:rust, "fn f() -> i32 {\n  let a = 1;\n  let b = 2;\n  a + b\n}\n") == 2
+
+    # PHP's scopes query captures no local bindings, so the count is zero, the
+    # honest skip.
+    @test count_of(:php, "<?php function f() { \$x = 1; \$y = 2; return \$x + \$y; }") == 0
+end
+
+@testitem "shadowed_variable and local_count are optional rules" tags = [:metrics] begin
+    names(rules) = [r.name for r in rules]
+    @test :shadowed_variable in names(Dendro.OPTIONAL_RULES)
+    @test :local_count in names(Dendro.OPTIONAL_RULES)
+    @test :shadowed_variable ∉ names(Dendro.BUILTIN_RULES)
+    @test :local_count ∉ names(Dendro.BUILTIN_RULES)
+    @test only(r.band for r in Dendro.OPTIONAL_RULES if r.name == :local_count) == (10, 15)
+end

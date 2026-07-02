@@ -330,7 +330,7 @@ function unused_locals(index::QueryIndex)
     uses = reference_positions(index)
     seen = Set{Tuple{Int, String}}()
     for (i, d) in enumerate(caps.defnodes)
-        caps.defkinds[i] == :local || continue
+        caps.defkinds[i] in LOCAL_KINDS || continue
         did = nodeid(d)
         ui = containing_unit(ranges, did[1], did[2])
         ui == 0 && continue
@@ -339,6 +339,70 @@ function unused_locals(index::QueryIndex)
         (ui, name) in seen && continue
         push!(seen, (ui, name))
         used_within(uses, name, ranges[ui]) || push!(out, d)
+    end
+    return out
+end
+
+"""
+    local_count(unit, index) -> Int
+
+Number of distinct local names bound within the function, from the scopes query's
+local definitions: plain locals, loop bindings, and locals in nested soft scopes.
+Rebindings of one name are one variable, a nested callable's bindings belong to it,
+and underscore-prefixed names are discards, not locals. Zero for a language whose
+scopes query captures no local bindings (php). A scalar rule, housed here beside
+the unused flags because it reads the same binding substrate.
+"""
+function local_count(unit::FunctionUnit, index::QueryIndex)
+    caps = index.scope_captures
+    isempty(caps.defnodes) && return 0
+    ranges = unit_ranges(index)
+    span = TreeSitter.byte_range(unit.node)
+    names = Set{String}()
+    for (i, d) in enumerate(caps.defnodes)
+        caps.defkinds[i] in LOCAL_KINDS || continue
+        did = nodeid(d)
+        ui = containing_unit(ranges, did[1], did[2])
+        (ui != 0 && ranges[ui] == span) || continue
+        name = String(strip(TreeSitter.slice(index.source, d)))
+        deliberately_unused(name) && continue
+        push!(names, name)
+    end
+    return length(names)
+end
+
+"""
+    shadowed_variables(index) -> Vector{TreeSitter.Node}
+
+Fresh local bindings whose name an enclosing scope already binds, hiding the outer
+variable. Only a fresh-binding form (`:local` kind) can shadow: a Julia statement
+assignment in a nested scope (`:assign`) rebinds the enclosing local instead, the
+accumulator idiom, and never reports. Parameters are not scope definitions, so a
+local hiding a parameter is not seen, and a scope's kind is not modelled, so a
+method local matching a class attribute reports even where the language gives
+methods no lexical view of it. Underscore-prefixed names opt out.
+"""
+function shadowed_variables(index::QueryIndex)
+    out = TreeSitter.Node[]
+    caps = index.scope_captures
+    isempty(caps.defnodes) && return out
+    for (i, d) in enumerate(caps.defnodes)
+        caps.defkinds[i] === :local || continue
+        did = nodeid(d)
+        name = String(strip(TreeSitter.slice(index.source, d)))
+        deliberately_unused(name) && continue
+        owner = owning_scope(caps.scopes, did[1], did[2], false)
+        owner === nothing && continue
+        # Rebinding within one scope is one variable; only its winner can shadow.
+        winner = get(owner.defs, name, nothing)
+        (winner === nothing || nodeid(winner) != did) && continue
+        for s in caps.scopes
+            (s.from <= owner.from && owner.to <= s.to) || continue
+            (s.to - s.from) > (owner.to - owner.from) || continue
+            haskey(s.defs, name) || continue
+            push!(out, d)
+            break
+        end
     end
     return out
 end

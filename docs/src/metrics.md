@@ -42,6 +42,10 @@ parameters (they are its signature), an empty or stub body is already the
 of those double-report. A language whose parameters carry no names (bash) or whose
 scopes query captures no locals (php) reports nothing for that half.
 
+Two more binding readings are optional rules: `local_count` (distinct local names
+bound in a function) and `shadowed_variable` (a fresh local binding hiding an
+enclosing one). See [Custom rules](@ref).
+
 Each metric is a [rule](@ref "Custom rules"). The set above is the default; a caller
 can add their own or opt into rules that are off by default.
 

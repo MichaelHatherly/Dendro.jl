@@ -213,7 +213,11 @@ Measurement:
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
   `unreachable_statements`, `identical_operands`, `duplicate_branches`,
-  `unused_parameters`, and `unused_locals`. Most read the nodes one concept tagged
+  `unused_parameters`, `unused_locals`, and `shadowed_variables` (a fresh
+  `:local`-kind binding whose name an enclosing scope already binds; Julia's
+  `:assign`-kind statement assignments rebind rather than shadow and never
+  report). The scalar `local_count` lives here too, beside the unused flags whose
+  binding substrate it reads. Most read the nodes one concept tagged
   and keep those a predicate accepts, through the shared `filter_nodes`. The unused
   pair reads the scopes captures instead: a `@parameter_name` or `:local`-kind
   definition inside a unit whose name no reference in that unit carries

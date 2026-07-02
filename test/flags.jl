@@ -295,6 +295,33 @@ end
     @test unused(:php, "<?php function f() { \$x = 1; return 2; }") == 0
 end
 
+@testitem "shadowed_variables (julia)" setup = [Fixtures] tags = [:flags] begin
+    shadowed(src) = length(Dendro.shadowed_variables(Fixtures.idx(:julia, src)))
+
+    # A loop binding over an existing local is a fresh variable hiding the outer
+    # one; so is a `let` binding.
+    @test shadowed("function f(n)\n    x = 1\n    for x in 1:n\n        g(x)\n    end\n    return x\nend\n") == 1
+    @test shadowed("function f()\n    y = 1\n    let y = 2\n        g(y)\n    end\n    return y\nend\n") == 1
+
+    # A plain assignment inside a loop rebinds the enclosing local, Julia's scope
+    # rule, so the accumulator idiom is not a shadow.
+    @test shadowed("function f(xs)\n    best = 0\n    for x in xs\n        best = x\n    end\n    return best\nend\n") == 0
+
+    # Distinct names shadow nothing; underscores opt out.
+    @test shadowed("function f(n)\n    x = 1\n    for i in 1:n\n        g(i)\n    end\n    return x\nend\n") == 0
+    @test shadowed("function f()\n    _x = 1\n    let _x = 2\n        g(_x)\n    end\n    return 1\nend\n") == 0
+end
+
+@testitem "shadowed_variables across languages" setup = [Fixtures] tags = [:flags] begin
+    shadowed(lang, src) = length(Dendro.shadowed_variables(Fixtures.idx(lang, src)))
+
+    # A nested function's local hiding an enclosing local.
+    @test shadowed(:python, "def f():\n    x = 1\n    def g():\n        x = 2\n        return x\n    return g() + x\n") == 1
+    @test shadowed(:python, "def f():\n    x = 1\n    def g():\n        y = 2\n        return y\n    return g() + x\n") == 0
+    @test shadowed(:javascript, "function f() { let x = 1; function g() { let x = 2; return x; } return g() + x; }") == 1
+    @test shadowed(:javascript, "function f() { let x = 1; function g() { let y = 2; return y; } return g() + x; }") == 0
+end
+
 @testitem "trivial_wrappers (julia)" setup = [Fixtures] tags = [:flags] begin
     bare = "function f(x)\n    g(x)\nend\n"
     @test length(Dendro.trivial_wrappers(Fixtures.idx(:julia, bare))) == 1

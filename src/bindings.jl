@@ -24,6 +24,12 @@ end
 # own scope.
 const HOISTED_KINDS = ("function", "struct", "macro", "class")
 
+# Definition kinds that bind a local variable. Julia splits them: `:local` is a
+# fresh-binding form (a `for`/`let` head), `:assign` a statement assignment that
+# rebinds an enclosing local when one carries the name. Languages without the
+# split capture every local as `:local`.
+const LOCAL_KINDS = (:local, :assign)
+
 # A `definition.<kind>` capture is hoisted when its kind is one of HOISTED_KINDS.
 function is_hoisted(capture::AbstractString)
     for k in HOISTED_KINDS

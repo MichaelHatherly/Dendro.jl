@@ -52,8 +52,10 @@ const BUILTIN_RULES = Rule[
 
 Rules a caller can opt into but that are off by default: `return_count` needs
 per-project band tuning, `trivial_wrapper` has a higher false-positive rate,
-`unreachable_after_jump` flags code after an unconditional jump, and `npath` grows
-multiplicatively so its band wants per-project tuning. Use them with
+`unreachable_after_jump` flags code after an unconditional jump, `npath` grows
+multiplicatively so its band wants per-project tuning, `local_count` likewise,
+and `shadowed_variable` reads name collisions some idioms make routine (a method
+local matching a class attribute). Use them with
 `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 """
 const OPTIONAL_RULES = Rule[
@@ -61,6 +63,8 @@ const OPTIONAL_RULES = Rule[
     Rule(:trivial_wrapper, :flag, nothing, trivial_wrappers),
     Rule(:unreachable_after_jump, :flag, nothing, unreachable_statements),
     Rule(:npath, :scalar, (200, 1000), (u, i) -> npath(u.node, i)),
+    Rule(:local_count, :scalar, (10, 15), (u, i) -> local_count(u, i)),
+    Rule(:shadowed_variable, :flag, nothing, shadowed_variables),
 ]
 
 # The active rules of one kind (`:scalar` or `:flag`), in order.

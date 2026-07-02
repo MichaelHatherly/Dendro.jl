@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assignment, so a call-site keyword argument (`sort!(xs; by = f)`) and a
   NamedTuple field (`(added = true,)`) no longer read as bindings. The bash scopes
   query captures `variable_name` references, so `$x` resolves to its assignment.
+- Optional rules `local_count` (distinct local names bound in a function, band
+  10/15) and `shadowed_variable` (a fresh local binding hiding an enclosing one).
+  The Julia scopes query splits binding kinds to support the latter: a `for`/`let`
+  head is a fresh binding, a statement assignment rebinds an enclosing local, so
+  the accumulator idiom never reads as a shadow.
 - `analyze(path; base, cut, min_size, language)` takes a file or folder. A folder
   recurses for analysable files; either way a baseline is built from the corpus
   (the folder's files, or the single file's own functions), so relative scoring
