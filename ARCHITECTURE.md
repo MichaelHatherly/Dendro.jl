@@ -212,10 +212,15 @@ Measurement:
   `severity` classifies a value against a `(warn, high)` band.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
-  `unreachable_statements`, `identical_operands`, and `duplicate_branches`. Each
-  reads the nodes one concept tagged and keeps those a predicate accepts, through the
-  shared `filter_nodes`. Plus the helpers: `function_body` (a block child or a
-  short-form's right-hand expression), reading a body's real-work count, comparing
+  `unreachable_statements`, `identical_operands`, `duplicate_branches`,
+  `unused_parameters`, and `unused_locals`. Most read the nodes one concept tagged
+  and keep those a predicate accepts, through the shared `filter_nodes`. The unused
+  pair reads the scopes captures instead: a `@parameter_name` or `:local`-kind
+  definition inside a unit whose name no reference in that unit carries
+  (`reference_positions`/`used_within`, name-based over the unit rather than
+  binding-based, so a rebinding from a nested scope is not a fresh variable), with a
+  leading underscore opting out. Plus the helpers: `function_body` (a block child or
+  a short-form's right-hand expression), reading a body's real-work count, comparing
   subtrees by normalised text, and collecting the blocks of one conditional chain
   (`branch_blocks`).
 - `rules.jl` defines `Rule` (a metric name, kind, band, and measuring function),
@@ -374,7 +379,8 @@ in its query, not here.
 
 `QueryIndex` (`query_index.jl`). One tree's identified nodes: the `functions` units
 and `function_ids` (the no-descend boundary), plus one `Concept` per measured
-construct (decision points, short-circuit operators, nesting, parameters, bodies,
+construct (decision points, short-circuit operators, nesting, parameters, parameter
+names, bodies,
 catches, comments, names, trivial statements, returns, finally clauses, calls,
 binary expressions, binary operators, conditionals, terminals, short-form
 definitions, and the NPath construct families: loops, switches, ternaries, tries,

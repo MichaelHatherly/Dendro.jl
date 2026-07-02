@@ -13,6 +13,12 @@
 
 (formal_parameters) @parameter
 
+; A parameter's name identifier, plain and spread forms.
+(formal_parameters [
+  (formal_parameter name: (identifier) @parameter_name)
+  (spread_parameter (variable_declarator name: (identifier) @parameter_name))
+])
+
 (block) @body
 
 (catch_clause) @catch

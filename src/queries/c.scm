@@ -12,6 +12,14 @@
 
 (parameter_list) @parameter
 
+; A parameter's name identifier, through one or two pointer levels. A function-pointer
+; parameter's inner name is left untagged; its shape carries no simple name.
+(parameter_list (parameter_declaration declarator: [
+  (identifier) @parameter_name
+  (pointer_declarator declarator: (identifier) @parameter_name)
+  (pointer_declarator declarator: (pointer_declarator declarator: (identifier) @parameter_name))
+]))
+
 (compound_statement) @body
 
 (comment) @comment

@@ -16,6 +16,18 @@
 
 (parameters) @parameter
 
+; A parameter's name identifier: plain, typed, defaulted, and splat forms. Lambda
+; parameters are not tagged; a lambda is not a unit, so its names belong to no
+; measured signature.
+(parameters [
+  (identifier) @parameter_name
+  (typed_parameter . (identifier) @parameter_name)
+  (default_parameter name: (identifier) @parameter_name)
+  (typed_default_parameter name: (identifier) @parameter_name)
+  (list_splat_pattern (identifier) @parameter_name)
+  (dictionary_splat_pattern (identifier) @parameter_name)
+])
+
 (block) @body
 
 (except_clause) @catch

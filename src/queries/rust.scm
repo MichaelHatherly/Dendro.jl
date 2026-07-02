@@ -14,6 +14,10 @@
 
 (parameters) @parameter
 
+; A parameter's name identifier. `self` and destructuring patterns introduce no
+; simple name and are not tagged; closure parameters belong to no unit.
+(parameters (parameter pattern: (identifier) @parameter_name))
+
 (block) @body
 
 [(line_comment) (block_comment)] @comment

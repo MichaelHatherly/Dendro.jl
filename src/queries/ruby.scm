@@ -20,6 +20,18 @@
 
 (method_parameters) @parameter
 
+; A parameter's name identifier: plain, optional, splat, keyword, hash-splat, and
+; block forms. Block-argument parameters (`do |x|`) are not tagged; a block is not
+; a unit.
+(method_parameters [
+  (identifier) @parameter_name
+  (optional_parameter name: (identifier) @parameter_name)
+  (splat_parameter name: (identifier) @parameter_name)
+  (keyword_parameter name: (identifier) @parameter_name)
+  (hash_splat_parameter name: (identifier) @parameter_name)
+  (block_parameter name: (identifier) @parameter_name)
+])
+
 (body_statement) @body
 
 (comment) @comment

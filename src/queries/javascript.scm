@@ -20,6 +20,16 @@
 
 (formal_parameters) @parameter
 
+; A parameter's name identifier: plain, defaulted, and rest forms, plus the bare
+; single-parameter arrow that carries no parameter list. A destructuring pattern
+; introduces no single name and is not tagged.
+(formal_parameters [
+  (identifier) @parameter_name
+  (assignment_pattern left: (identifier) @parameter_name)
+  (rest_pattern (identifier) @parameter_name)
+])
+(arrow_function parameter: (identifier) @parameter_name)
+
 (statement_block) @body
 
 (catch_clause) @catch

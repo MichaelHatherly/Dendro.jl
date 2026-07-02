@@ -13,6 +13,10 @@
 # binding (1.0 never drops) and dogfood tunes it down only if needed.
 const COHESION_UBIQUITY = 1.0
 
+# Byte ranges of a file's units, the containment table `containing_unit` scans.
+unit_ranges(index::QueryIndex) =
+    Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in functions(index)]
+
 # The innermost function unit whose byte span contains `[from, to]`, or 0 when the
 # position lies in no function (top-level code). Units are few per file, so a scan.
 function containing_unit(ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
@@ -36,7 +40,7 @@ end
 function binding_groups(index::QueryIndex, ubiquity::Float64)
     units = functions(index)
     n = length(units)
-    ranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    ranges = unit_ranges(index)
     # Units referencing one definition, keyed by the definition's identity.
     groups = Dict{NodeId, Vector{Int}}()
     for (refid, defid) in index.bindings

@@ -43,6 +43,8 @@ const BUILTIN_RULES = Rule[
     Rule(:empty_catch, :flag, nothing, empty_catches),
     Rule(:stub_marker, :flag, nothing, stub_markers),
     Rule(:return_in_finally, :flag, nothing, returns_in_finally),
+    Rule(:unused_parameter, :flag, nothing, unused_parameters),
+    Rule(:unused_local, :flag, nothing, unused_locals),
 ]
 
 """

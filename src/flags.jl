@@ -255,6 +255,94 @@ function is_return_in_finally(node::TreeSitter.Node, index::QueryIndex)
     return false
 end
 
+# The cross-language deliberate-unused convention: a name beginning with an
+# underscore opts out of unused reporting. An empty slice (a name the grammar
+# tokenizes away) has nothing to report either.
+deliberately_unused(name::AbstractString) = isempty(name) || startswith(name, "_")
+
+# Reference positions by name text, the use-test both unused flags share. A
+# definition site or a signature's own parameter name is not a use.
+function reference_positions(index::QueryIndex)
+    caps = index.scope_captures
+    uses = Dict{String, Vector{NodeId}}()
+    for r in caps.refnodes
+        rid = nodeid(r)
+        (rid in caps.defids || hasid(index.parameter_name.ids, r)) && continue
+        name = String(strip(TreeSitter.slice(index.source, r)))
+        push!(get!(() -> NodeId[], uses, name), rid)
+    end
+    return uses
+end
+
+# Whether any reference named `name` lands inside the byte range `r`.
+function used_within(uses::Dict{String, Vector{NodeId}}, name::AbstractString, r::Tuple{Int, Int})
+    positions = get(uses, name, nothing)
+    positions === nothing && return false
+    return any(pos -> r[1] <= pos[1] && pos[2] <= r[2], positions)
+end
+
+"""
+    unused_parameters(index) -> Vector{TreeSitter.Node}
+
+Parameter names nothing in their function references. A same-named reference anywhere
+in the unit counts as a use, including inside a nested callable, the conservative
+reading. Underscore-prefixed names opt out. A bodyless declaration keeps its
+parameters (they are its signature), and an empty or stub body is already the
+`empty_body` finding, so its parameters are not additionally dead. Empty for a
+language whose parameters carry no names (bash).
+"""
+function unused_parameters(index::QueryIndex)
+    out = TreeSitter.Node[]
+    isempty(index.parameter_name.nodes) && return out
+    units = functions(index)
+    ranges = unit_ranges(index)
+    uses = reference_positions(index)
+    for p in index.parameter_name.nodes
+        pid = nodeid(p)
+        ui = containing_unit(ranges, pid[1], pid[2])
+        ui == 0 && continue
+        node = units[ui].node
+        (function_body(node, index) === nothing || empty_body(node, index)) && continue
+        name = String(strip(TreeSitter.slice(index.source, p)))
+        deliberately_unused(name) && continue
+        used_within(uses, name, ranges[ui]) || push!(out, p)
+    end
+    return out
+end
+
+"""
+    unused_locals(index) -> Vector{TreeSitter.Node}
+
+Local bindings inside a function whose name nothing in that function references. The
+use-test is by name over the whole unit, not by resolved binding: a language like
+Julia rebinds an enclosing local from a nested scope (`best = i` inside a `for`),
+which the scope model reads as a fresh definition, so binding-level reporting would
+flag live variables. Rebindings of one name in one unit are one variable, reported
+once at the first binding. Underscore-prefixed names opt out. A top-level binding is
+visible across files and belongs to `unreferenced`, not here. Empty for a language
+whose scopes query captures no local bindings (php).
+"""
+function unused_locals(index::QueryIndex)
+    out = TreeSitter.Node[]
+    caps = index.scope_captures
+    isempty(caps.defnodes) && return out
+    ranges = unit_ranges(index)
+    uses = reference_positions(index)
+    seen = Set{Tuple{Int, String}}()
+    for (i, d) in enumerate(caps.defnodes)
+        caps.defkinds[i] == :local || continue
+        did = nodeid(d)
+        ui = containing_unit(ranges, did[1], did[2])
+        ui == 0 && continue
+        name = String(strip(TreeSitter.slice(index.source, d)))
+        deliberately_unused(name) && continue
+        (ui, name) in seen && continue
+        push!(seen, (ui, name))
+        used_within(uses, name, ranges[ui]) || push!(out, d)
+    end
+    return out
+end
+
 # True when a statement is, or directly wraps, a single call: a bare call, or a
 # return/expression statement whose only named child is a call.
 function single_call(stmt::TreeSitter.Node, index::QueryIndex)

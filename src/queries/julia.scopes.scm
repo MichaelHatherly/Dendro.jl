@@ -48,9 +48,15 @@
 ; --- const and local bindings ---
 (const_statement (assignment . (identifier) @definition.const))
 (for_binding . (identifier) @definition.local)
-; A plain assignment introduces a local. Its first child is the bound identifier;
-; short-form defs have a call_expression first, so they never match here.
-(assignment . (identifier) @definition.local)
+; A statement-position assignment introduces a local: one directly under a
+; source file, a block, or a `let` head. Its first child is the bound identifier;
+; short-form defs have a call_expression first, so they never match here. The
+; statement anchor keeps a call-site keyword argument (`sort!(xs; by = f)`) and a
+; NamedTuple field (`(added = true,)`) from reading as bindings: both are
+; assignment-shaped, neither binds a name.
+(source_file (assignment . (identifier) @definition.local))
+(block (assignment . (identifier) @definition.local))
+(let_statement (assignment . (identifier) @definition.local))
 
 ; --- References: every identifier use ---
 (identifier) @reference

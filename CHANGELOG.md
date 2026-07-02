@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Flag metrics `unused_parameter` and `unused_local`: a parameter or local binding
+  whose name nothing in its function references. The use-test is by name over the
+  whole unit, so a reference in a nested closure counts; a leading underscore opts
+  a name out. Bodyless declarations, empty and stub bodies, and top-level bindings
+  are not reported (the latter belong to `unreferenced`). Both are built-in rules,
+  suppressible inline and toggleable from `[rules]` in `.dendro.toml`.
+- The Julia scopes query captures a local binding only from a statement-position
+  assignment, so a call-site keyword argument (`sort!(xs; by = f)`) and a
+  NamedTuple field (`(added = true,)`) no longer read as bindings. The bash scopes
+  query captures `variable_name` references, so `$x` resolves to its assignment.
 - `analyze(path; base, cut, min_size, language)` takes a file or folder. A folder
   recurses for analysable files; either way a baseline is built from the corpus
   (the folder's files, or the single file's own functions), so relative scoring

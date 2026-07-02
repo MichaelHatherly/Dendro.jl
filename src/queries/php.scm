@@ -16,6 +16,13 @@
 
 (formal_parameters) @parameter
 
+; A parameter's name, plain and variadic forms. A promoted parameter initializes a
+; property by existing, so its name is never unused and is not tagged.
+(formal_parameters [
+  (simple_parameter name: (variable_name (name) @parameter_name))
+  (variadic_parameter name: (variable_name (name) @parameter_name))
+])
+
 ; A promoted constructor parameter does the constructor's work in the signature, so an
 ; empty body is not an empty implementation.
 (property_promotion_parameter) @init

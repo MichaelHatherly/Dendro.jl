@@ -28,9 +28,19 @@ expression).
 Flag (presence is the finding): swallowed errors (empty catch clauses), stub
 markers (`TODO`/`FIXME`/`XXX`/`HACK` comments), empty function bodies, a `return`
 inside a finally clause (which discards a pending error or return value), identical
-operands (`x == x`, `a && a`), and a conditional whose branches are all identical
-(`if c then X else X`). An optional rule flags code after an unconditional `return`,
-`break`, or `throw`.
+operands (`x == x`, `a && a`), a conditional whose branches are all identical
+(`if c then X else X`), unused parameters, and unused locals. An optional rule flags
+code after an unconditional `return`, `break`, or `throw`.
+
+Unused parameters and locals read the lexical bindings: a parameter or local
+binding whose name nothing in its function references is dead weight. The use-test
+is by name over the whole unit, the conservative reading, so a same-named reference
+in a nested closure counts as a use. A leading underscore opts a name out, the
+cross-language deliberate-unused convention. A bodyless declaration keeps its
+parameters (they are its signature), an empty or stub body is already the
+`empty_body` finding, and a top-level binding belongs to `:unreferenced`, so none
+of those double-report. A language whose parameters carry no names (bash) or whose
+scopes query captures no locals (php) reports nothing for that half.
 
 Each metric is a [rule](@ref "Custom rules"). The set above is the default; a caller
 can add their own or opt into rules that are off by default.

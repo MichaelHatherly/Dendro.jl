@@ -14,6 +14,23 @@
 
 (parameter_list) @parameter
 
+; A parameter's name identifier: plain, pointer, reference, and defaulted forms. A
+; function-pointer parameter's inner name is left untagged; its shape carries no
+; simple name.
+(parameter_list [
+  (parameter_declaration declarator: [
+    (identifier) @parameter_name
+    (pointer_declarator declarator: (identifier) @parameter_name)
+    (pointer_declarator declarator: (pointer_declarator declarator: (identifier) @parameter_name))
+    (reference_declarator (identifier) @parameter_name)
+  ])
+  (optional_parameter_declaration declarator: [
+    (identifier) @parameter_name
+    (pointer_declarator declarator: (identifier) @parameter_name)
+    (reference_declarator (identifier) @parameter_name)
+  ])
+])
+
 ; A member-initializer list does the constructor's work before the body, so an empty
 ; body is not an empty implementation. A project macro between the return type and the
 ; name (`FMT_INLINE T(int x) : x_(x) {}`) defeats the parse, leaving the initializer
