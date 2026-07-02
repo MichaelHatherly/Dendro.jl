@@ -64,8 +64,8 @@ the `calibration` kernel; `compare.jl` scales the current run's times by the rat
 the two calibration medians before applying its 10% band. A run on a 20%-slower runner
 no longer reads as a 20% regression.
 
-The suite runs **single-threaded**. `analyze` fans out across threads above a corpus-size
-floor, which makes timings nondeterministic and breaks the normalizer's same-work
+The suite runs **single-threaded**. `analyze` fans out across threads above a per-pass
+size floor, which makes timings nondeterministic and breaks the normalizer's same-work
 assumption. The `just bench*` recipes pass `-t1`, and `benchmarks.jl` errors if started
 with more than one thread. To benchmark the threaded path, measure `analyze` directly
 outside this suite.

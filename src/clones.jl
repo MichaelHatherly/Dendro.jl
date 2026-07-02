@@ -324,7 +324,7 @@ function near_miss_edges!(
     length(idxs) < 2 && return edges
     pairs = candidate_pairs(units, idxs, radius_factor)
     scores = Vector{Float64}(undef, length(pairs))
-    parallel_map!(scores, length(pairs)) do k
+    parallel_map!(scores) do k
         pair_similarity(units, pairs[k][1], pairs[k][2], threshold)
     end
     for k in eachindex(pairs)

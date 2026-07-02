@@ -5,7 +5,7 @@ fmt-check:
     runic --check .
 
 # `-t1` pins the suite to one thread so timings stay deterministic: `analyze` fans out
-# across threads above a corpus-size floor, and the calibration normalizer assumes the
+# across threads above a per-pass size floor, and the calibration normalizer assumes the
 # same code does the same work every run. It also overrides a shell `JULIA_NUM_THREADS`.
 bench:
     julia --project=benchmark -t1 benchmark/run.jl

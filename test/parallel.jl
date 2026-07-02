@@ -8,6 +8,11 @@
     end
 end
 
+@testitem "a failed fan-out task rethrows its own exception" tags = [:parallel] begin
+    chunks = Dendro.chunk_indices(8, 2)
+    @test_throws ArgumentError Dendro.spawn_chunks((c, idxs) -> throw(ArgumentError("boom")), chunks)
+end
+
 @testitem "merge_baselines matches serial sampling" setup = [Fixtures] tags = [:parallel] begin
     files = [Fixtures.parsedfile(:julia, Fixtures.chain("f$i", 4 + i % 5)) for i in 1:12]
 
@@ -42,6 +47,8 @@ end
             write(joinpath(dir, "f$i.jl"), "function f$i(z)\n" * body * extra * "    return z\nend\n")
         end
 
+        # The digest keeps findings and locations in returned order: the guarantee under
+        # test is byte-identical output, ordering included, at any thread count.
         script = raw"""
         import Dendro
         function digest(fs)
@@ -49,21 +56,22 @@ end
             for f in fs
                 io = IOBuffer()
                 print(io, f.metric, '|', f.value, '|', f.absolute, '|', f.percentile, '|', f.suppressed, '|')
-                for l in sort([(basename(x.file), x.line, x.unit) for x in f.locations])
-                    print(io, l[1], ':', l[2], ':', l[3], ';')
+                for x in f.locations
+                    print(io, basename(x.file), ':', x.line, ':', x.unit, ';')
                 end
                 push!(lines, String(take!(io)))
             end
-            sort!(lines)
             return join(lines, '\n')
         end
         fs = Dendro.analyze(ARGS[1])
         print(hash(digest(fs)), '|', length(fs))
         """
 
+        # `--startup-file=no` pins the captured stdout: `julia_cmd` propagates the flag only
+        # when the host was started with it, and a printing startup.jl would break the diff.
         proj = Base.active_project()
-        serial = read(`$(Base.julia_cmd()) --project=$proj -t1 -e $script $dir`, String)
-        parallel = read(`$(Base.julia_cmd()) --project=$proj -t4 -e $script $dir`, String)
+        serial = read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -t1 -e $script $dir`, String)
+        parallel = read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -t4 -e $script $dir`, String)
 
         @test serial == parallel
         # The corpus is built to produce findings, so a match on an empty result is no proof.

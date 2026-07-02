@@ -19,20 +19,22 @@ function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothin
     end
     n = length(entries)
     files = Vector{ParsedFile}(undef, n)
-    # Warm every language's caches single-threaded before the parallel parse first-touches
-    # them; this also leaves the imports query warm for the linkage passes downstream.
-    parallel_enabled(n) && warm_languages(unique(last(e) for e in entries))
-    parallel_chunks(n) do _, idxs
-        parse_chunk!(files, entries, idxs, rules)
+    # Warm every language's caches up front, so no parse task pays a JLL load or a query
+    # compile mid fan-out; this also leaves the imports query warm for the linkage passes.
+    warm_languages(unique(last(e) for e in entries))
+    parallel_chunks(() -> Dict{Symbol, TreeSitter.Parser}(), n) do parsers, idxs
+        parse_chunk!(files, parsers, entries, idxs, rules)
     end
     return files
 end
 
-# Parse one chunk of files with a task-local parser pool: a `TreeSitter.Parser` is stateful,
+# Parse one chunk of files with the chunk's parser pool: a `TreeSitter.Parser` is stateful,
 # so each chunk keeps its own, reused across its files. Writes into the shared preallocated
 # `files` at each entry's index, so the corpus order matches the serial path.
-function parse_chunk!(files::Vector{ParsedFile}, entries::Vector{Tuple{String, Symbol}}, idxs, rules)
-    parsers = Dict{Symbol, TreeSitter.Parser}()
+function parse_chunk!(
+        files::Vector{ParsedFile}, parsers::Dict{Symbol, TreeSitter.Parser},
+        entries::Vector{Tuple{String, Symbol}}, idxs, rules
+    )
     for i in idxs
         path, lang = entries[i]
         parser = get!(() -> parser_for(lang), parsers, lang)
@@ -49,10 +51,8 @@ end
 # baseline; the merge concatenates per `(language, metric)` and the final `sort!` fixes the
 # order, so the sorted samples are identical to the serial path at any thread count.
 function baseline_from(files::Vector{ParsedFile}, rules = BUILTIN_RULES)
-    n = length(files)
-    partials = [Baseline() for _ in 1:n_chunks(n)]
-    parallel_chunks(n) do c, idxs
-        sample_chunk!(partials[c], files, idxs, rules)
+    partials = parallel_chunks(() -> Baseline(), length(files)) do baseline, idxs
+        sample_chunk!(baseline, files, idxs, rules)
     end
     baseline = merge_baselines(partials)
     for samples in values(baseline.samples)
@@ -210,14 +210,15 @@ function analyze(
     files = parse_corpus(corpus; language, rules = active_rules)
     bl = baseline_from(files, active_rules)
 
-    scope::Union{Scope, Nothing} = nothing
-    if base !== nothing
+    # Assigned once, so the scoring closure captures it concretely, never as a `Core.Box`.
+    scope = if base === nothing
+        nothing
+    else
         root = git_toplevel(roots)
-        scope = Scope(root, changed_ranges(read(`git -C $root diff $base`, String)))
+        Scope(root, changed_ranges(read(`git -C $root diff $base`, String)))
     end
 
-    perfile = Vector{Vector{Finding}}(undef, length(files))
-    parallel_map!(perfile, length(files)) do i
+    findings = parallel_flatmap(length(files), Finding) do i
         f = files[i]
         within = nothing
         if scope !== nothing
@@ -227,10 +228,6 @@ function analyze(
         end
         scan = Scan(f.index, f.file; rules = active_rules, baseline = bl, cut = ecut, within = within, directives = f.directives)
         findings_for(scan)
-    end
-    findings = Finding[]
-    for pf in perfile
-        append!(findings, pf)
     end
 
     append!(findings, scope_clusters(cluster_duplicates(files; min_size = msize), scope))

@@ -28,9 +28,7 @@ const MIN_MISPLACED_FILES = 5
 function own_affinity(files::Vector{ParsedFile}, graph::CorpusGraph)
     n = length(files)
     partials = Vector{Dict{Int, Float64}}(undef, n)
-    parallel_map!(partials, n) do i
-        file_own_affinity(files[i], graph)
-    end
+    parallel_map!(i -> file_own_affinity(files[i], graph), partials)
     own = Dict{Int, Float64}()
     for i in 1:n
         merge!(own, partials[i])
