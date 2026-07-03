@@ -172,6 +172,11 @@ to the one git toplevel and the repo-wide diff scopes them.
 `threshold` is the LCS-similarity cutoff for a near-miss, `radius_factor` scales the
 candidate-search radius to a function's size.
 
+The `:reimplementation` pass, vocabulary-overlap pairs the structural passes miss, is
+off by default and enabled only through the config, `[rules] reimplementation = true`
+in a `.dendro.toml` or a `config` built here; the `rules` kwarg carries `Rule`s and
+cannot express it. Its overlap cutoff is the config's `[reimplementation] threshold`.
+
 Thresholds come from a [`Config`](@ref): the bands, the percentile `cut`, and which
 rules are active. By default `analyze` discovers one, merging a user-global config and
 the repo `.dendro.toml` over the built-in defaults.
@@ -230,12 +235,23 @@ function analyze(
         findings_for(scan)
     end
 
-    append!(findings, scope_clusters(cluster_duplicates(files; min_size = msize), scope))
-    append!(
-        findings, scope_clusters(
-            cluster_near_duplicates(files; min_size = msize, threshold = thresh, radius_factor = radius), scope
+    exact = cluster_duplicates(files; min_size = msize)
+    near = cluster_near_duplicates(files; min_size = msize, threshold = thresh, radius_factor = radius)
+    append!(findings, scope_clusters(exact, scope))
+    append!(findings, scope_clusters(near, scope))
+    # Opt-in corpus pass, gated here rather than resolved into the rule set. It reads
+    # the unscoped clone findings: a pair is excluded because the structural passes
+    # reported it at all, not because the diff kept it.
+    if get(cfg.rules, RELATIONAL.reimplementation, false)
+        append!(
+            findings, scope_clusters(
+                cluster_reimplementations(
+                    files; min_size = msize, threshold = cfg.reimpl_threshold,
+                    clone_findings = [exact; near]
+                ), scope
+            )
         )
-    )
+    end
     append!(findings, scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope))
 
     table = corpus_symbols(files)

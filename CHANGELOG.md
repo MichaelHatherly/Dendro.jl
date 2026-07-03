@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in corpus finding `:reimplementation`: two functions whose IDF-weighted
+  vocabulary overlap (callee names plus identifier word fragments, rarity from the
+  scanned corpus) clears a threshold, the rewrite-with-different-structure the
+  structural clone passes miss. Pairs already reported as clones, caller/callee
+  pairs, same-named functions, and 2:1 size mismatches are skipped. Off by
+  default; `[rules] reimplementation = true` enables it and `[reimplementation]
+  threshold` tunes the cutoff (default 0.6). Suppressible with
+  `dendro-ignore: reimplementation`.
 - Flag metrics `unused_parameter` and `unused_local`: a parameter or local binding
   whose name nothing in its function references. The use-test is by name over the
   whole unit, so a reference in a nested closure counts; a leading underscore opts

@@ -78,6 +78,19 @@ that split, keep clone detection within one language, and keep the block size fl
 above the function floor: small blocks of boilerplate coincide and turn into noise.
 The moment clone detection reaches for types or call graphs, it has left the bargain.
 
+Reimplementation candidates are vocabulary, still not meaning. A helper rewritten
+with a different shape shares no subtrees with the original, so the clone passes miss
+it; what survives a rewrite is the vocabulary, the callee names and identifier words,
+and that is all this pass reads. Terms are weighted by rarity in the scanned corpus,
+computed at scan time, and that is the line to hold: corpus-derived statistics are
+inside the tent (the trigram model set the precedent), pretrained weights are not,
+because they import opinions the finding cannot explain. Vocabulary evidence is
+proposal-strength rather than measurement, so the pass is off by default, and a pair
+the clone passes report is never repeated here. Keep the gates (clone handoff,
+caller/callee, same name, size ratio), keep it within one language, and expect
+deliberately parallel families, per-language resolvers and the like, to pair: that is
+the mechanism working, answered with a suppression, not a smarter model.
+
 Placement is structure across files, still not meaning. Dendro resolves a reference
 that leaves its file to the definition it names in another file, along declared
 `include`/`import`/`export` edges, and builds a corpus-wide graph of which unit

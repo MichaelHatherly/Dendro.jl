@@ -40,9 +40,10 @@ config_error(msg) = throw(ConfigError(msg))
 Resolved tuning thresholds for one analysis, built by `discover_config` from the
 built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
 overrides scalar rule `(warn, high)` tuples by metric name; the four relational fields
-override the relational bands; `rules` toggles a rule on or off by name; `min_size`,
-`threshold`, and `radius_factor` are the clone-detection thresholds. Immutable: pass
-one to [`analyze`](@ref) with `config =` to skip file discovery.
+override the relational bands; `rules` toggles a rule on or off by name, and the
+`reimplementation` corpus pass with it; `min_size`, `threshold`, and `radius_factor`
+are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
+cutoff. Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
     cut::Float64
@@ -55,14 +56,21 @@ struct Config
     min_size::Int
     threshold::Float64
     radius_factor::Float64
+    reimpl_threshold::Float64
 end
 
 # The scalar metric names a `[bands]` key may set: every scalar rule, built-in or
 # optional. Flag rules carry no band, so naming one under `[bands]` is an error.
 scalar_metric_names() = Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES] if r.kind === :scalar)
 
-# Every rule name a `[rules]` key may toggle, built-in or optional, of either kind.
-rule_names() = Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES])
+# Corpus passes a `[rules]` key may toggle alongside the per-unit rules. They are
+# gated in `analyze` rather than resolved into the rule set, so `resolve_rules`
+# ignores these names.
+const TOGGLEABLE_RELATIONAL = (:reimplementation,)
+
+# Every rule name a `[rules]` key may toggle: built-in or optional, of either kind,
+# plus the toggleable corpus passes.
+rule_names() = union(Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES]), TOGGLEABLE_RELATIONAL)
 
 """
     resolve_rules(config) -> Vector{Rule}
@@ -176,6 +184,19 @@ function apply_clones(scalars, table, source)
     return scalars
 end
 
+# Apply a `[reimplementation]` table: the overlap `threshold` a candidate pair must
+# reach, anything else warns.
+function apply_reimplementation(scalars, table, source)
+    for (key, value) in table
+        if key == "threshold"
+            scalars = merge(scalars, (reimpl_threshold = config_float(value, key, source),))
+        else
+            @warn "Dendro: unknown reimplementation key in $source, ignored" key
+        end
+    end
+    return scalars
+end
+
 # Overlay one parsed TOML table onto the accumulating overrides, returning the scalar
 # settings (`cut` and the clone thresholds) it leaves. Only the keys present are
 # touched; an unknown top-level key warns rather than failing, so a file written for a
@@ -186,6 +207,8 @@ function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
             scalars = merge(scalars, (cut = config_float(value, key, source),))
         elseif key == "clones"
             scalars = apply_clones(scalars, config_table(value, key, source), source)
+        elseif key == "reimplementation"
+            scalars = apply_reimplementation(scalars, config_table(value, key, source), source)
         elseif key == "bands"
             apply_bands!(acc, config_table(value, key, source), source)
         elseif key == "rules"
@@ -244,7 +267,10 @@ file layers, returning the built-in defaults.
 """
 function discover_config(roots; explicit = nothing, use_files = true)
     acc = overrides()
-    scalars = (cut = DEFAULT_CUT, min_size = DEFAULT_MIN_SIZE, threshold = DEFAULT_THRESHOLD, radius_factor = DEFAULT_RADIUS_FACTOR)
+    scalars = (
+        cut = DEFAULT_CUT, min_size = DEFAULT_MIN_SIZE, threshold = DEFAULT_THRESHOLD,
+        radius_factor = DEFAULT_RADIUS_FACTOR, reimpl_threshold = DEFAULT_REIMPL_THRESHOLD,
+    )
     if use_files
         for path in config_files(roots, explicit)
             scalars = apply_toml!(acc, scalars, TOML.parsefile(path), path)
@@ -258,5 +284,6 @@ function discover_config(roots; explicit = nothing, use_files = true)
         get(acc.relational, :misplaced, MISPLACED_BAND),
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
+        scalars.reimpl_threshold,
     )
 end

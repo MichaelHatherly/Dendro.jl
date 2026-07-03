@@ -137,6 +137,33 @@ end
     end
 end
 
+@testitem "reimplementation config keys" setup = [Fixtures] tags = [:config] begin
+    using Dendro: discover_config
+
+    # The global layer is isolated so a developer's own config cannot add logs.
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                write(f, "[reimplementation]\nthreshold = 0.7\n")
+                cfg = discover_config([dir]; explicit = f)
+                @test cfg.reimpl_threshold == 0.7
+
+                # The corpus-pass toggle validates under [rules] without a
+                # warning, though no Rule carries the name.
+                write(f, "[rules]\nreimplementation = true\n")
+                cfg = @test_logs discover_config([dir]; explicit = f)
+                @test cfg.rules[:reimplementation] === true
+
+                # An unknown key under the table warns and is dropped.
+                write(f, "[reimplementation]\nthresh = 0.7\n")
+                cfg = @test_logs (:warn,) discover_config([dir]; explicit = f)
+                @test cfg.reimpl_threshold == Dendro.DEFAULT_REIMPL_THRESHOLD
+            end
+        end
+    end
+end
+
 @testitem "config errors on a missing explicit file" setup = [Fixtures] tags = [:config] begin
     using Dendro: discover_config, ConfigError
 
@@ -157,6 +184,7 @@ end
         ("cut = \"x\"\n", "must be a number"),                 # cut is not numeric
         ("[rules]\nnpath = \"yes\"\n", "true or false"),       # toggle is not a boolean
         ("[clones]\nmin_size = 1.5\n", "must be an integer"),  # min_size is not integral
+        ("[reimplementation]\nthreshold = \"x\"\n", "must be a number"),
         ("bands = 5\n", "must be a table"),                    # section is not a table
     ]
     for (toml, frag) in cases

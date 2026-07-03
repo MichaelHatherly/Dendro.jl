@@ -51,6 +51,14 @@ end
     @test isempty(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
 end
 
+@testitem "reimplementation directive validates" setup = [Fixtures] tags = [:suppress] begin
+    # The metric is emitted by a corpus pass, so its name must be in the
+    # directive-validated set even though no Rule carries it.
+    src = "# dendro-ignore: reimplementation\nfunction f()\nend\n"
+    d = @test_logs only(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
+    @test d.metrics == Set([:reimplementation])
+end
+
 @testitem "suppressions typo guard" setup = [Fixtures] tags = [:suppress] begin
     src = "# dendro-ignore: cyclomatc\nfunction f()\nend\n"
 

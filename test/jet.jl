@@ -61,7 +61,11 @@
 # and `Any`-collection sites already counted, no new kind. The optional
 # `shadowed_variable`/`local_count` rules raised sound to 989: one more site of the
 # same rule-vector dispatch. The optional `fan_out` rule raised sound to 990: the
-# same again.
+# same again. The reimplementation pass raised sound to 1054 and opt to 21: a new
+# corpus pass (`cluster_reimplementations` and its config plumbing) adds the same
+# kwarg-lowering and `Any`-widening sites the other cluster passes carry, re-counted
+# through `analyze`'s new call edges; only five reports name the new code, all of
+# those kinds.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -69,8 +73,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 990   # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 20      # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 1054  # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 21      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))

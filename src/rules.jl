@@ -86,6 +86,7 @@ const RELATIONAL = (
     scattered = :scattered,
     misplaced = :misplaced,
     unreferenced = :unreferenced,
+    reimplementation = :reimplementation,
 )
 const RELATIONAL_METRICS = values(RELATIONAL)
 
