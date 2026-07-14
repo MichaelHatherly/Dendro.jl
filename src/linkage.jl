@@ -22,8 +22,11 @@ end
 # A top-level definition somewhere in the corpus: the file it lives in, its identity in
 # that file's tree, the bound name and kind, the enclosing module path (outermost
 # first), the function-unit index it belongs to (0 for a type or const outside any
-# unit), its source line, and its declared visibility (`:public`/`:private`/`:unknown`,
-# read from a per-def modifier where a language has one, `:unknown` otherwise).
+# unit), its source line, its declared visibility (`:public`/`:private`/`:unknown`,
+# read from a per-def modifier where a language has one, `:unknown` otherwise), and
+# whether it is an external-entry root: a definition a wrapping construct the analyzer
+# cannot expand consumes (a macro, decorator, annotation, attribute), so reachability
+# roots the dead-code search from it rather than judging it dead.
 struct CorpusDef
     file::String
     id::NodeId
@@ -33,6 +36,7 @@ struct CorpusDef
     unit::Int
     line::Int
     visibility::Symbol
+    external_root::Bool
 end
 
 # Every top-level definition across the corpus. A cross-file reference resolves against
@@ -237,6 +241,7 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
     end
     units = file.index.functions
     uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    link = get(LINKAGES, file.language, nothing)
     for (i, d) in enumerate(caps.defnodes)
         kind = caps.defkinds[i]
         is_symbol_kind(kind) || continue
@@ -248,7 +253,8 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
         path = module_path_of(regions, from, to)
         unit = containing_unit(uranges, from, to)
         line = Int(TreeSitter.start_point(d).row) + 1
-        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d)))
+        external = link !== nothing && link.external_root(d, file.source)::Bool
+        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d), external))
     end
     return table
 end
@@ -316,14 +322,20 @@ end
 # whose API surface is a per-definition keyword rather than an export list. Visibility to
 # another file and membership of the public API are different questions: a Julia name is
 # visible across an `include` splice without being exported, so `:unreferenced` reads
-# `is_public`, not `is_exported`.
+# `is_public`, not `is_exported`. `external_root(def_node, source)` decides whether a
+# definition is consumed by a wrapping construct the analyzer cannot expand (a macro,
+# decorator, annotation, attribute), a second source of reachability roots alongside
+# `is_public`; a language without such a construct uses `no_external_root`.
 struct Linkage
     model::Symbol
     resolve_target::Function
     is_exported::Function
     is_public::Function
     visibility::Function
+    external_root::Function
 end
+Linkage(model, resolve_target, is_exported, is_public, visibility) =
+    Linkage(model, resolve_target, is_exported, is_public, visibility, no_external_root)
 
 # Resolution works in POSIX-separated path space: the corpus key set and the paths the
 # resolvers build are compared with `/`, so a match never depends on the host OS
@@ -497,8 +509,44 @@ capitalized_public(def::CorpusDef, ::Set{String}) = !isempty(def.name) && isuppe
 # the safe direction, so `:unreferenced` never fires on a guess.
 modifier_public(def::CorpusDef, ::Set{String}) = def.visibility !== :private
 
+# A language with no wrapping construct that consumes a definition never roots this way.
+no_external_root(::TreeSitter.Node, ::AbstractString) = false
+
+# Base and stdlib macros that wrap an ordinary definition without handing it to external
+# machinery: they annotate code the reachability pass should still judge, so they do not
+# root. Anything else wrapping a definition is assumed to consume it, since a route, test,
+# or component macro is user-defined and open-ended; that is the safe direction, keeping
+# `:unreferenced` from firing on a live registered entry point.
+const JULIA_TRANSPARENT_MACROS = Set{String}(
+    [
+        "@inline", "@noinline", "@generated", "@propagate_inbounds", "@assume_effects",
+        "@doc", "@eval", "@static", "@kwdef", "@enum",
+    ]
+)
+
+# The macro name of a `macrocall_expression`, its first child (`@GET`, `@inline`), with the
+# leading `@` kept so it matches `JULIA_TRANSPARENT_MACROS`.
+macrocall_name(node::TreeSitter.Node, source::AbstractString) =
+    String(strip(TreeSitter.slice(source, TreeSitter.child(node, 1))))
+
+# A Julia definition roots when a macro consumes it directly: walking out from the name
+# node reaches a `macrocall_expression` without crossing a body scope (`block`/
+# `compound_statement`), so `@GET function h(req) ... end` roots `h` while a helper nested
+# in `@testitem begin ... end` does not. A transparent wrapper does not root.
+function julia_external_root(node::TreeSitter.Node, source::AbstractString)
+    n = TreeSitter.parent(node)
+    while !TreeSitter.is_null(n)
+        t = TreeSitter.node_type(n)
+        (t == "block" || t == "compound_statement") && return false
+        t == "macrocall_expression" &&
+            return !(macrocall_name(n, source) in JULIA_TRANSPARENT_MACROS)
+        n = TreeSitter.parent(n)
+    end
+    return false
+end
+
 const LINKAGES = Dict{Symbol, Linkage}(
-    :julia => Linkage(:splice, splice_resolve, splice_exported, export_public, no_visibility),
+    :julia => Linkage(:splice, splice_resolve, splice_exported, export_public, no_visibility, julia_external_root),
     :c => Linkage(:splice, splice_resolve, splice_exported, modifier_public, static_visibility),
     :cpp => Linkage(:splice, splice_resolve, splice_exported, modifier_public, static_visibility),
     :ruby => Linkage(:splice, ruby_resolve, splice_exported, modifier_public, ruby_visibility),

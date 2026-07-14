@@ -67,6 +67,29 @@ end
     @test isempty(Dendro.cluster_unreferenced([a], Dendro.corpus_symbols([a])))
 end
 
+@testitem ":unreferenced roots a macro-consumed definition" setup = [Fixtures] tags = [:unreferenced] begin
+    # `@GET` consumes `handler`: a route macro registers it, so no in-corpus call reaches it,
+    # yet it is a live entry point. It roots the search, and `helper`, called only from it,
+    # stays live through the within-file edge.
+    a = Fixtures.parsedfile(:julia, "@GET \"/x\" function handler(req)\n    helper()\nend\nhelper() = 1\n"; file = "a.jl")
+    @test isempty(Dendro.cluster_unreferenced([a], Dendro.corpus_symbols([a])))
+end
+
+@testitem ":unreferenced flags a definition under a transparent macro" setup = [Fixtures] tags = [:unreferenced] begin
+    # `@inline` annotates ordinary code rather than handing it to external machinery, so it
+    # does not root. An inlined function nothing names is still dead.
+    a = Fixtures.parsedfile(:julia, "export keep\nkeep() = 1\n@inline dead() = 2\n"; file = "a.jl")
+    @test Fixtures.unref_sites([a]) == Set([("a.jl", "dead")])
+end
+
+@testitem ":unreferenced does not root a helper nested in a macro block" setup = [Fixtures] tags = [:unreferenced] begin
+    # The macro consumes the `begin` block, not the definition inside it: crossing a body
+    # scope means the wrapper does not consume the definition itself, so a dead helper nested
+    # in `@testitem begin ... end` is still flagged.
+    a = Fixtures.parsedfile(:julia, "@testitem \"t\" begin\n    inner() = 1\nend\n"; file = "a.jl")
+    @test Fixtures.unref_sites([a]) == Set([("a.jl", "inner")])
+end
+
 @testitem ":unreferenced flags a dead private type and const" setup = [Fixtures] tags = [:unreferenced] begin
     # Reachability covers every top-level definition, not only functions: a struct and a
     # const nothing names, neither exported, are dead.

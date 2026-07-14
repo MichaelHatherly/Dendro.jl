@@ -65,7 +65,11 @@
 # corpus pass (`cluster_reimplementations` and its config plumbing) adds the same
 # kwarg-lowering and `Any`-widening sites the other cluster passes carry, re-counted
 # through `analyze`'s new call edges; only five reports name the new code, all of
-# those kinds.
+# those kinds. Rooting a macro-consumed definition through the function-valued
+# `Linkage.external_root` field, like the other per-language hooks, raised sound from
+# 1054 to 1063 and opt from 21 to 22: the reachability graph builder dispatches through
+# it for every definition, and `julia_external_root` walks the `Any`-node ancestor chain,
+# the same intentional dynamic dispatch and `Any`-node tree walk already counted.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -73,8 +77,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1054  # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 21      # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 1063  # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 22      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))
