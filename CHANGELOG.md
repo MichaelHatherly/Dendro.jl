@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `:unreferenced` roots a definition a macro consumes directly (`@GET function
+  handler(req) ... end`, and other route, test, or component macros): no in-corpus call
+  reaches it, yet it is a live entry point, so it seeds the reachability search instead
+  of reading as dead. A transparent wrapper (`@inline`, `@kwdef`, and the like) does not
+  root, and a helper nested in a wrapped `begin` block is unaffected. Generic across
+  languages through a per-language `Linkage.external_root`; Julia is populated, other
+  languages opt in.
 - Opt-in corpus finding `:reimplementation`: two functions whose IDF-weighted
   vocabulary overlap (callee names plus identifier word fragments, rarity from the
   scanned corpus) clears a threshold, the rewrite-with-different-structure the

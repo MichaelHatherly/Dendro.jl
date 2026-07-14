@@ -61,7 +61,7 @@ function reach_graph(files::Vector{ParsedFile}, table::SymbolTable)
         push!(get!(() -> Int[], name_class, (d.file, d.name)), i)
         link = get(LINKAGES, file_by_path[d.file].language, nothing)
         public = link === nothing || link.is_public(d, get(() -> Set{String}(), surface, d.file))::Bool
-        public && push!(roots, i)
+        (public || d.external_root) && push!(roots, i)
         d.unit == 0 && continue
         from, to = TreeSitter.byte_range(file_by_path[d.file].index.functions[d.unit].node)
         push!(get!(() -> Tuple{Int, Int, Int}[], topfns, d.file), (from, to, i))
