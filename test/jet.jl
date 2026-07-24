@@ -70,6 +70,12 @@
 # 1054 to 1063 and opt from 21 to 22: the reachability graph builder dispatches through
 # it for every definition, and `julia_external_root` walks the `Any`-node ancestor chain,
 # the same intentional dynamic dispatch and `Any`-node tree walk already counted.
+# Flooring a control-free function at the block size raised sound from 1063 to 1065, opt
+# unchanged: `unit_floor` threads the abstract `min_size::Integer` the clone signatures
+# already carry, so `size < unit_floor(...)` widens to `Any` where `size < min_size` did
+# before and its `2 * min_size` adds one uncovered `*(::Int64, ::Integer)` match, and the
+# extracted `subtree_any(pred::P)` higher-order walk analyses `pred` generically as `Any`
+# in boolean context, the same intentional abstraction the other passes already count.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -77,7 +83,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1063  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1065  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 22      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

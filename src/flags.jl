@@ -173,7 +173,6 @@ Binary expressions whose two operands are textually identical.
 """
 # The node-filtering flag rules are each one `filter_nodes` call over a different
 # concept and predicate, so they share a shape with nothing left to extract.
-# dendro-ignore: duplicate
 identical_operands(index::QueryIndex) =
     filter_nodes(is_identical_operands, index.binary_expr, index)
 

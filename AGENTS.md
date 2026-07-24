@@ -76,6 +76,9 @@ size-banded vector query only to propose candidate pairs. The query is a prefilt
 the LCS similarity is the verdict, order-aware where a multiset overlap is not. Keep
 that split, keep clone detection within one language, and keep the block size floor
 above the function floor: small blocks of boilerplate coincide and turn into noise.
+A control-free whole function is boilerplate too, a dispatch stub or forwarding
+overload, so it clears the block floor, not the function floor. Only a function with
+control flow is a meaningful unit at the lower floor.
 The moment clone detection reaches for types or call graphs, it has left the bargain.
 
 Reimplementation candidates are vocabulary, still not meaning. A helper rewritten
@@ -88,8 +91,10 @@ because they import opinions the finding cannot explain. Vocabulary evidence is
 proposal-strength rather than measurement, so the pass is off by default, and a pair
 the clone passes report is never repeated here. Keep the gates (clone handoff,
 caller/callee, same name, size ratio), keep it within one language, and expect
-deliberately parallel families, per-language resolvers and the like, to pair: that is
-the mechanism working, answered with a suppression, not a smarter model.
+deliberately parallel families of substantial logic, per-language resolvers and the
+like, to pair: that is the mechanism working, answered with a suppression, not a
+smarter model. Trivial parallel shapes are the clone floor's job now, not a
+suppression's.
 
 Placement is structure across files, still not meaning. Dendro resolves a reference
 that leaves its file to the definition it names in another file, along declared

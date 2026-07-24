@@ -64,10 +64,11 @@ end
     using Dendro: analyze
 
     # Two renamed clones caught at the default min_size; a raised floor suppresses them.
-    # Both analyses run under an isolated global layer.
+    # The `if` keeps them above the triviality floor, so this exercises the config knob
+    # rather than the control-free carve-out. Both analyses run under an isolated global layer.
     mktempdir() do dir
-        write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    return y * 2\nend\n")
-        write(joinpath(dir, "b.jl"), "function g(total)\n    acc = total + 99\n    return acc * 7\nend\n")
+        write(joinpath(dir, "a.jl"), "function f(x)\n    y = x + 1\n    if y > 0\n        y = y * 2\n    end\n    return y\nend\n")
+        write(joinpath(dir, "b.jl"), "function g(total)\n    acc = total + 99\n    if acc > 0\n        acc = acc * 7\n    end\n    return acc\nend\n")
         mktempdir() do xdg
             withenv("XDG_CONFIG_HOME" => xdg) do
                 @test !isempty(filter(f -> f.metric === :duplicate, analyze(dir)))

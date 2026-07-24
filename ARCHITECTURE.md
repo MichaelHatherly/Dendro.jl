@@ -512,10 +512,14 @@ hashes in order, so renames and literals drop out (Type-2) while shape stays. Th
 last entry is the function's own node.
 
 Exact (`cluster_duplicates`) buckets subtrees by `(language, hash)`. Only
-function- and block-shaped subtrees anchor a finding: `anchor_floor` admits a
-function at `min_size` named nodes and a block at twice that, because a short block
-of boilerplate coincides across unrelated code while a small whole function is
-already a meaningful unit. Expressions and lone statements never anchor. A bucket of
+function- and block-shaped subtrees anchor a finding: `anchor_floor` admits a block
+at twice `min_size` named nodes and defers a function to `unit_floor`, which admits a
+function with control flow at `min_size` and a control-free one at twice that. A short
+block of boilerplate coincides across unrelated code. So does a control-free whole
+function, a dispatch stub or forwarding overload. A function with control flow is
+already a meaningful unit at the lower floor. `has_control` is the predicate: a branch
+point or a nesting construct anywhere in the subtree. Expressions and lone statements
+never anchor. A bucket of
 two or more is a clone class. `subsumed` then drops any anchor whose nearest
 enclosing anchor is a clone of at least the same multiplicity, so a duplicated
 function is reported once, not again for each block inside it. Multiplicity never
@@ -529,7 +533,9 @@ unchanged.
 
 1. Index. `clone_features` takes one `subtrees` walk per function and returns its
    pre-order subtree-hash sequence (for the verdict), its `node_histogram`
-   characteristic vector (for the prefilter), its exact digest, and its size.
+   characteristic vector (for the prefilter), its exact digest, and its size. A unit
+   joins the index only if its size clears `unit_floor`, so a trivial function is held
+   to twice `min_size` here as it is in the exact pass.
 2. Exact classes are `cluster_duplicates` above.
 3. Confirm. `clone_similarity` scores two sequences by longest common subsequence as
    `|LCS| / max(|a|, |b|)`, after NiCad. A pair clears the `threshold` (default 0.85)

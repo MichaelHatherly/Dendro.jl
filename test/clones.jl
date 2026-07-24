@@ -135,3 +135,98 @@ end
         @test isempty(Fixtures.near_duplicates(active(findings)))
     end
 end
+
+@testitem "trivial one-line functions of the same shape are not duplicates" setup = [Fixtures] tags = [:clones] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        # Two unrelated symbol-coercion stubs, 10 named nodes each, control-free. The
+        # shape coincides across unrelated code, so it anchors at the block floor.
+        write(joinpath(dir, "a.jl"), "_normalize_syms(x::Symbol) = [x]\n")
+        write(joinpath(dir, "b.jl"), "_flatten_cols(c::Symbol) = [c]\n")
+
+        findings = analyze(dir)
+        @test isempty(Fixtures.duplicates(findings))
+        @test isempty(Fixtures.near_duplicates(findings))
+    end
+end
+
+@testitem "trivial comprehension wrappers are not duplicates" setup = [Fixtures] tags = [:clones] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        # A comprehension's `for` is a `for_clause`, not a loop, so these score
+        # cyclomatic 1 at 16 named nodes: a shape, not logic.
+        write(joinpath(dir, "a.jl"), "_as_pairs(v) = [_as_pair(p) for p in v]\n")
+        write(joinpath(dir, "b.jl"), "_truthy_vec(col) = [_truthy_one(v) for v in col]\n")
+
+        @test isempty(Fixtures.duplicates(analyze(dir)))
+    end
+end
+
+@testitem "a control-free function above the block floor still duplicates" setup = [Fixtures] tags = [:clones] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        # 23 named nodes each, control-free, so triviality applies but the size clears
+        # the block floor. Triviality raises a floor; it never exempts.
+        write(joinpath(dir, "a.jl"), Fixtures.chain("f", 2))
+        write(joinpath(dir, "b.jl"), Fixtures.chain("g", 2))
+
+        hit = only(Fixtures.duplicates(analyze(dir)))
+        @test Set(loc.unit for loc in hit.locations) == Set(["f", "g"])
+    end
+end
+
+@testitem "a small control-bearing function still duplicates" setup = [Fixtures] tags = [:clones] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        # 16 named nodes each, the same size band as the comprehension pair, but the
+        # ternary makes them cyclomatic 2. Size is held fixed so the predicate decides.
+        write(joinpath(dir, "a.jl"), "guard_a(v) = v > 0 ? v : zero(v)\n")
+        write(joinpath(dir, "b.jl"), "guard_b(w) = w > 0 ? w : zero(w)\n")
+
+        hit = only(Fixtures.duplicates(analyze(dir)))
+        @test Set(loc.unit for loc in hit.locations) == Set(["guard_a", "guard_b"])
+    end
+end
+
+@testitem "a duplicated block inside different functions still anchors" setup = [Fixtures] tags = [:clones] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        # The `if` body is 29 named nodes and identical in both; everything around it
+        # differs. The block floor did not move, so the shared block still anchors.
+        body = "    if t > 0\n        t = t + 1\n        t = t * 2\n        t = t - 3\n        t = t + 4\n    end\n"
+        write(joinpath(dir, "a.jl"), "function alpha(a)\n    t = a\n$(body)    return t\nend\n")
+        write(joinpath(dir, "b.jl"), "function beta(b, c, d)\n    t = b * c * d\n$(body)    q = t - b\n    return q\nend\n")
+
+        hit = only(Fixtures.duplicates(analyze(dir)))
+        @test length(hit.locations) == 2
+        # Line 4 is the first statement of the shared block, not the enclosing function.
+        @test all(loc.line == 4 for loc in hit.locations)
+        @test Set(loc.unit for loc in hit.locations) == Set(["alpha", "beta"])
+    end
+end
+
+@testitem "unit_floor raises the floor for a control-free function" setup = [Fixtures] tags = [:clones] begin
+    trivial = Fixtures.idx(:julia, "_normalize_syms(x::Symbol) = [x]\n")
+    @test Dendro.unit_floor(only(Dendro.functions(trivial)).node, trivial, 10) == 20
+
+    control = Fixtures.idx(:julia, "guard_a(v) = v > 0 ? v : zero(v)\n")
+    @test Dendro.unit_floor(only(Dendro.functions(control)).node, control, 10) == 10
+end
+
+@testitem "trivial python methods of the same shape are not duplicates" setup = [Fixtures] tags = [:clones] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        # 18 named nodes each, control-free. Python's function shape differs from
+        # Julia's, so the predicate is exercised on a second grammar.
+        write(joinpath(dir, "a.py"), "class A:\n    def __repr__(self):\n        return \"A(%r, %r)\" % (self.x, self.y)\n")
+        write(joinpath(dir, "b.py"), "class B:\n    def __repr__(self):\n        return \"B(%r, %r)\" % (self.u, self.v)\n")
+
+        @test isempty(Fixtures.duplicates(analyze(dir)))
+    end
+end
