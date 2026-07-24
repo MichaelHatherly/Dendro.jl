@@ -76,6 +76,11 @@
 # before and its `2 * min_size` adds one uncovered `*(::Int64, ::Integer)` match, and the
 # extracted `subtree_any(pred::P)` higher-order walk analyses `pred` generically as `Any`
 # in boolean context, the same intentional abstraction the other passes already count.
+# Measuring cross-cutting breadth against a definition's own reach raised sound from 1065
+# to 1066, opt unchanged: `corpus_visibility` lifts the corpus-path generator out of
+# `corpus_references` so the graph builder can read the visibility it already resolves, and
+# that one closure is now analysed from two call sites rather than one. Everything else in
+# the diff is a rename.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -83,7 +88,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1065  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1066  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 22      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

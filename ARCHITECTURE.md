@@ -315,7 +315,10 @@ Reporting:
   to a corpus file, `visible_defs` groups files into shared namespaces by an inclusion
   union-find and returns each file's cross-file candidates, and `corpus_references` is the
   shared resolver yielding every cross-file reference with its candidates (the corpus graph
-  and the reachability pass both read it). The `:package` model (Java) unions import
+  and the reachability pass both read it). `corpus_visibility` exposes that visibility map
+  so a caller reading both it and the references resolves the corpus once, and
+  `definition_reach` counts, per definition, the units that can see it, the denominator the
+  graph's cross-cutting cut measures breadth against. The `:package` model (Java) unions import
   visibility with `package_visible`, the same-directory types a package resolves without an
   import, so a package-private class reference resolves. `Linkage.is_public` and the
   per-language predicates (`export_public`, `underscore_public`, `capitalized_public`,
@@ -330,12 +333,16 @@ Reporting:
   passes read. `build_corpus_graph` resolves every unbound reference against the symbol
   table through `visible_defs`, recording weighted unit-to-unit `edges` and per-unit file
   mass; a reference matching `k` definitions splits `1/k`, and a definition referenced by
-  more than `CORPUS_UBIQUITY` of the units is dropped as cross-cutting. It also folds each
+  more than `CORPUS_UBIQUITY` of the units that can see it (`ubiquity_threshold` over
+  `definition_reach`) is dropped as cross-cutting. It also folds each
   file's within-file binding edges (`within_binding_edges` over `binding_groups`) into
   `within_edges`. `adjacency(graph; within)` builds the undirected neighbour-weight view,
   cross-file alone or with the within edges folded in; `communities` runs one level of
-  modularity optimisation (Louvain local moving) over it for the neighbourhoods, and
+  modularity optimisation (`local_moving!`, Louvain) for the neighbourhoods, once per
+  connected component against that component's own degree sum, and
   `components` flood-fills the within view restricted to one file's nodes for cohesion.
+  Both denominators are local by design: a unit's placement verdict follows from the code
+  that can couple to it, never from how much unrelated source shares the corpus.
   Included after `linkage.jl`.
 - `placement.jl` defines cross-file placement, the fourth corpus-relational pass.
   `own_affinity` reads each unit's same-file coupling from `index.bindings`;

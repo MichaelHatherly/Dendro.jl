@@ -53,6 +53,35 @@ end
     @test isempty(findings)
 end
 
+@testitem ":misplaced scores a unit the same whatever else the corpus holds" setup = [Fixtures] tags = [:placement] begin
+    # `stray` leans on b.jl's `low1`/`low2`, which nothing else references, and touches
+    # g.jl's `wide` once. Four units reach for `wide`, so whether it reads as
+    # cross-cutting decides whether that one reference joins `stray`'s mass and dilutes
+    # its envy from 100 to 75. That call must turn on the units that can see `wide`, not
+    # on how much unrelated source sits alongside.
+    m = [
+        Fixtures.parsedfile(:julia, join(("include(\"$f.jl\")" for f in ("a", "b", "c", "d", "e", "g")), "\n") * "\n"; file = "mod.jl"),
+        Fixtures.parsedfile(:julia, "stray() = low1() + low1() + low2() + wide()\n"; file = "a.jl"),
+        Fixtures.parsedfile(:julia, "low1() = 1\nlow2() = 2\n"; file = "b.jl"),
+        Fixtures.parsedfile(:julia, "c1() = wide()\n"; file = "c.jl"),
+        Fixtures.parsedfile(:julia, "d1() = wide()\n"; file = "d.jl"),
+        Fixtures.parsedfile(:julia, "e1() = wide()\n"; file = "e.jl"),
+        Fixtures.parsedfile(:julia, "wide() = 3\n"; file = "g.jl"),
+    ]
+    # Unrelated source: no include ties it to the module above, so neither can see the
+    # other's names. It must not reach the verdict at all.
+    pad = [Fixtures.parsedfile(:julia, "pad$(i)a() = $(i)\npad$(i)b() = pad$(i)a()\n"; file = "pad$(i).jl") for i in 1:60]
+
+    function verdict(files)
+        table = Dendro.corpus_symbols(files)
+        graph = Dendro.build_corpus_graph(files, table)
+        return [(first(f.locations).file, first(f.locations).line, f.value) for f in Dendro.cluster_misplaced(files, graph, table)]
+    end
+
+    @test verdict(m) == [("a.jl", 1, 100)]
+    @test verdict([m; pad]) == verdict(m)
+end
+
 @testitem ":misplaced leaves a well-placed unit alone" setup = [Fixtures] tags = [:placement] begin
     mod = Fixtures.parsedfile(:julia, "include(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
     # `mix` references its own file's `helper` twice and b.jl's `ext` once: mostly home,

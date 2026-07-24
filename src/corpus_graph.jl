@@ -29,14 +29,22 @@ struct CorpusGraph
     file_mass::Dict{Int, Dict{String, Float64}}
 end
 
-# A definition referenced from more than this fraction of the corpus's units is
+# A definition referenced from more than this fraction of the units that can see it is
 # cross-cutting, infrastructure every concern reaches for rather than a placement pull,
 # the corpus analog of `COHESION_UBIQUITY`. Edges to it are dropped, so a unit is not
 # judged to belong wherever a shared helper happens to live, and communities are not
 # collapsed by hub nodes. A floor keeps a small corpus from marking ordinary names as
 # cross-cutting.
+#
+# The denominator is the definition's own reach, not the whole corpus: source that cannot
+# see a name says nothing about how widely that name is shared, so adding an unrelated
+# module must not reclassify it and move the placement verdict on units that did not
+# change.
 const CORPUS_UBIQUITY = 0.05
 const CORPUS_UBIQUITY_FLOOR = 3
+
+# The breadth above which a definition reachable from `reach` units reads as cross-cutting.
+ubiquity_threshold(reach::Int) = max(CORPUS_UBIQUITY_FLOOR, ceil(Int, CORPUS_UBIQUITY * reach))
 
 """
     build_corpus_graph(files, table; within_ubiquity=$COHESION_UBIQUITY) -> CorpusGraph
@@ -47,11 +55,11 @@ weighted edge, and record each file's within-file binding edges. A reference mat
 contributes mass 1 regardless of how many same-named definitions it could mean, and a
 large file does not dominate by holding more overloads. Visibility comes from
 [`visible_defs`](@ref): a reference reaches only the names its file's linkage exposes.
-References to a cross-cutting definition, one many units reach for, are dropped so a
-shared helper does not pull a unit toward its file. The within edges star-link each
-[`binding_groups`](@ref) group to its first member, dropping a binding referenced by
-more than `within_ubiquity` of a file's units; a language with no scopes query carries
-none.
+References to a cross-cutting definition, one reached by more than `CORPUS_UBIQUITY` of
+the units that can see it, are dropped so a shared helper does not pull a unit toward
+its file. The within edges star-link each [`binding_groups`](@ref) group to its first
+member, dropping a binding referenced by more than `within_ubiquity` of a file's units;
+a language with no scopes query carries none.
 """
 function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; within_ubiquity::Float64 = COHESION_UBIQUITY)
     units = CorpusUnit[]
@@ -66,9 +74,10 @@ function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; withi
     # Resolve references first, counting the distinct units that reach each definition,
     # so cross-cutting names can be dropped before the weighted edges are built. A
     # reference in top-level code couples no unit, so it is skipped here.
+    visible = corpus_visibility(files, table)
     resolved = Tuple{Int, Vector{Int}}[]
     breadth = Dict{Int, Set{Int}}()
-    for (f, ref, candidates) in corpus_references(files, table)
+    for (f, ref, candidates) in corpus_references(files, visible)
         ref.unit == 0 && continue
         src = unit_index[(f.file, ref.unit)]
         push!(resolved, (src, candidates))
@@ -76,8 +85,8 @@ function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; withi
             push!(get!(() -> Set{Int}(), breadth, di), src)
         end
     end
-    threshold = max(CORPUS_UBIQUITY_FLOOR, ceil(Int, CORPUS_UBIQUITY * length(units)))
-    utility = Set{Int}(di for (di, srcs) in breadth if length(srcs) > threshold)
+    reach = definition_reach(files, visible, length(table.defs))
+    utility = Set{Int}(di for (di, srcs) in breadth if length(srcs) > ubiquity_threshold(reach[di]))
 
     edges = Dict{Tuple{Int, Int}, Float64}()
     file_mass = Dict{Int, Dict{String, Float64}}()
@@ -178,6 +187,12 @@ A community label per unit, from one level of modularity optimisation (Louvain l
 moving) over the undirected unit graph. Units that couple end up in one community, the
 module the references say they belong to; a unit with no cross-file edge is its own
 community. Labels are contiguous from 1, assigned in first-seen order for determinism.
+
+Each connected component is optimised on its own, against its own degree sum. Modularity
+weighs a move against the whole graph's mass, so on one global pass a component's
+partition shifts as unrelated components are added: the resolution limit, which merges
+real communities once the surrounding graph is large enough. A unit's neighbourhood is
+read as a placement verdict, so it has to follow from the code that couples to it.
 """
 communities(graph::CorpusGraph) = communities(adjacency(graph))
 
@@ -185,15 +200,31 @@ communities(graph::CorpusGraph) = communities(adjacency(graph))
 # reuses with within-file edges folded in.
 function communities(adj::Vector{Dict{Int, Float64}})
     n = length(adj)
-    degree = Float64[sum(values(adj[i]); init = 0.0) for i in 1:n]
-    twom = sum(degree)
     comm = collect(1:n)
-    twom == 0 && return relabel(comm)
+    degree = Float64[sum(values(adj[i]); init = 0.0) for i in 1:n]
     total = copy(degree)
+    for group in components(adj, collect(1:n))
+        local_moving!(comm, adj, degree, total, group)
+    end
+    return relabel(comm)
+end
+
+# Louvain local moving over one connected component, `group` its nodes. `total` carries
+# each community's degree sum and `comm` its labels, both indexed by node across the whole
+# graph; a community never spans components, so the shared arrays never collide. Nodes are
+# visited in ascending order and ties broken by the lowest community label, so the result
+# is fixed by the component's own shape.
+function local_moving!(
+        comm::Vector{Int}, adj::Vector{Dict{Int, Float64}},
+        degree::Vector{Float64}, total::Vector{Float64}, group::Vector{Int}
+    )
+    twom = sum(view(degree, group))
+    twom == 0 && return comm
+    sort!(group)
     improved = true
     while improved
         improved = false
-        for i in 1:n
+        for i in group
             ci = comm[i]
             ki = degree[i]
             total[ci] -= ki
@@ -215,7 +246,7 @@ function communities(adj::Vector{Dict{Int, Float64}})
             end
         end
     end
-    return relabel(comm)
+    return comm
 end
 
 # Renumber community labels to a contiguous 1..K in first-seen order, so the result
