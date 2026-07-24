@@ -55,7 +55,6 @@ grammar's anonymous tokens, the shape an n-gram model reads.
 """
 # Shares the `collect_unit` entry shape with `subtrees`; the collectors and element
 # types differ, so the one-line wrappers collide with nothing to extract.
-# dendro-ignore: duplicate
 token_stream(unit::FunctionUnit, index::QueryIndex) =
     collect_unit(collect_tokens!, String, unit, index)
 

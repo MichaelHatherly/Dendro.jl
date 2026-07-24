@@ -161,7 +161,7 @@ has_op_child(node::TreeSitter.Node, index::QueryIndex) =
 # expression once `node` is its top.
 # The `sum_over` count metrics share a one-line shape over different steps; this one
 # collides exactly with `return_count` and near with `cyclomatic`.
-# dendro-ignore: duplicate, near_duplicate
+# dendro-ignore: near_duplicate
 count_op_nodes(node::TreeSitter.Node, index::QueryIndex) =
     sum_over(op_count_step, node, index)
 
@@ -209,21 +209,36 @@ const NPATH_CAP = 1_000_000_000
 
 # Clamp at the cap. The two differ only in the operator, so they share a structural
 # shape with nothing to extract.
-# dendro-ignore: duplicate
 sat_mul(a::Int, b::Int) = min(NPATH_CAP, a * b)
 sat_add(a::Int, b::Int) = min(NPATH_CAP, a + b)
+
+# True when any node in `node`'s subtree satisfies `pred`, stopping at nested callables
+# so each is its own unit. The early-exit companion to `fold_unit`: `pred` is a plain
+# function, never a capturing closure, so the walk stays concretely typed.
+function subtree_any(pred::P, node::TreeSitter.Node, index::QueryIndex) where {P}
+    pred(node, index) && return true
+    for c in TreeSitter.children(node)
+        is_function(c, index) && continue
+        subtree_any(pred, c, index) && return true
+    end
+    return false
+end
+
+is_body(node::TreeSitter.Node, index::QueryIndex) = node in index.body
 
 # True when `node`'s subtree holds a `@body` block, the mark of a branch (a then/else
 # arm, a loop body, a case) as opposed to a condition. Nested callables are their own
 # units, so a closure body in a condition does not make the condition a branch.
-function holds_body(node::TreeSitter.Node, index::QueryIndex)
-    node in index.body && return true
-    for c in TreeSitter.children(node)
-        is_function(c, index) && continue
-        holds_body(c, index) && return true
-    end
-    return false
-end
+holds_body(node::TreeSitter.Node, index::QueryIndex) = subtree_any(is_body, node, index)
+
+# True when `node` carries control flow: a branch point, or a construct that nests.
+is_control(node::TreeSitter.Node, index::QueryIndex) =
+    is_branch_point(node, index) || node in index.nesting
+
+# True when `node`'s subtree holds any control flow, so the unit is not straight-line.
+# Equivalent to `cyclomatic(node, index) > 1 || nesting_depth(node, index) > 0`, walked
+# once with an early exit rather than folded twice.
+has_control(node::TreeSitter.Node, index::QueryIndex) = subtree_any(is_control, node, index)
 
 # Number of short-circuit operators in `node`'s subtree, the `B(c)` a control
 # statement's condition contributes to NPath: each `&&`/`||` adds one path.

@@ -111,13 +111,21 @@ function clone_similarity(a::Vector{UInt64}, b::Vector{UInt64})
     return lcs_length(a, b) / denom
 end
 
+# The size floor for a whole function to anchor a clone. A function with no control
+# flow is boilerplate that coincides across unrelated code, a dispatch stub or a
+# forwarding overload rather than a meaningful unit, so it clears the block floor
+# instead of the function floor. Trivial and large still anchors: this only raises the
+# bar, it never exempts.
+unit_floor(node::TreeSitter.Node, index::QueryIndex, min_size::Integer) =
+    has_control(node, index) ? min_size : 2 * min_size
+
 # The size floor for a subtree to anchor a clone, or `nothing` if it is neither a
 # function nor a block. Blocks must clear twice the function floor: a short block of
 # boilerplate, a couple of counter updates, coincides across unrelated code, while a
-# whole small function is already a meaningful unit. Expressions and lone statements
-# never anchor, so a recurring call shape is not a finding.
+# whole function with control flow is already a meaningful unit. Expressions and lone
+# statements never anchor, so a recurring call shape is not a finding.
 function anchor_floor(node::TreeSitter.Node, index::QueryIndex, min_size::Integer)
-    is_function(node, index) && return min_size
+    is_function(node, index) && return unit_floor(node, index, min_size)
     node in index.body && return 2 * min_size
     return nothing
 end
@@ -141,7 +149,8 @@ end
 Exact clones across the corpus, keyed by language so shapes never collide across
 grammars. Indexes every function- or block-shaped subtree large enough to matter,
 buckets by structural hash, and reports each bucket of two or more as one
-`:duplicate`. Functions clear `min_size` named nodes, blocks twice that. A
+`:duplicate`. A function with control flow clears `min_size` named nodes; a
+control-free function and a block clear twice that. A
 maximality filter keeps only the largest clone, so a duplicated function is reported
 once, not again for every block nested inside it. Suppressed when any member carries
 a `dendro-ignore: duplicate` directive.
@@ -346,7 +355,7 @@ function cluster_near_duplicates(
     for f in files
         for unit in functions(f.index)
             sequence, histogram, digest, size = clone_features(unit, f.index)
-            size < min_size && continue
+            size < unit_floor(unit.node, f.index, min_size) && continue
             loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
             sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.near_duplicate)
             push!(units, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
