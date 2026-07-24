@@ -68,8 +68,9 @@ children of the first parameter-list node the query tagged. A keyword boundary e
 the positional list: keyword arguments are named at the call site, so a long keyword
 list is a different concern than a long positional one and does not count. The
 boundary is Julia's `;` or Python's `*args`/`**kwargs`/bare-`*`. A receiver
-parameter (`self`/`cls`) is positional and counts. Languages with no such boundary
-count every named child.
+parameter (`self`/`cls`) is positional and counts. A comment inside the parameter
+list is a named node but not a parameter, so it is skipped. Languages with no such
+boundary count every named child.
 """
 # First parameter-list node in pre-order, or `nothing`. Descends the whole tree, so
 # the outer function's signature is found before any nested callable's.
@@ -88,6 +89,7 @@ function parameter_count(node::TreeSitter.Node, index::QueryIndex)
     n = 0
     for c in TreeSitter.children(container)
         opens_keyword_region(c) && break
+        c in index.comment && continue
         TreeSitter.is_named(c) && (n += 1)
     end
     return n

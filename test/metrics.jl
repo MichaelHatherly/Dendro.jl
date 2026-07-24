@@ -110,6 +110,16 @@ end
     # A keyword-only signature has no positional parameters.
     i = Fixtures.idx(:julia, "function m(; a=1, b=2)\n    a\nend\n")
     @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 0
+
+    # A comment inside the parentheses is not a parameter. A line comment among the
+    # parameters (an author's note, or an inline `dendro-ignore` directive) does not
+    # inflate the count.
+    i = Fixtures.idx(:julia, "function n(  # a note\n    a, b, c, d,\n)\n    a\nend\n")
+    @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 4
+
+    # A block comment between parameters likewise does not count.
+    i = Fixtures.idx(:julia, "function p(a, #= inline =# b, c)\n    a\nend\n")
+    @test Dendro.parameter_count(only(Dendro.functions(i)).node, i) == 3
 end
 
 @testitem "parameter_count counts only positional params (python)" setup = [Fixtures] tags = [:metrics] begin
@@ -128,6 +138,9 @@ end
     # A receiver (`self`/`cls`) is positional and counts; a long positional API is a
     # genuine finding.
     @test count("def f(self, a, b, c, d, e):\n    pass\n") == 6
+
+    # A comment inside the parameter list is not a parameter.
+    @test count("def f(  # a note\n    a, b, c, d,\n):\n    pass\n") == 4
 end
 
 @testitem "boolean_complexity (julia)" setup = [Fixtures] tags = [:metrics] begin
