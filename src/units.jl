@@ -20,5 +20,4 @@ detection.
 """
 # A one-line `hasid` membership test like `Base.in(::Node, ::Concept)`; the verbose
 # typed signatures collide structurally with nothing to extract.
-# dendro-ignore: near_duplicate
 is_function(node::TreeSitter.Node, index::QueryIndex) = hasid(index.function_ids, node)

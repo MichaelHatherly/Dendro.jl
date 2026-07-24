@@ -163,7 +163,6 @@ has_op_child(node::TreeSitter.Node, index::QueryIndex) =
 # expression once `node` is its top.
 # The `sum_over` count metrics share a one-line shape over different steps; this one
 # collides exactly with `return_count` and near with `cyclomatic`.
-# dendro-ignore: near_duplicate
 count_op_nodes(node::TreeSitter.Node, index::QueryIndex) =
     sum_over(op_count_step, node, index)
 
@@ -352,7 +351,6 @@ end
 # An `elseif_clause`: its condition's `B` plus the NPath of its body, the same arm an
 # `if`'s then-branch is, without the fall-through the chain accounts for once. Shares
 # its combine-then-total shape with `switch_npath`.
-# dendro-ignore: duplicate, near_duplicate
 function clause_npath(node::TreeSitter.Node, index::QueryIndex)
     branch, b = fold_branches(node, index, sat_mul, 1)
     return sat_add(branch, b)
