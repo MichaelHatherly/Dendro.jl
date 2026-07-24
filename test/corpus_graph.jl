@@ -173,6 +173,35 @@ end
     @test haskey(graph.edges, (graph.unit_index[("main.rs", 1)], graph.unit_index[("foo.rs", 1)]))
 end
 
+@testitem "communities of one component ignore the rest of the graph" tags = [:corpus_graph] begin
+    # A heavy cluster round node 1, a light one round node 8, and node 10 leaning 3 on the
+    # heavy and 2 on the light. Which community node 10 joins turns on the modularity
+    # penalty, so a detached part of the graph must not decide it.
+    function adjacency(npad)
+        adj = [Dict{Int, Float64}() for _ in 1:(10 + 2 * npad)]
+        link!(a, b, w) = (adj[a][b] = w; adj[b][a] = w)
+        for k in 2:7
+            link!(1, k, 4.0)
+        end
+        link!(8, 9, 1.0)
+        link!(10, 1, 3.0)
+        link!(10, 8, 2.0)
+        for i in 1:npad
+            link!(10 + 2i - 1, 10 + 2i, 20.0)
+        end
+        return adj
+    end
+    # The partition the first ten nodes fall into, as a set of groups, so it compares
+    # across runs that number the communities differently.
+    grouping(comm) = Set(Set(j for j in 1:10 if comm[j] == comm[i]) for i in 1:10)
+
+    alone = grouping(Dendro.communities(adjacency(0)))
+    @test alone == Set([Set(1:7), Set(8:10)])
+    for npad in (1, 5, 20)
+        @test grouping(Dendro.communities(adjacency(npad))) == alone
+    end
+end
+
 @testitem "corpus graph resolves a real cross-file edge in Dendro's own source" tags = [:corpus_graph] begin
     src = joinpath(pkgdir(Dendro), "src")
     files = Dendro.parse_corpus(Dendro.source_files(src))

@@ -782,7 +782,19 @@ function file_visible(f::ParsedFile, vi::VisibilityIndex)
 end
 
 """
+    corpus_visibility(files, table) -> Dict{String, Dict{String, Vector{Int}}}
+
+Each file's cross-file candidates by name: [`visible_defs`](@ref) over the corpus `files`
+themselves form. A caller that needs both the resolved references and the visibility
+behind them builds this once and passes it to [`corpus_references`](@ref), rather than
+resolving the corpus twice.
+"""
+corpus_visibility(files::Vector{ParsedFile}, table::SymbolTable) =
+    visible_defs(files, table, Corpus(Set{String}(to_posix(f.file) for f in files)))
+
+"""
     corpus_references(files, table) -> Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}
+    corpus_references(files, visible) -> Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}
 
 Every cross-file reference in `files` that resolves against `table`, paired with the
 file it sits in and the candidate definition indices its name reaches through
@@ -790,10 +802,14 @@ file it sits in and the candidate definition indices its name reaches through
 top-level code (`ref.unit == 0`): the reachability pass attributes a reference to its
 enclosing definition by byte range, not by unit, and a top-level reference is a root
 edge. A name matching several visible definitions yields all of them.
+
+Pass a prebuilt `visible` from [`corpus_visibility`](@ref) to share one resolution with
+a caller that reads the visibility itself.
 """
-function corpus_references(files::Vector{ParsedFile}, table::SymbolTable)
-    corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
-    visible = visible_defs(files, table, corpus)
+corpus_references(files::Vector{ParsedFile}, table::SymbolTable) =
+    corpus_references(files, corpus_visibility(files, table))
+
+function corpus_references(files::Vector{ParsedFile}, visible::Dict{String, Dict{String, Vector{Int}}})
     return parallel_flatmap(length(files), Tuple{ParsedFile, UnboundRef, Vector{Int}}) do i
         f = files[i]
         names = visible[f.file]
@@ -805,6 +821,34 @@ function corpus_references(files::Vector{ParsedFile}, table::SymbolTable)
         end
         acc
     end
+end
+
+"""
+    definition_reach(files, visible, ndefs) -> Vector{Int}
+
+Per definition index, the number of units that can reference it across the file
+boundary: the population its reference breadth is measured against. A file's own
+definitions are outside its `visible` map, so this counts the same cross-file
+population [`corpus_references`](@ref) draws from. Source a definition's visibility
+cannot reach contributes nothing, which is what keeps a corpus-relative cut on breadth
+from moving when unrelated source is added alongside.
+"""
+function definition_reach(files::Vector{ParsedFile}, visible::Dict{String, Dict{String, Vector{Int}}}, ndefs::Int)
+    reach = zeros(Int, ndefs)
+    seen = Set{Int}()
+    for f in files
+        units = length(f.index.functions)
+        units == 0 && continue
+        empty!(seen)
+        for candidates in values(visible[f.file])
+            for di in candidates
+                di in seen && continue
+                push!(seen, di)
+                reach[di] += units
+            end
+        end
+    end
+    return reach
 end
 
 """
