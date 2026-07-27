@@ -135,6 +135,34 @@ end
     end
 end
 
+@testitem "a language with no scopes query reports no unused parameters" setup = [Fixtures] tags = [:external] begin
+    using Dendro: LanguageProfile, parser_for, query_for, scopes_query_for, build_index, unused_parameters
+    import TreeSitter
+
+    # Uses are read from the scopes query's references, so a language shipping none has
+    # none, and every named parameter would read as dead. The pass has to skip instead.
+    # Latent in the built-ins, since all twelve ship a scopes query; an external language
+    # is what reaches it.
+    mktempdir() do dir
+        write(
+            joinpath(dir, "mylang.scm"), """
+            (function_definition) @function
+            (block) @body
+            (parameters) @parameter
+            (parameters (identifier) @parameter_name)
+            (identifier) @name
+            """
+        )
+        profile = LanguageProfile(:mylang, "python", dir)
+        src = "def f(a, b):\n    return a + b\n"
+        @test scopes_query_for(profile) === nothing
+
+        tree = TreeSitter.parse(parser_for(profile), src)
+        index = build_index(tree, :mylang, src, query_for(profile), scopes_query_for(profile))
+        @test isempty(unused_parameters(index))
+    end
+end
+
 @testitem "external language caches keyed by its queries" setup = [Fixtures] tags = [:external] begin
     using Dendro: LanguageProfile, query_for
 
