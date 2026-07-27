@@ -44,7 +44,7 @@ override the relational bands; `rules` toggles a rule on or off by name, and the
 `reimplementation` corpus pass with it; `min_size`, `threshold`, and `radius_factor`
 are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
 cutoff; `languages` carries the languages the config registers beyond the ones Dendro
-ships, resolved into a scan's registry by [`resolve_profiles`](@ref).
+ships, each a `LanguageProfile` naming where to load its grammar and queries from.
 Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config

@@ -191,6 +191,10 @@ Unlike `github_annotations`, which renders `Findings`, this takes the corpus and
 the structure it draws, since a graph is not recoverable from findings. Redirect `io` to a
 `.mmd` file to save the diagram, as the CI workflow does for annotations. The keyword
 options match `analyze`'s clone and ignore tuning.
+
+`profiles` is the language registry the corpus resolves file extensions through. It
+defaults to the languages Dendro ships; pass `Dendro.resolve_profiles(config)` to draw a
+graph over a language a `.dendro.toml` registers, which `analyze` does from its own config.
 """
 function mermaid(
         io::IO, paths::Union{AbstractString, AbstractVector{<:AbstractString}};
