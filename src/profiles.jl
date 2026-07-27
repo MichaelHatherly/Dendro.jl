@@ -1,6 +1,10 @@
-# Supported languages, keyed by language name. Each maps to its tree-sitter query
-# in `src/queries/<name>.scm`, where the node types for every measured construct
-# live. `haskey(PROFILES, lang)` gates whether Dendro analyses a file.
+# The languages Dendro ships, keyed by language name. Each maps to its tree-sitter query
+# in `src/queries/<name>.scm`, where the node types for every measured construct live,
+# and to the `tree_sitter_<name>_jll` grammar named after it.
+#
+# This is the built-in layer of the language registry. A scan resolves its own registry
+# through `resolve_profiles`, overlaying the languages a `.dendro.toml` adds, and gates
+# whether it analyses a file on that, not on this table.
 #
 # Switch/case complexity counts each case label. Where a grammar gives the default
 # branch its own node type (Go, JS, TS, PHP, Ruby) it is excluded from the

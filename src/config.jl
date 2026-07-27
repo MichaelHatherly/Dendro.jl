@@ -43,7 +43,9 @@ overrides scalar rule `(warn, high)` tuples by metric name; the four relational 
 override the relational bands; `rules` toggles a rule on or off by name, and the
 `reimplementation` corpus pass with it; `min_size`, `threshold`, and `radius_factor`
 are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
-cutoff. Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
+cutoff; `languages` carries the languages the config registers beyond the ones Dendro
+ships, resolved into a scan's registry by [`resolve_profiles`](@ref).
+Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
     cut::Float64
@@ -57,7 +59,18 @@ struct Config
     threshold::Float64
     radius_factor::Float64
     reimpl_threshold::Float64
+    languages::Dict{Symbol, LanguageProfile}
 end
+
+"""
+    resolve_profiles(config) -> Dict{Symbol, LanguageProfile}
+
+The language registry the config selects: [`PROFILES`](@ref), the languages Dendro
+ships, overlaid with the ones `config` registers. A configured language of the same name
+as a built-in replaces it. The built-in table is never mutated, so one analysis cannot
+leak a registration into the next.
+"""
+resolve_profiles(config::Config) = merge(PROFILES, config.languages)
 
 # The scalar metric names a `[bands]` key may set: every scalar rule, built-in or
 # optional. Flag rules carry no band, so naming one under `[bands]` is an error.
@@ -117,6 +130,9 @@ reband(r::Rule, config::Config) =
 @inline config_table(value, key, source)::Dict{String, Any} =
     value isa AbstractDict ? Dict{String, Any}(value) : config_error("`$key` in $source must be a table")
 
+@inline config_string(value, key, source)::String =
+    value isa AbstractString ? String(value) : config_error("`$key` in $source must be a string, got $value")
+
 # Coerce a TOML `[warn, high]` array into the band tuple `severity` reads.
 @inline function band_tuple(value, name, source)::Tuple{Int, Int}
     if value isa AbstractVector && length(value) == 2
@@ -133,6 +149,7 @@ overrides() = (
     bands = Dict{Symbol, Tuple{Int, Int}}(),
     relational = Dict{Symbol, Tuple{Int, Int}}(),
     rules = Dict{Symbol, Bool}(),
+    languages = Dict{Symbol, LanguageProfile}(),
 )
 
 # Apply a `[bands]` table into the override dicts: a relational name lands in
@@ -184,6 +201,56 @@ function apply_clones(scalars, table, source)
     return scalars
 end
 
+# Coerce a TOML array of extensions, stripping any leading dot so `[".zig"]` and
+# `["zig"]` both reach the registry in the form `language_for_path` compares.
+function extension_list(value, key, source)::Vector{String}
+    value isa AbstractVector ||
+        config_error("`$key` in $source must be an array of extension strings, got $value")
+    out = String[]
+    for ext in value
+        ext isa AbstractString ||
+            config_error("`$key` in $source must be an array of extension strings, got $value")
+        push!(out, lowercase(lstrip(String(ext), '.')))
+    end
+    return out
+end
+
+# Apply one `[languages.<name>]` table into the override dict. Only `queries` is required:
+# `grammar` defaults to the language name, which resolves to the JLL named after it, so
+# retuning a built-in language's query is a two-line table. Extensions are optional too,
+# since a language registered over a built-in keeps the extensions that one claims. An
+# unknown key warns and is dropped, as a band does.
+function apply_language!(acc, name::String, table::Dict{String, Any}, source)
+    sym = Symbol(name)
+    grammar = name
+    queries = ""
+    extensions = String[]
+    for (key, value) in table
+        if key == "grammar"
+            grammar = config_string(value, "languages.$name.$key", source)
+        elseif key == "queries"
+            queries = config_string(value, "languages.$name.$key", source)
+        elseif key == "extensions"
+            extensions = extension_list(value, "languages.$name.$key", source)
+        else
+            @warn "Dendro: unknown language key in $source, ignored" language = name key
+        end
+    end
+    isempty(queries) && config_error("language `$name` in $source needs a `queries` directory")
+    acc.languages[sym] = LanguageProfile(sym, grammar, queries, extensions)
+    return nothing
+end
+
+# Apply a `[languages]` table: each subtable registers one language by name. The key type
+# is spelled out so the per-language applier reads a concrete table rather than an `Any`
+# TOML value, the same narrowing the `config_*` coercion helpers do.
+function apply_languages!(acc, table::Dict{String, Any}, source)
+    for (name, value) in table
+        apply_language!(acc, name, config_table(value, "languages.$name", source), source)
+    end
+    return nothing
+end
+
 # Apply a `[reimplementation]` table: the overlap `threshold` a candidate pair must
 # reach, anything else warns.
 function apply_reimplementation(scalars, table, source)
@@ -213,6 +280,8 @@ function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
             apply_bands!(acc, config_table(value, key, source), source)
         elseif key == "rules"
             apply_rules!(acc, config_table(value, key, source), source)
+        elseif key == "languages"
+            apply_languages!(acc, config_table(value, key, source), source)
         else
             @warn "Dendro: unknown key in $source, ignored" key
         end
@@ -284,6 +353,6 @@ function discover_config(roots; explicit = nothing, use_files = true)
         get(acc.relational, :misplaced, MISPLACED_BAND),
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
-        scalars.reimpl_threshold,
+        scalars.reimpl_threshold, acc.languages,
     )
 end

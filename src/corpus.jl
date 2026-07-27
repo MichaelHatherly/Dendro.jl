@@ -8,21 +8,26 @@
 # scoring pass, and duplicate clustering need, so no file is parsed twice. Files
 # whose language has no profile are skipped. `language` forces one language for
 # every path, as `analyze` does.
-function parse_corpus(paths::AbstractVector{<:AbstractString}; language = nothing, rules = BUILTIN_RULES)
+function parse_corpus(
+        paths::AbstractVector{<:AbstractString}; language = nothing,
+        rules = BUILTIN_RULES, profiles::Dict{Symbol, LanguageProfile} = PROFILES
+    )
     forced = language === nothing ? nothing : Symbol(lowercase(String(language)))
-    entries = Tuple{String, Symbol}[]
+    extensions = extension_map(profiles)
+    entries = Tuple{String, LanguageProfile}[]
     for path in paths
-        lang = forced === nothing ? language_for_path(path) : forced
+        lang = forced === nothing ? language_for_path(path, extensions) : forced
         lang === nothing && continue
-        haskey(PROFILES, lang) || continue
-        push!(entries, (String(path), lang))
+        haskey(profiles, lang) || continue
+        push!(entries, (String(path), profiles[lang]))
     end
     n = length(entries)
     files = Vector{ParsedFile}(undef, n)
-    # Warm every language's caches up front, so no parse task pays a JLL load or a query
-    # compile mid fan-out; this also leaves the imports query warm for the linkage passes.
+    # Warm every language's caches up front, so no parse task pays a grammar load or a
+    # query compile mid fan-out; this also leaves the imports query warm for the linkage
+    # passes.
     warm_languages(unique(last(e) for e in entries))
-    parallel_chunks(() -> Dict{Symbol, TreeSitter.Parser}(), n) do parsers, idxs
+    parallel_chunks(() -> Dict{LanguageProfile, TreeSitter.Parser}(), n) do parsers, idxs
         parse_chunk!(files, parsers, entries, idxs, rules)
     end
     return files
@@ -32,17 +37,17 @@ end
 # so each chunk keeps its own, reused across its files. Writes into the shared preallocated
 # `files` at each entry's index, so the corpus order matches the serial path.
 function parse_chunk!(
-        files::Vector{ParsedFile}, parsers::Dict{Symbol, TreeSitter.Parser},
-        entries::Vector{Tuple{String, Symbol}}, idxs, rules
+        files::Vector{ParsedFile}, parsers::Dict{LanguageProfile, TreeSitter.Parser},
+        entries::Vector{Tuple{String, LanguageProfile}}, idxs, rules
     )
     for i in idxs
-        path, lang = entries[i]
-        parser = get!(() -> parser_for(lang), parsers, lang)
+        path, profile = entries[i]
+        parser = get!(() -> parser_for(profile), parsers, profile)
         source = read(path, String)
         tree = parse(parser, source)
-        index = build_index(tree, lang, source, query_for(lang), scopes_query_for(lang))
+        index = build_index(tree, profile.name, source, query_for(profile), scopes_query_for(profile))
         directives = suppressions(index; file = path, rules)
-        files[i] = ParsedFile(lang, source, path, tree, index, directives)
+        files[i] = ParsedFile(profile, source, path, tree, index, directives)
     end
     return nothing
 end
@@ -114,16 +119,20 @@ end
 # `ignore` patterns, matched against each path relative to `dir`, prune directories
 # and drop files before they reach the corpus, so vendored source never feeds the
 # baseline.
-function source_files(dir::AbstractString, ignore = String[])
+function source_files(
+        dir::AbstractString, ignore = String[];
+        profiles::Dict{Symbol, LanguageProfile} = PROFILES
+    )
     patterns = compile_ignores(ignore)
+    extensions = extension_map(profiles)
     files = String[]
     for (root, dirs, names) in walkdir(dir)
         filter!(dirs) do d
             !startswith(d, ".") && !is_ignored(patterns, relpath(joinpath(root, d), dir), true)
         end
         for name in names
-            lang = language_for_path(name)
-            (lang === nothing || !haskey(PROFILES, lang)) && continue
+            lang = language_for_path(name, extensions)
+            (lang === nothing || !haskey(profiles, lang)) && continue
             is_ignored(patterns, relpath(joinpath(root, name), dir), false) && continue
             push!(files, joinpath(root, name))
         end
@@ -135,15 +144,19 @@ end
 # walked for analyzable source under `ignore`; a named file is taken as-is, but only
 # when its language can be inferred or `language` forces one. The shared front of
 # `analyze` and `mermaid`, so both see the same corpus from the same roots.
-function collect_corpus(roots::Vector{String}, ignore, language)
+function collect_corpus(
+        roots::Vector{String}, ignore, language;
+        profiles::Dict{Symbol, LanguageProfile} = PROFILES
+    )
     isempty(roots) && error("Dendro: no paths given")
+    extensions = extension_map(profiles)
     corpus = String[]
     for path in roots
         ispath(path) || error("Dendro: no such path $path")
         if isdir(path)
-            append!(corpus, source_files(path, ignore))
+            append!(corpus, source_files(path, ignore; profiles))
         else
-            language === nothing && language_for_path(path) === nothing &&
+            language === nothing && language_for_path(path, extensions) === nothing &&
                 error("Dendro: cannot infer language for $path; pass `language=`.")
             push!(corpus, path)
         end
@@ -211,8 +224,9 @@ function analyze(
     thresh = threshold === nothing ? cfg.threshold : Float64(threshold)
     radius = radius_factor === nothing ? cfg.radius_factor : Float64(radius_factor)
 
-    corpus = collect_corpus(roots, ignore, language)
-    files = parse_corpus(corpus; language, rules = active_rules)
+    profiles = resolve_profiles(cfg)
+    corpus = collect_corpus(roots, ignore, language; profiles)
+    files = parse_corpus(corpus; language, rules = active_rules, profiles)
     bl = baseline_from(files, active_rules)
 
     # Assigned once, so the scoring closure captures it concretely, never as a `Core.Box`.

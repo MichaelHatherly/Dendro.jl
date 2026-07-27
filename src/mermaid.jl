@@ -198,7 +198,8 @@ function mermaid(
         focus::Symbol = :auto, context::Integer = 1,
         ignore = String[], language = nothing, rules = BUILTIN_RULES, cut::Real = 0.95,
         min_size::Integer = DEFAULT_MIN_SIZE, threshold::Real = DEFAULT_THRESHOLD,
-        radius_factor::Real = DEFAULT_RADIUS_FACTOR
+        radius_factor::Real = DEFAULT_RADIUS_FACTOR,
+        profiles::Dict{Symbol, LanguageProfile} = PROFILES
     )
     graph in (:coupling, :reachability, :clones) ||
         error("Dendro: graph must be :coupling, :reachability or :clones, got :$graph")
@@ -209,7 +210,7 @@ function mermaid(
     context >= 0 || error("Dendro: context must be >= 0, got $context")
     resolved = focus === :auto ? (granularity === :unit ? :findings : :all) : focus
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
-    files = parse_corpus(collect_corpus(roots, ignore, language); language, rules)
+    files = parse_corpus(collect_corpus(roots, ignore, language; profiles); language, rules, profiles)
     if graph === :coupling
         table = corpus_symbols(files)
         mermaid_coupling(io, files, build_corpus_graph(files, table), table, granularity, cut, resolved, context)

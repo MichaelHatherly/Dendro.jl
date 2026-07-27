@@ -232,7 +232,7 @@ end
 function file_symbols!(table::SymbolTable, file::ParsedFile)
     caps = file.index.scope_captures
     isempty(caps.scopes) && return table
-    imports = imports_query_for(file.language)
+    imports = imports_query_for(file)
     regions = imports === nothing ? ModuleRegion[] : module_regions(file.tree, imports, file.source)
     root = root_scope(caps.scopes)
     namespaces = Set{Tuple{Int, Int}}([(root.from, root.to)])
@@ -562,7 +562,7 @@ const LINKAGES = Dict{Symbol, Linkage}(
 # The names a file marks for export, from the `@export` captures of its linkage query.
 # Empty for a language with no export marker, where every top-level name is importable.
 function file_exports(file::ParsedFile)
-    query = imports_query_for(file.language)
+    query = imports_query_for(file)
     query === nothing && return Set{String}()
     exports = Set{String}()
     for cap in TreeSitter.each_capture(file.tree, query, file.source)
@@ -584,7 +584,7 @@ end
 # and the set of names it brings into scope. A name is paired to the statement whose
 # byte range contains it, the same geometric test the module regions use.
 function file_imports(file::ParsedFile)
-    query = imports_query_for(file.language)
+    query = imports_query_for(file)
     query === nothing && return Tuple{String, Set{String}}[]
     regions = Tuple{Int, Int}[]
     froms = TreeSitter.Node[]
@@ -636,7 +636,7 @@ function inclusion_components(files::Vector{ParsedFile}, corpus::Corpus)
     for (i, f) in enumerate(files)
         link = get(LINKAGES, f.language, nothing)
         (link === nothing || link.model !== :splice) && continue
-        query = imports_query_for(f.language)
+        query = imports_query_for(f)
         query === nothing && continue
         for target in include_targets(f.tree, query, f.source)
             for path in link.resolve_target(target, f.file, corpus)::Vector{String}

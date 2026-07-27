@@ -164,26 +164,37 @@ that order is load-bearing: a type must be defined before the file that uses it.
 
 Resolution and configuration:
 
-- `resolve.jl` maps file extensions to language names and resolves a language to a
-  parser and a query. `parser_for` loads `tree_sitter_<lang>_jll` lazily through
-  `Base.require`, so Dendro depends on no grammars itself; `query_for` reads
-  `src/queries/<lang>.scm` (located through a `RelocatableFolders` path so it
-  survives precompilation) and compiles it against that grammar, caching both
-  lazily. A missing grammar errors with an install hint. `scopes_query_for` reads the
-  optional `src/queries/<lang>.scopes.scm` the same way, returning `nothing` for a
-  language that ships none. The caches are guarded by `CACHE_LOCK`;
-  `warm_languages` fills them for a language set up front so fan-out tasks find
-  them warm.
+- `resolve.jl` maps file extensions to language names and resolves a `LanguageProfile`
+  to a parser and a query. `language_grammar` loads a profile's grammar: a `grammar`
+  naming a directory is read as a local grammar repository, anything else loads
+  `tree_sitter_<grammar>_jll` lazily through `Base.require`, so Dendro depends on no
+  grammars itself. `query_for` reads `<queries>/<lang>.scm` and compiles it against that
+  grammar. A missing grammar errors with an install hint. `scopes_query_for` and
+  `imports_query_for` read the optional `.scopes.scm` and `.imports.scm` the same way,
+  returning `nothing` for a language that ships none. Every cache is keyed by the whole
+  profile, not the language name, so two projects registering one name against different
+  grammars or queries never share a compiled query. `language_for_path` resolves an
+  extension through an `extension_map` of the scan's registry, built once per scan rather
+  than per file. The caches are guarded by `CACHE_LOCK`; `warm_languages` fills them for a
+  profile set up front so fan-out tasks find them warm.
 - `parallel.jl` defines the threading primitives the corpus fan-outs share:
   `PARALLEL_MIN` and `parallel_enabled`, `chunk_indices` (round-robin partition
   into strided ranges), `parallel_map!` (one value per item into a preallocated
   vector), `parallel_flatmap` (per-item vectors folded in index order), and
   `parallel_chunks` (a worker per chunk, each with its own state). Included after
   `resolve.jl`, whose cache functions `warm_languages` calls. See Parallelism.
-- `profile.jl` defines `LanguageProfile`, now just a language `name`. The node types
-  it measures live in the language's query, not in this type.
-- `profiles.jl` holds the `LanguageProfile` for each supported language, the set
-  `analyze` gates a file's extension on.
+- `profile.jl` defines `LanguageProfile`: a language `name` plus where to load it from,
+  its `grammar`, its `queries` directory, and the `extensions` it claims. The node types
+  it measures live in the language's query, not in this type. It is included before
+  `resolve.jl`, which dispatches on it, and carries `QUERIES_DIR`, the built-in query
+  directory (a `RelocatableFolders` path, so it survives precompilation). A built-in
+  profile leaves `queries` empty and resolves that path at read time through
+  `queries_dir`; baking it into the precompiled `PROFILES` would defeat the relocation.
+- `profiles.jl` holds the `LanguageProfile` for each language Dendro ships. This is the
+  built-in layer of the registry: `resolve_profiles` (in `config.jl`) overlays the
+  languages a `.dendro.toml` registers over it, and a scan gates a file's extension on
+  that resolved registry rather than on `PROFILES` directly. The built-in table is never
+  mutated, so one analysis cannot leak a registration into the next.
 - `query_index.jl` defines `NodeId`/`nodeid`, `Concept` (the nodes a query tagged
   for one measured construct, plus their ids for O(1) membership), `FunctionUnit`,
   `QueryIndex`, `CONCEPT_NAMES` (the capture names a query may use), and
@@ -625,6 +636,14 @@ unsuppressed findings for gating.
   No metric code changes. If a metric needs a language special case, the query is
   missing a capture; add the pattern. A `src/queries/<lang>.scopes.scm` is optional;
   with it the language gains binding resolution and cohesion, without it both skip.
+- A project adds a language without touching the package through `[languages.<name>]`
+  in its `.dendro.toml`, naming a queries directory and optionally a grammar directory
+  and extensions. Same three pieces of data, supplied from outside. Such a language
+  reaches the per-file passes and clone detection; the cross-file passes need a
+  `LINKAGES` entry, which is Julia code in the package, so they skip it. The resolved
+  profile travels on each `ParsedFile`, which is what lets the corpus passes reach a
+  registered language's scopes and linkage queries: they hold a file and no registry,
+  and a config-registered language cannot be looked up by name alone.
 - A check is a `Rule`: a measuring function plus its metadata. Adding a built-in is
   a `metrics.jl`/`flags.jl` function and a `BUILTIN_RULES` entry. The rule set is a
   value, so a caller adds checks through `analyze`'s `rules` without forking. A rule

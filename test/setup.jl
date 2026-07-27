@@ -18,12 +18,13 @@
 
     # A ParsedFile for one source, the corpus record clone and naturalness tests need.
     function parsedfile(lang, src; file = "f." * string(lang), directives = Dendro.Directive[])
-        tree = TreeSitter.parse(Dendro.parser_for(lang), src)
+        profile = Dendro.PROFILES[Symbol(lang)]
+        tree = TreeSitter.parse(Dendro.parser_for(profile), src)
         index = Dendro.build_index(
-            tree, Symbol(lang), String(src), Dendro.query_for(lang),
-            Dendro.scopes_query_for(Symbol(lang))
+            tree, Symbol(lang), String(src), Dendro.query_for(profile),
+            Dendro.scopes_query_for(profile)
         )
-        return Dendro.ParsedFile(Symbol(lang), String(src), file, tree, index, directives)
+        return Dendro.ParsedFile(profile, String(src), file, tree, index, directives)
     end
 
     # The bindings resolved for `src`, the type-stable entry the binding test asserts
@@ -116,6 +117,15 @@
         "function $name($(name)0)\n",
         join("    if $(name)0 > $i\n        return $i\n    end\n" for i in 1:n),
         "    return 0\nend\n"
+    )
+
+    # `guards` in Python, for the external-language tests: a language registered from a
+    # config file reads the Python grammar under its own extension, so its fixture source
+    # has to be Python rather than Julia.
+    py_guards(name, n) = string(
+        "def $name($(name)0):\n",
+        join("    if $(name)0 > $i:\n        return $i\n" for i in 1:n),
+        "    return 0\n"
     )
 
     # A function with `n` empty `catch` blocks, so it carries `n` `:empty_catch` flags.

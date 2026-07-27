@@ -10,9 +10,9 @@ public Finding, Findings, Location
 public Rule, BUILTIN_RULES, OPTIONAL_RULES
 public Config
 
+include("profile.jl")
 include("resolve.jl")
 include("parallel.jl")
-include("profile.jl")
 include("profiles.jl")
 include("bindings.jl")
 include("query_index.jl")
