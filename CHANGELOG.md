@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A reference qualified by a namespace (`Mod.f`) now resolves to the definition inside
+  that namespace. A definition in a Julia `module` never joins the includer's namespace,
+  so nothing reached it by bare name and the splice model saw it as visible to no file:
+  `:unreferenced` reported every definition in a package built out of submodules, and
+  `:misplaced` and `:scattered` read none of that coupling. Matching is on the namespace
+  enclosing a definition directly, so a longer qualifier (`Tools.Knowledge.search`)
+  resolves too. A field read (`row.total`) no longer resolves as a bare `total`, since a
+  value's field matches no namespace. Julia only for now; the other splice languages keep
+  their bare-name resolution until their namespace access is tested.
+
 ### Added
 
 - `:unreferenced` roots a definition a macro consumes directly (`@GET function

@@ -52,3 +52,29 @@ end
     pushref = only(filter(r -> r.name == "push!", refs))
     @test file.index.functions[pushref.unit].firstline == 2
 end
+
+@testitem "unbound references carry the namespace a reference qualifies" setup = [Fixtures] tags = [:linkage] begin
+    # A qualified reference resolves under `Namespace.name`, reading the namespace that
+    # the name sits directly under: `Inner` out of `Outer.Inner.deep`. The qualifier's own
+    # identifiers (`Outer`, `Inner`) stay bare, so only the name side is qualified.
+    file = Fixtures.parsedfile(:julia, "f() = A.callee() + Outer.Inner.deep()\n"; file = "f.jl")
+    names = Set(r.name for r in Dendro.unbound_references(file))
+    @test "A.callee" in names
+    @test "Inner.deep" in names
+    @test "A" in names
+    @test !("callee" in names)
+end
+
+@testitem "a module-nested definition is visible under its qualified name" setup = [Fixtures] tags = [:linkage] begin
+    # Across a splice, a file-scope definition is visible by bare name and one inside a
+    # `module` only by its qualified name, the two forms Julia's namespaces give.
+    mod = Fixtures.parsedfile(:julia, "include(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
+    a = Fixtures.parsedfile(:julia, "spliced() = 1\nmodule A\nnested() = 2\nend\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "f() = 1\n"; file = "b.jl")
+    files = [mod, a, b]
+    visible = Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))
+    names = keys(visible["b.jl"])
+    @test "spliced" in names
+    @test "A.nested" in names
+    @test !("nested" in names)
+end

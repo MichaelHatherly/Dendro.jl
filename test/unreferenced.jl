@@ -43,6 +43,57 @@ end
     @test Fixtures.unref_sites([mod, a, b]) == Set([("a.jl", "foo"), ("b.jl", "bar")])
 end
 
+@testitem ":unreferenced follows a reference qualified by its module" setup = [Fixtures] tags = [:unreferenced] begin
+    # A definition inside a `module` never joins the includer's namespace, so the only
+    # way to reach it is qualified. `entry` is the public root; it names `B.wrapper`,
+    # which names `A.callee`. Both submodule definitions are live.
+    mod = Fixtures.parsedfile(
+        :julia,
+        "module M\npublic entry\ninclude(\"a.jl\")\ninclude(\"b.jl\")\nentry() = B.wrapper()\nend\n";
+        file = "mod.jl",
+    )
+    a = Fixtures.parsedfile(:julia, "module A\ncallee() = 1\nend\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "module B\nwrapper() = A.callee()\nend\n"; file = "b.jl")
+    @test isempty(Fixtures.unref_sites([mod, a, b]))
+end
+
+@testitem ":unreferenced flags a module-nested definition nothing qualifies" setup = [Fixtures] tags = [:unreferenced] begin
+    # `A.callee` is reached; `A.dead` shares its module but nothing names it. Qualified
+    # resolution carries liveness to the name written, not to the whole module.
+    mod = Fixtures.parsedfile(
+        :julia,
+        "module M\npublic entry\ninclude(\"a.jl\")\nentry() = A.callee()\nend\n";
+        file = "mod.jl",
+    )
+    a = Fixtures.parsedfile(:julia, "module A\ncallee() = 1\ndead() = 2\nend\n"; file = "a.jl")
+    @test Fixtures.unref_sites([mod, a]) == Set([("a.jl", "dead")])
+end
+
+@testitem ":unreferenced reads a full module path as a qualifier" setup = [Fixtures] tags = [:unreferenced] begin
+    # A nested module is reached by either the whole path or its innermost name, the two
+    # forms Julia accepts once the outer module is in scope.
+    mod = Fixtures.parsedfile(
+        :julia,
+        "module M\npublic entry\ninclude(\"a.jl\")\nentry() = Outer.Inner.deep() + Inner.shallow()\nend\n";
+        file = "mod.jl",
+    )
+    a = Fixtures.parsedfile(
+        :julia,
+        "module Outer\nmodule Inner\ndeep() = 1\nshallow() = 2\nend\nend\n";
+        file = "a.jl",
+    )
+    @test isempty(Fixtures.unref_sites([mod, a]))
+end
+
+@testitem ":unreferenced does not read a field access as a bare reference" setup = [Fixtures] tags = [:unreferenced] begin
+    # `row.total` reads a field of a value. Its name happens to match a definition in
+    # another file, which it has nothing to do with, so that definition stays dead.
+    mod = Fixtures.parsedfile(:julia, "include(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
+    a = Fixtures.parsedfile(:julia, "total() = 1\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "read_total(row) = row.total\nread_total(nothing)\n"; file = "b.jl")
+    @test Fixtures.unref_sites([mod, a, b]) == Set([("a.jl", "total")])
+end
+
 @testitem ":unreferenced leaves a definition reached from top-level code alone" setup = [Fixtures] tags = [:unreferenced] begin
     # The bare `main()` runs unconditionally, so `main` is a root even with no export;
     # `work` is reached through it.

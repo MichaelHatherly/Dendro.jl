@@ -268,19 +268,77 @@ struct UnboundRef
     unit::Int
 end
 
+# How a language writes a reference into a namespace, for the languages whose splice
+# carries namespaces. A definition inside a Julia `module` never joins the includer's
+# namespace, so nothing reaches it by bare name: a caller writes `Mod.name`. The resolver
+# reads both sides of that through this record, keying such a definition by its qualified
+# name and a reference by the qualifier it carries. `access` is the node type of a
+# qualified access, `separator` what joins the namespace to the name.
+struct ModuleAccess
+    access::String
+    separator::String
+end
+
+# The languages that reach a namespaced definition by qualifying it. Only Julia so far:
+# C and C++ splice too, but their `namespace` access is a different node type and their
+# nested definitions are rarer, so nothing is claimed for them until it is tested.
+const MODULE_ACCESS = Dict{Symbol, ModuleAccess}(
+    :julia => ModuleAccess("field_expression", "."),
+)
+
+# The namespace a qualified access names directly: the innermost component of its
+# qualifier, `Inner` in `Outer.Inner.f`. A longer qualifier is itself an access node, so
+# its own last child holds that component. Only the innermost is read, because a
+# definition's module path is per-file: the outer modules a reference walks through can
+# be declared in another file, which the path never sees.
+function namespace_node(access_node::TreeSitter.Node, access::ModuleAccess)
+    qualifier = first(TreeSitter.children(access_node))
+    TreeSitter.node_type(qualifier) == access.access || return qualifier
+    return last(TreeSitter.children(qualifier))
+end
+
+"""
+    reference_name(node, source, access, name) -> String
+
+The name `node` resolves under across the file boundary. A reference qualified by a
+namespace (`Mod.f`) names a definition inside that namespace, so it resolves under the
+qualified form; a bare reference resolves under its own name. This is also what keeps a
+field read (`row.total`) from resolving as a bare `total`: the two are the same syntax, so
+reading both as qualified names is the honest lexical answer, and a value's field matches
+no namespace.
+"""
+function reference_name(
+        node::TreeSitter.Node, source::AbstractString,
+        access::Union{ModuleAccess, Nothing}, name::String
+    )
+    access === nothing && return name
+    parent = TreeSitter.parent(node)
+    TreeSitter.is_null(parent) && return name
+    TreeSitter.node_type(parent) == access.access || return name
+    kids = TreeSitter.children(parent)
+    # Only the name side takes the qualified form. The qualifier sits left of the
+    # separator, and reading it as qualified too would make `Mod` in `Mod.f` resolve
+    # under `Mod.f` as well.
+    length(kids) >= 2 && nodeid(last(kids)) == nodeid(node) || return name
+    namespace = strip(TreeSitter.slice(source, namespace_node(parent, access)))
+    return string(namespace, access.separator, name)
+end
+
 """
     unbound_references(file) -> Vector{UnboundRef}
 
-The references in `file` that resolve to no in-file definition, each tagged with its
-name and containing function unit. The per-file binding resolver drops these; the
-corpus graph picks them up and tries to resolve them against [`corpus_symbols`](@ref).
-A file whose language ships no scopes query yields none.
+The references in `file` that resolve to no in-file definition, each tagged with the
+name it resolves under and its containing function unit. The per-file binding resolver
+drops these; the corpus graph picks them up and tries to resolve them against
+[`corpus_symbols`](@ref). A reference qualified by a namespace carries the qualified name
+([`reference_name`](@ref)). A file whose language ships no scopes query yields none.
 """
 function unbound_references(file::ParsedFile)
     caps = file.index.scope_captures
     isempty(caps.scopes) && return UnboundRef[]
     units = file.index.functions
     uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    access = get(MODULE_ACCESS, file.language, nothing)
     refs = UnboundRef[]
     for r in caps.refnodes
         rid = nodeid(r)
@@ -288,7 +346,8 @@ function unbound_references(file::ParsedFile)
         from, to = TreeSitter.byte_range(r)
         name = String(strip(TreeSitter.slice(file.source, r)))
         lookup_definition(caps.scopes, from, to, name) === nothing || continue
-        push!(refs, UnboundRef(rid, name, containing_unit(uranges, from, to)))
+        resolved = reference_name(r, file.source, access, name)
+        push!(refs, UnboundRef(rid, resolved, containing_unit(uranges, from, to)))
     end
     return refs
 end
@@ -653,16 +712,29 @@ function inclusion_components(files::Vector{ParsedFile}, corpus::Corpus)
     return roots
 end
 
+# The name a namespaced definition is visible under: its own, qualified by the namespace
+# that encloses it directly, the form a reference writes to reach past a module boundary.
+# Nothing for a definition at file scope, which is visible by bare name, and for a
+# language that reaches no namespace by qualifying it.
+function qualified_name(d::CorpusDef, access::Union{ModuleAccess, Nothing})
+    (access === nothing || isempty(d.module_path)) && return nothing
+    return string(last(d.module_path), access.separator, d.name)
+end
+
 # The cross-file names a file sees from a set of candidate definitions: every member's
 # name, its own file's excluded. Shared by the splice model, whose members are an
 # inclusion component, and the directory model, whose members are a package directory.
+# A member the language does not export across the boundary is still reachable when the
+# language qualifies its namespace, under the qualified name rather than the bare one.
 function member_visible(f::ParsedFile, table::SymbolTable, link::Linkage, members::Vector{Int})
     names = Dict{String, Vector{Int}}()
+    access = get(MODULE_ACCESS, f.language, nothing)
     for di in members
         d = table.defs[di]
         d.file == f.file && continue
-        link.is_exported(d, Set{String}())::Bool || continue
-        push!(get!(() -> String[], names, d.name), di)
+        key = link.is_exported(d, Set{String}())::Bool ? d.name : qualified_name(d, access)
+        key === nothing && continue
+        push!(get!(() -> String[], names, key), di)
     end
     return names
 end
