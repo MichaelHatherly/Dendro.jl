@@ -244,5 +244,9 @@ function analyze(
     append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
     append!(findings, scope_clusters(cluster_unreferenced(files, table), scope))
+    # The file graph reads the same resolution one level up, unfiltered: the references the
+    # unit graph drops as cross-cutting are the ones an architecture question is about.
+    fg = build_file_graph(files, table, Corpus(Set{String}(to_posix(f.file) for f in files)); visible)
+    append!(findings, scope_clusters(cluster_back_edge(files, fg, table; cut = ecut, band = cfg.back_edge, visible), scope))
     return Findings(findings)
 end

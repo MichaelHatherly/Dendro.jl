@@ -11,11 +11,6 @@
 # opposite. A file every other file reaches for is the observation, not the noise, so the
 # file graph is built from unfiltered references and the two graphs stay separate rather
 # than one growing a mode flag.
-#
-# The layer has no caller inside the package: each rule built on it is its own pass over
-# the corpus, so reachability from the public surface reaches nothing here. Accepted, not
-# hidden: the findings stay in the count as suppressed.
-# dendro-ignore-file: unreferenced
 
 # The most definition names one edge carries as evidence. A hot edge can name hundreds,
 # which is a report nobody reads, so the heaviest few stand for it and `FileEdge.name_count`

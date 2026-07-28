@@ -140,6 +140,20 @@ not, so the same rule would fire differently across a polyglot corpus for reason
 to the code. An import statement is evidence on an edge, never an edge on its own: the
 dependency is the reference that crossed, and that is where the bargain's line sits here.
 
+Grain is the first question asked of that graph. Between two directories, count the
+reference weight each way: when one direction carries nearly all of it, the code has
+established a direction and the few references going back are anomalies, each one an import
+to drop and a definition to move. `:back_edge` reads that, inferring the layering from the
+corpus rather than from a declared layer map nobody maintains. Higher dominance is worse,
+because a pair that couples both ways in earnest is a cycle rather than a violated grain.
+Its locations are the import statement and then every reference across the edge, which is
+wider than any per-file metric's and is what lets a diff that adds a use of an
+already-imported name still scope the finding in. The consequence, that the gate ratchet
+re-reports a back edge each time a reference joins it, is the behaviour wanted and not a
+defect: one more reference across a back edge is worsening, and the ratchet is there to
+catch worsening. Deliberate callbacks and plugin registration point backwards on purpose;
+answer those with a suppression, not a smarter model.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment
@@ -152,9 +166,7 @@ metrics, so it auto-adopts any future high-band metric. Two `parameter_count` si
 trip it, the `Finding` constructor and `mermaid_coupling`, where the parameter count
 tracks a struct's fields or a genuine set of rendering inputs. Both carry inline
 `dendro-ignore: parameter_count`, suppressed not omitted, so the count stays honest
-and the floor reports them as suppressed. `file_graph.jl` carries a file-scoped
-`unreferenced` directive on the same terms: the layer has no caller inside the package,
-so reachability from the public surface reaches nothing in it. If a change makes Dendro
+and the floor reports them as suppressed. If a change makes Dendro
 trip its own metrics, fix the code, not the test.
 
 ## Where the details live

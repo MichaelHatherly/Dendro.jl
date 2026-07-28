@@ -16,9 +16,9 @@
 # The percentile cutoff a corpus-relative metric flags above, absent a `.dendro.toml`.
 const DEFAULT_CUT = 0.95
 
-# The four relational metrics whose band a `[bands]` key may set. The rest of a
-# `[bands]` table names scalar rules.
-const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced)
+# The relational metrics whose band a `[bands]` key may set. The rest of a `[bands]`
+# table names scalar rules.
+const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced, :back_edge)
 
 # A malformed `.dendro.toml` value: a band that is not two integers, a `cut` that is
 # not a number, a rule toggle that is not a boolean. Carried as one exception type so
@@ -39,8 +39,8 @@ config_error(msg) = throw(ConfigError(msg))
 
 Resolved tuning thresholds for one analysis, built by `discover_config` from the
 built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
-overrides scalar rule `(warn, high)` tuples by metric name; the four relational fields
-override the relational bands; `rules` toggles a rule on or off by name, and the
+overrides scalar rule `(warn, high)` tuples by metric name; one field per relational
+metric overrides that metric's band; `rules` toggles a rule on or off by name, and the
 `reimplementation` corpus pass with it; `min_size`, `threshold`, and `radius_factor`
 are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
 cutoff; `languages` carries the languages the config registers beyond the ones Dendro
@@ -54,6 +54,7 @@ struct Config
     low_cohesion::Tuple{Int, Int}
     scattered::Tuple{Int, Int}
     misplaced::Tuple{Int, Int}
+    back_edge::Tuple{Int, Int}
     rules::Dict{Symbol, Bool}
     min_size::Int
     threshold::Float64
@@ -351,6 +352,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
         get(acc.relational, :scattered, SCATTERED_BAND),
         get(acc.relational, :misplaced, MISPLACED_BAND),
+        get(acc.relational, :back_edge, BACK_EDGE_BAND),
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
         scalars.reimpl_threshold, acc.languages,

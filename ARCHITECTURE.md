@@ -28,8 +28,9 @@ corpus (every profile-resolvable file under each folder, or a named file), parse
 each once, builds a baseline from that corpus, runs the per-file path above
 against it for each file,
 and appends the corpus-relational findings: cross-file duplicates, naturalness
-outliers, low-cohesion files, misplaced units, scattered files, and unreferenced
-private definitions. The active rule set is a value it carries, resolved from a
+outliers, low-cohesion files, misplaced units, scattered files, unreferenced
+private definitions, and dependencies running against a directory pair's grain. The
+active rule set is a value it carries, resolved from a
 `Config` (see Configuration) unless the `rules` keyword overrides it, and it threads
 through baseline sampling, per-file scoring, and suppression validation, so a caller
 extends the checks without touching the pipeline. The baseline-from-the-corpus step is what makes
@@ -49,10 +50,9 @@ corpus files
        -> build_file_graph     files, every resolved reference kept
 ```
 
-`analyze` hoists `corpus_visibility` and hands it to the unit graph, then runs
-cohesion, placement, scattering, and reachability over that. The file graph is the
-substrate for the rules that read the corpus as files depending on files; nothing in
-`analyze` builds it.
+`analyze` hoists `corpus_visibility` and hands it to both graphs. Cohesion, placement,
+scattering, and reachability run over the unit graph; `:back_edge` runs over the file
+graph, the substrate for the rules that read the corpus as files depending on files.
 
 The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus at
 collection time, inside `source_files`, before any parsing. Excluded files leave
@@ -104,7 +104,7 @@ both rely on it, and the benchmark suite pins itself to one thread.
 
 The bands a finding is judged against are tunable, the cascade resolved in
 `config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
-the four relational bands, a rule on/off override dict, and the three clone-detection
+one band field per relational metric, a rule on/off override dict, and the three clone-detection
 thresholds. `discover_config(roots)` accumulates each layer's overrides starting from
 the built-in defaults (the relational band consts, `DEFAULT_CUT`, the clone consts,
 empty override dicts), overlaying a user-global
@@ -384,6 +384,13 @@ Reporting:
   weights and dropping within-group edges. It reads a prebuilt `visible` from
   `corpus_visibility`, the same map `build_corpus_graph` accepts. Included after
   `corpus_graph.jl`.
+- `back_edge.jl` defines the first rule over the file graph. `dominated_pairs` reads the
+  directory-contracted graph for each pair coupled both ways whose majority direction
+  clears `BACK_EDGE_MIN_MAJOR`, scoring the dominance percent; `minority_edges` names the
+  file edges running the minority way, and `edge_reference_sites` resolves the references
+  behind them back to `Location`s. `cluster_back_edge` emits a `:back_edge` finding per
+  minority file edge, carrying the absolute `BACK_EDGE_BAND` and the percentile over the
+  bidirectional pairs. Included after `file_graph.jl`, before `corpus.jl` calls it.
 - `placement.jl` defines cross-file placement, the fourth corpus-relational pass.
   `own_affinity` reads each unit's same-file coupling from `index.bindings`;
   `community_plurality` finds the file each community is anchored in; `cluster_misplaced`
@@ -679,6 +686,32 @@ in some languages and not others, which would make one rule fire differently acr
 polyglot corpus for reasons unrelated to the code. Weights sum across the file edges between
 two groups; an edge inside one group is dropped.
 
+## Dependencies against the grain
+
+`cluster_back_edge` (`back_edge.jl`) is the first rule over the file graph. Contract by
+directory and read the traffic between two directories both ways: when one direction carries
+almost all of it, the code has settled on a layering, and the few references going the other
+way each have an obvious edit. The grain comes from the corpus, so no declared layer order
+and no configuration is involved. A pair whose majority direction carries fewer than
+`BACK_EDGE_MIN_MAJOR` references has settled on no direction and is not scored, and a corpus
+whose files sit in one directory contracts to one group and yields no pairs at all.
+
+Higher dominance is worse, the direction the band model expects: a pair at 60/40 is a
+genuinely mutual dependency, which is a cycle rather than a violated grain. Scored like the
+other relational metrics, the absolute `BACK_EDGE_BAND` on the dominance percent and the
+percentile over the bidirectional pairs, fired when either trips. One finding per file edge
+in the minority direction, not one per pair: the edit is to an edge.
+
+The locations are wider than any per-file metric's, and deliberately. They run the minority
+edge's import statement first, then every reference site across the edge, because a diff that
+adds a use of an already-imported name introduces a back edge without touching the import's
+line, and locating the finding at the import alone would drop it under `analyze`'s `base`
+scoping. The cost lands in the gate: `fkey` is the location set, so an edge's key grows as
+references accumulate across it, and adding one to an established back edge re-reports a
+violation the base already carried. That is the reading the rule wants rather than a defect,
+since the ratchet exists to catch worsening. `back_edge.jl` documents it and `test/back_edge.jl`
+pins it, so a later change that "fixes" the re-report argues with a failing test.
+
 ## Suppression
 
 `suppressions` walks the same comment nodes as `stub_markers` and matches
@@ -739,9 +772,7 @@ floor is percentile-free, so the result does not depend on the corpus distributi
 change that makes Dendro trip its own metrics is a signal to fix the code. The two
 `parameter_count` sites the floor surfaces (the `Finding` constructor, `mermaid_coupling`)
 carry inline `dendro-ignore: parameter_count` with a reason, suppressed rather than
-omitted from the gate, so the count stays honest. `file_graph.jl` carries a file-scoped
-`unreferenced` directive on the same terms: no pass inside the package calls the layer,
-so reachability from the public surface reaches nothing in it.
+omitted from the gate, so the count stays honest.
 
 `test/jet.jl` is the `:jet` item: basic-mode JET is a zero-tolerance gate on every
 Julia version, sound mode and the optimization analyzer are ratcheted at

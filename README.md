@@ -161,6 +161,7 @@ cut = 0.97                 # percentile cutoff for corpus-relative flags
 cyclomatic = [15, 30]      # scalar metric: override (warn, high)
 function_length = [60, 120]
 low_cohesion = [5, 7]      # relational metric: override its band
+back_edge = [90, 97]
 
 [rules]
 npath = true               # enable an optional rule
@@ -176,8 +177,8 @@ radius_factor = 0.5       # candidate-search radius, as a fraction of function s
 threshold = 0.6            # vocabulary overlap a candidate pair must reach
 ```
 
-`[bands]` keys are the scalar metric names plus the four relational names
-(`unnatural`, `low_cohesion`, `scattered`, `misplaced`); `[rules]` keys are any rule
+`[bands]` keys are the scalar metric names plus the relational names
+(`unnatural`, `low_cohesion`, `scattered`, `misplaced`, `back_edge`); `[rules]` keys are any rule
 name, plus `reimplementation` to gate that corpus pass; `[clones]` and
 `[reimplementation]` set the duplicate- and reimplementation-detection thresholds. An
 unknown key warns and is ignored, so a typo is visible rather than silent. The bands,

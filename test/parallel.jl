@@ -47,6 +47,17 @@ end
             write(joinpath(dir, "f$i.jl"), "function f$i(z)\n" * body * extra * "    return z\nend\n")
         end
 
+        # A layered pair of directories on the side, api leaning on core with one reference
+        # running back, so the cross-file graph passes have a grain to read as well.
+        mkpath(joinpath(dir, "core"))
+        mkpath(joinpath(dir, "api"))
+        write(joinpath(dir, "core", "c.jl"), "core_a(x) = x\nbackc(x) = apihelp(x)\n")
+        write(
+            joinpath(dir, "api", "a.jl"),
+            "apihelp(y) = y\nusea(x) = " * join(("core_a(x)" for _ in 1:20), " + ") * "\n"
+        )
+        write(joinpath(dir, "layered.jl"), "include(\"core/c.jl\")\ninclude(\"api/a.jl\")\n")
+
         # The digest keeps findings and locations in returned order: the guarantee under
         # test is byte-identical output, ordering included, at any thread count.
         script = raw"""
