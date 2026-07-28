@@ -29,10 +29,10 @@ end
     y = Fixtures.parsedfile(:julia, "y1() = fc() + fd() + fe()\n"; file = "y.jl")
     files = [mod, f, x, y]
     table = Dendro.corpus_symbols(files)
-    consumers = Dendro.consumer_files(files, table, Dendro.corpus_visibility(files, table))
-    defs = sort!(Int[di for di in keys(consumers) if table.defs[di].file == "f.jl"])
+    visible = Dendro.corpus_visibility(files, table)
+    consumed = Dendro.consumer_sets(files, table, visible, Set(["f.jl"]))
 
-    @test length(Dendro.audience_groups(defs, consumers)) == 1
+    @test length(Dendro.audience_components(consumed["f.jl"], table)) == 1
     # One audience is nothing to split, so the pass stays silent whatever the band says.
     @test isempty(Dendro.cluster_split_audience(files, table; band = (1, 2)))
 end

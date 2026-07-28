@@ -30,11 +30,11 @@
 # `:high`, a gate nobody can satisfy.
 const HUB_BAND = (15, 30)
 
-# What a group of definitions has to hold to read as an audience worth splitting off: this
-# many definitions, reaching this many consumer files between them. One definition used by
-# one file is ordinary rather than a seam, and a proposal built from singletons would name
-# every definition its own audience.
-const MIN_AUDIENCE_DEFS = 2
+# How many consumer files a group of definitions has to reach between them to read as an
+# audience worth splitting off. A proposal built from groups one file happens to use would
+# name every definition its own audience. The definition floor is `MIN_AUDIENCE_DEFS`,
+# shared with `:split_audience`; this one is the hub's own, since a split proposed to a
+# reader is held to more than a group counted into a score.
 const MIN_AUDIENCE_CONSUMERS = 2
 
 # The corpus needs this many files before a crossing count means anything. Below it every
@@ -140,63 +140,8 @@ function crossing_scores(fg::FileGraph)
     return scored
 end
 
-# For each file in `targets`, the definitions in it that something else references and the
-# set of files referencing each. The audience a definition serves is who names it, so this
-# reads the same resolved references the file graph is built from; a file's own definitions
-# are outside its visibility map, so every reference here crosses a file boundary.
-function consumer_sets(
-        files::Vector{ParsedFile}, table::SymbolTable,
-        visible::Dict{String, Dict{String, Vector{Int}}}, targets::Set{String}
-    )
-    out = Dict{String, Dict{Int, Set{String}}}()
-    for (f, _, candidates) in corpus_references(files, visible)
-        for di in candidates
-            d = table.defs[di]
-            d.file in targets || continue
-            defs = get!(() -> Dict{Int, Set{String}}(), out, d.file)
-            push!(get!(() -> Set{String}(), defs, di), f.file)
-        end
-    end
-    return out
-end
-
-# One representative definition per audience group, earliest line first. Two definitions
-# belong to the same audience when a consumer file reaches both, so the groups are the
-# connected components of that projection, found with the same flood fill cohesion reads.
-# A group below `MIN_AUDIENCE_DEFS` or `MIN_AUDIENCE_CONSUMERS` is dropped rather than
-# named: a definition or two that one file happens to use is not a seam to cut along.
-# The definitions are line-ordered before the projection is built, so a component's earliest
-# line is its smallest position, and the flood fill seeds components in that order: the
-# representatives come out earliest line first without a second sort.
-function audience_reps(defs::Dict{Int, Set{String}}, table::SymbolTable)
-    dis = sort!(collect(keys(defs)); by = di -> (table.defs[di].line, table.defs[di].name, di))
-    adj = [Dict{Int, Float64}() for _ in eachindex(dis)]
-    byconsumer = Dict{String, Vector{Int}}()
-    for (i, di) in enumerate(dis)
-        for consumer in sort!(collect(defs[di]))
-            push!(get!(() -> Int[], byconsumer, consumer), i)
-        end
-    end
-    # Star-link each consumer's definitions to the first of them, as the within-file
-    # binding edges do: the components are the same and the edge count stays linear.
-    for consumer in sort!(collect(keys(byconsumer)))
-        members = byconsumer[consumer]
-        base = first(members)
-        for m in members
-            m == base && continue
-            adj[base][m] = 1.0
-            adj[m][base] = 1.0
-        end
-    end
-    reps = Int[]
-    for group in components(adj, collect(eachindex(dis)))
-        length(group) < MIN_AUDIENCE_DEFS && continue
-        consumers = Set{String}()
-        for i in group
-            union!(consumers, defs[dis[i]])
-        end
-        length(consumers) < MIN_AUDIENCE_CONSUMERS && continue
-        push!(reps, dis[minimum(group)])
-    end
-    return reps
-end
+# One representative definition per audience group of a hub file, earliest line first. The
+# grouping is `:split_audience`'s (`audience_components`), read here as a proposal rather
+# than a score, so it carries the hub's own consumer floor.
+audience_reps(defs::Dict{Int, Set{String}}, table::SymbolTable) =
+    Int[first(group) for group in audience_components(defs, table; min_consumers = MIN_AUDIENCE_CONSUMERS)]

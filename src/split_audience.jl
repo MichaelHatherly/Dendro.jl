@@ -29,7 +29,8 @@
 const SPLIT_AUDIENCE_BAND = (3, 5)
 
 # An audience group needs this many definitions before it reads as an interface rather
-# than a helper with a caller. One definition used by one other file is ordinary.
+# than a helper with a caller. One definition used by one other file is ordinary. Shared
+# with `:hub`, which proposes a split along the same groups.
 const MIN_AUDIENCE_DEFS = 2
 
 # A file consumed by fewer than this many other files has one audience by construction,
@@ -37,8 +38,9 @@ const MIN_AUDIENCE_DEFS = 2
 # the back-edge grain is only read between directories that reference each other at all.
 # The floor is on the file's whole audience, not on one group's: a group of definitions
 # devoted to a single consumer is a real interface, and the canonical split is two of
-# them.
-const MIN_AUDIENCE_CONSUMERS = 2
+# them. `:hub` reads its own floor per group, since it names the groups as a proposal
+# rather than counting them as a score.
+const MIN_SPLIT_CONSUMERS = 2
 
 # A file with fewer units than this is too small to read as serving separate audiences.
 const MIN_AUDIENCE_UNITS = 3
@@ -53,45 +55,56 @@ const MIN_SPLIT_GROUPS = 2
 # anything; under it only the absolute band fires, as cohesion does on a thin corpus.
 const MIN_AUDIENCE_FILES = 5
 
-# The ordering a group's representative and a file's locations follow: earliest line
-# first, ties broken by name so the choice does not depend on the order the symbol table
-# happened to be built in.
-rep_key(d::CorpusDef) = (d.line, d.name)
-
-# Per definition referenced from outside its own file, the set of files that reference it.
-# A reference matching several visible definitions counts toward each: the match is by
-# name, and picking one would need the dispatch resolution this never does. A reference in
+# For each file in `targets`, the definitions in it that something else references and the
+# set of files referencing each. The audience a definition serves is who names it, so this
+# reads the same resolved references the graphs are built from; a file's own definitions
+# are outside its visibility map, so every reference here crosses a file boundary. A
+# reference matching several visible definitions counts toward each: the match is by name,
+# and picking one would need the dispatch resolution this never does. A reference in
 # top-level code counts like any other, since the question is which file consumes the
 # definition, not which unit.
-function consumer_files(
+function consumer_sets(
         files::Vector{ParsedFile}, table::SymbolTable,
-        visible::Dict{String, Dict{String, Vector{Int}}}
+        visible::Dict{String, Dict{String, Vector{Int}}}, targets::Set{String}
     )
-    consumers = Dict{Int, Set{String}}()
+    out = Dict{String, Dict{Int, Set{String}}}()
     for (f, _, candidates) in corpus_references(files, visible)
         for di in candidates
-            table.defs[di].file == f.file && continue
-            push!(get!(() -> Set{String}(), consumers, di), f.file)
+            d = table.defs[di]
+            d.file in targets || continue
+            defs = get!(() -> Dict{Int, Set{String}}(), out, d.file)
+            push!(get!(() -> Set{String}(), defs, di), f.file)
         end
     end
-    return consumers
+    return out
 end
 
-# The audience groups among `defs`, the consumed definitions of one file: the connected
-# components of the graph linking two definitions whose consumer sets meet. Each consumer
-# file's definitions are star-linked to the first of them, which forms the same components
-# as linking every pair and stays linear in the consumption edges. A group is a vector of
-# indices into `defs`.
-function audience_groups(defs::Vector{Int}, consumers::Dict{Int, Set{String}})
+# The audience groups among one file's consumed definitions, `defs` mapping each to the
+# files that reference it. Two definitions belong to the same audience when a consumer
+# reaches both, so the groups are the connected components of that projection, found with
+# the same flood fill cohesion reads. A group below `MIN_AUDIENCE_DEFS` definitions or
+# `min_consumers` consumers is dropped: a definition or two that one file happens to use is
+# not a seam to cut along.
+#
+# The definitions are line-ordered before the projection is built, so a component's
+# earliest line is its smallest position and the flood fill seeds components in that order:
+# the groups come out earliest line first, each already led by its own earliest definition,
+# with no second sort. Each group is a vector of definition indices into `table.defs`.
+function audience_components(
+        defs::Dict{Int, Set{String}}, table::SymbolTable; min_consumers::Int = 1
+    )
+    dis = sort!(collect(keys(defs)); by = di -> (table.defs[di].line, table.defs[di].name, di))
     by_consumer = Dict{String, Vector{Int}}()
-    for (i, di) in enumerate(defs)
-        for file in sort!(collect(consumers[di]))
-            push!(get!(() -> Int[], by_consumer, file), i)
+    for (i, di) in enumerate(dis)
+        for consumer in sort!(collect(defs[di]))
+            push!(get!(() -> Int[], by_consumer, consumer), i)
         end
     end
-    adj = [Dict{Int, Float64}() for _ in defs]
-    for file in sort!(collect(keys(by_consumer)))
-        members = by_consumer[file]
+    # Star-link each consumer's definitions to the first of them, as the within-file
+    # binding edges do: the components are the same and the edge count stays linear.
+    adj = [Dict{Int, Float64}() for _ in eachindex(dis)]
+    for consumer in sort!(collect(keys(by_consumer)))
+        members = by_consumer[consumer]
         base = first(members)
         for m in members
             m == base && continue
@@ -99,17 +112,17 @@ function audience_groups(defs::Vector{Int}, consumers::Dict{Int, Set{String}})
             adj[m][base] = 1.0
         end
     end
-    return components(adj, collect(eachindex(defs)))
-end
-
-# The definition an audience group is reported at: its earliest line.
-function audience_rep(table::SymbolTable, defs::Vector{Int}, group::Vector{Int})
-    rep = defs[first(group)]
-    for i in group
-        di = defs[i]
-        rep_key(table.defs[di]) < rep_key(table.defs[rep]) && (rep = di)
+    groups = Vector{Int}[]
+    for group in components(adj, collect(eachindex(dis)))
+        length(group) < MIN_AUDIENCE_DEFS && continue
+        consumers = Set{String}()
+        for i in group
+            union!(consumers, defs[dis[i]])
+        end
+        length(consumers) < min_consumers && continue
+        push!(groups, Int[dis[i] for i in sort!(group)])
     end
-    return rep
+    return groups
 end
 
 """
@@ -129,7 +142,7 @@ the corpus distribution says. It stays in the scored population, since it is wha
 two audiences unusual or ordinary for a corpus.
 
 A file with fewer than `$MIN_AUDIENCE_UNITS` units is too small to read this way, and a
-file fewer than `$MIN_AUDIENCE_CONSUMERS` other files consume has one audience by
+file fewer than `$MIN_SPLIT_CONSUMERS` other files consume has one audience by
 construction and is left out of the scored population entirely, so the percentile compares
 only files that could split.
 
@@ -152,26 +165,22 @@ function cluster_split_audience(
         min_files::Integer = MIN_AUDIENCE_FILES,
         visible::Dict{String, Dict{String, Vector{Int}}} = corpus_visibility(files, table)
     )
-    consumers = consumer_files(files, table, visible)
-    consumed = Dict{String, Vector{Int}}()
-    for di in sort!(collect(keys(consumers)))
-        push!(get!(() -> Int[], consumed, table.defs[di].file), di)
-    end
+    consumed = consumer_sets(files, table, visible, Set{String}(f.file for f in files))
 
     scored = Tuple{ParsedFile, Int, Vector{Location}}[]
     for f in files
         length(functions(f.index)) < MIN_AUDIENCE_UNITS && continue
-        defs = get(consumed, f.file, Int[])
+        defs = get(() -> Dict{Int, Set{String}}(), consumed, f.file)
         audience = Set{String}()
-        for di in defs
-            union!(audience, consumers[di])
+        for consumers in values(defs)
+            union!(audience, consumers)
         end
-        length(audience) < MIN_AUDIENCE_CONSUMERS && continue
-        groups = audience_groups(defs, consumers)
-        reps = Int[audience_rep(table, defs, g) for g in groups if length(g) >= MIN_AUDIENCE_DEFS]
-        isempty(reps) && continue
-        sort!(reps; by = di -> rep_key(table.defs[di]))
-        locations = Location[Location(f.file, table.defs[di].line, table.defs[di].name) for di in reps]
+        length(audience) < MIN_SPLIT_CONSUMERS && continue
+        groups = audience_components(defs, table)
+        isempty(groups) && continue
+        locations = Location[
+            Location(f.file, table.defs[first(g)].line, table.defs[first(g)].name) for g in groups
+        ]
         push!(scored, (f, length(locations), locations))
     end
     return scored_findings(

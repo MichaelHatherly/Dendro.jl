@@ -22,11 +22,11 @@
 - Resolve `corpus_references` once per scan. `analyze` hoists `corpus_visibility` but
   `build_corpus_graph` and `build_file_graph` each walk the references themselves, so the
   resolution runs twice on every scan.
-- Fold `consumer_sets` (`hub.jl`) into the resolution above. It walks `corpus_references`
-  a third time to learn who references each definition in a hub file, data
+- Fold `consumer_sets` (`split_audience.jl`) into the resolution above. It walks
+  `corpus_references` again to learn who references each definition, data
   `build_file_graph` already sees while it builds each edge's names. Recording a
-  per-definition consumer index there would drop the walk; today it is paid only when a
-  hub fires.
+  per-definition consumer index there would drop the walk, which `:split_audience` pays on
+  every scan and `:hub` only when one fires.
 - Guard the file-graph build on a corpus too small to score. `analyze` builds it on every
   scan, and `:hub` ignores a corpus below `MIN_HUB_CORPUS_FILES`, so a single-file gate run
   pays for a graph no rule reads. The floors differ per rule, so the guard belongs once

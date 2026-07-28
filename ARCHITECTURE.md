@@ -446,27 +446,29 @@ Reporting:
   dependencies and scores `min(fan_in, fan_out)`, the conjunction that separates a crossing
   from a utility or an orchestrator; `cluster_hub` emits a `:hub` finding per file, carrying
   the absolute `HUB_BAND` and the percentile over the files that cross at all, skipping a
-  corpus below `MIN_HUB_CORPUS_FILES`. The proposal is the split: `consumer_sets` collects
-  who references each definition in a firing file, and `audience_reps` groups those
-  definitions by shared consumer through `components` and returns one representative each,
-  the extra locations on the finding. Consumer sets resolve only for files that fire.
-  Included after `cohesion.jl`, before `corpus.jl`, which calls it.
+  corpus below `MIN_HUB_CORPUS_FILES`. The proposal is the split, read through
+  `split_audience.jl`'s `consumer_sets` and `audience_components` with the hub's own
+  per-group consumer floor, `audience_reps` taking one representative per group as the
+  extra locations on the finding. Consumer sets resolve only for files that fire.
+  Included after `split_audience.jl`, whose grouping it calls, before `corpus.jl`, which
+  calls it.
 - `split_audience.jl` defines the outward dual of cohesion, the corpus-relational pass
-  that reads the resolved references without either graph. `consumer_files` collects,
-  per definition referenced from outside its file, the files that reference it;
-  `audience_groups` links two definitions whose consumer sets meet (star-linking each
-  consumer's definitions, so the components match pairwise linking at linear cost) and
-  reads the components through `components`, the same flood fill cohesion uses;
+  that reads the resolved references without either graph, and the audience machinery
+  `:hub` shares. `consumer_sets` collects, per definition referenced from outside its
+  file, the files that reference it; `audience_components` links two definitions whose
+  consumer sets meet (star-linking each consumer's definitions, so the components match
+  pairwise linking at linear cost) and reads the components through `components`, the
+  same flood fill cohesion uses, returning the qualifying groups earliest line first;
   `cluster_split_audience` emits a `:split_audience` finding per file through
   `scored_findings`, scored by the count of groups holding at least `MIN_AUDIENCE_DEFS`
   definitions, carrying the absolute `SPLIT_AUDIENCE_BAND` and the corpus percentile,
   with one representative definition per group as its locations. A file below
   `MIN_SPLIT_GROUPS` audiences names no split and is never reported, but stays in the
   scored population the percentile reads. Resolved consumers rather than declared
-  exports, since a language with no export marker exposes every top-level name. Reads
-  the whole corpus where `:hub` reads only a firing file, so the two share the grouping
-  through `audience_components`. Included after `hub.jl`, before `config.jl`, whose band
-  cascade names its band.
+  exports, since a language with no export marker exposes every top-level name. The
+  consumer floor is on the file's whole audience here and on each group in `:hub`, which
+  names the groups rather than counting them. Included after `cohesion.jl`, before
+  `config.jl`, whose band cascade names its band.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
