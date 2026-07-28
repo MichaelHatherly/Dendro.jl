@@ -825,6 +825,14 @@ violation the base already carried. That is the reading the rule wants rather th
 since the ratchet exists to catch worsening. `back_edge.jl` documents it and `test/back_edge.jl`
 pins it, so a later change that "fixes" the re-report argues with a failing test.
 
+The cap runs the other way. A diff adding a back-referencing file, taking a pair from
+`BACK_EDGE_EDGE_CAP` edges to one more, demotes every finding on that pair to `:warn` at
+once, so violations that gated in the base leave `errors` and the ratchet sees them go:
+widening the coupling can empty the gate for that pair rather than fill it. That follows
+from the cap being right, since none of those findings names a bounded edit any more, but
+it does mean this rule's gate contribution is not monotone in how bad the coupling is. The
+finding count is, and does not drop.
+
 ## Dependency cycles
 
 `cluster_dependency_cycles` (`dependency_cycle.jl`) reads the same graph for cycles, and the

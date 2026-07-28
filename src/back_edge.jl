@@ -48,8 +48,9 @@ const BACK_EDGE_MIN_MAJOR = 10
 # threshold, sixteen spread their minority side over one to four file edges and the
 # seventeenth over fourteen, CommonMark.jl's root against `writers`. Nothing lands between
 # five and thirteen, so the cap sits in a real gap rather than on a judgement call. The
-# pairs it excludes are the wide ones in the warn band, at 7, 8, 18, 56 and 135 edges,
-# which are tangles by any reading.
+# wide pairs in the warn band, at 7, 8, 18, 56 and 135 edges, corroborate which side of the
+# gap is which: the band already kept them out of the floor, and every one is a tangle by
+# any reading.
 const BACK_EDGE_EDGE_CAP = 5
 
 # The corpus needs this many bidirectional directory pairs before the dominance percentile
@@ -93,6 +94,14 @@ an edge's key grows as references accumulate across it, and adding one to an est
 back edge re-reports a violation the base already carried. That is the intended reading
 rather than a defect: the ratchet exists to catch worsening, and one more reference across
 a back edge is worsening.
+
+The cap runs the other way, and the asymmetry is worth stating plainly. A diff that adds a
+back-referencing file, taking a pair from `BACK_EDGE_EDGE_CAP` edges to one more, demotes
+every finding on that pair to `:warn` at once. Violations that gated in the base leave
+`errors` and the ratchet sees them go, so widening the coupling can empty the gate for that
+pair rather than fill it. The cap is still the right call, since none of those findings
+names a bounded edit any more, but it does mean this rule's gate contribution is not
+monotone in how bad the coupling is. Read the finding count, which does not drop.
 
 Known failure modes. Deliberate callbacks and plugin registration point backwards by
 design; the answer is `dendro-ignore: back_edge`, not a smarter model. A corpus whose

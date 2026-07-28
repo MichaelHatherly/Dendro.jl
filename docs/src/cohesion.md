@@ -162,6 +162,14 @@ follows in the gate. `errors(; since)` keys a finding by its location set, so ad
 reference to an established back edge re-reports it. That is the intended reading: the
 ratchet catches worsening, and another reference across a back edge is worsening.
 
+The width rule runs the other way, which is worth knowing before you rely on the gate
+here. A change that adds one more back-referencing file, taking a pair just past the
+width limit, demotes every finding on that pair at once: violations that were error
+severity before the change stop being so, and the gate for that pair empties rather than
+fills. That is the width rule working, since none of those findings names a single edit
+any more, but it does mean this metric's gate contribution does not only ever grow as the
+coupling gets worse. The finding count does.
+
 Deliberate callbacks and plugin registration point backwards by design. Accept one with
 `dendro-ignore: back_edge`.
 
