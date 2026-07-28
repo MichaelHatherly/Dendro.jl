@@ -646,23 +646,32 @@ function corpus_exports(files::Vector{ParsedFile})
     return exps
 end
 
-# The `from <module> import <names>` statements in one file, each as the module string
-# and the set of names it brings into scope. A name is paired to the statement whose
-# byte range contains it, the same geometric test the module regions use.
+# One `from <module> import <names>` statement: the module string its `@import.from` child
+# names, the names it brings into scope (empty for a whole-module import), and the 1-based
+# line it sits on, which is where a finding about the dependency it admits points.
+struct ImportStatement
+    module_name::String
+    names::Set{String}
+    line::Int
+end
+
+# The import statements in one file. A `@import.from` module and each `@import.name` is
+# paired to the statement whose byte range contains it, the same geometric test the module
+# regions use. A statement whose module string is missing declares nothing and is dropped.
 function file_imports(file::ParsedFile)
     query = imports_query_for(file)
-    query === nothing && return Tuple{String, Set{String}}[]
-    regions = Tuple{Int, Int}[]
+    query === nothing && return ImportStatement[]
+    regions = Tuple{Int, Int, Int}[]
     froms = TreeSitter.Node[]
     names = TreeSitter.Node[]
     for cap in TreeSitter.each_capture(file.tree, query, file.source)
         name = TreeSitter.capture_name(query, cap)
-        name == "import" && push!(regions, TreeSitter.byte_range(cap.node))
+        name == "import" && push!(regions, (TreeSitter.byte_range(cap.node)..., line_of(cap.node)))
         name == "import.from" && push!(froms, cap.node)
         name == "import.name" && push!(names, cap.node)
     end
-    imports = Tuple{String, Set{String}}[]
-    for (rf, rt) in regions
+    imports = ImportStatement[]
+    for (rf, rt, line) in regions
         module_name = ""
         for node in froms
             nf, nt = TreeSitter.byte_range(node)
@@ -677,20 +686,43 @@ function file_imports(file::ParsedFile)
             nf, nt = TreeSitter.byte_range(node)
             (rf <= nf && nt <= rt) && push!(imported, String(strip(TreeSitter.slice(file.source, node))))
         end
-        push!(imports, (module_name, imported))
+        push!(imports, ImportStatement(module_name, imported, line))
     end
     return imports
 end
 
-# The splice targets an imports query tags in one file (`@include.path`), each as the
-# path string with quotes and all, for the linkage resolver to map to a corpus path, and
-# the byte range of the capture, which locates the namespace the splice lands in.
+# One splice target an imports query tagged (`@include.path`): the `path` string with quotes
+# and all, for the linkage resolver to map to a corpus path, the byte range of the capture,
+# which locates the namespace the splice lands in, and the 1-based line of the call that
+# spliced it.
+struct SpliceTarget
+    path::String
+    from::Int
+    to::Int
+    line::Int
+end
+
+# The splice targets an imports query tags in one file.
 function include_targets(tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString)
-    targets = Tuple{String, Int, Int}[]
+    targets = SpliceTarget[]
     for cap in TreeSitter.each_capture(tree, query, source)
         TreeSitter.capture_name(query, cap) == "include.path" || continue
         from, to = TreeSitter.byte_range(cap.node)
-        push!(targets, (String(TreeSitter.slice(source, cap.node)), from, to))
+        push!(targets, SpliceTarget(String(TreeSitter.slice(source, cap.node)), from, to, line_of(cap.node)))
+    end
+    return targets
+end
+
+# Every linkage target one file declares, each as the string its language's resolver maps to
+# corpus paths and the 1-based line the statement sits on: an import statement's module and
+# a splice target alike. The file graph records these against the edge each admits, so a
+# finding about a dependency can name the statement to drop.
+function declared_targets(file::ParsedFile)
+    targets = Tuple{String, Int}[(st.module_name, st.line) for st in file_imports(file)]
+    query = imports_query_for(file)
+    query === nothing && return targets
+    for target in include_targets(file.tree, query, file.source)
+        push!(targets, (target.path, target.line))
     end
     return targets
 end
@@ -718,11 +750,11 @@ function splice_graph(files::Vector{ParsedFile}, corpus::Corpus)
         query = imports_query_for(f)
         query === nothing && continue
         regions = module_regions(f.tree, query, f.source)
-        for (target, from, to) in include_targets(f.tree, query, f.source)
-            for path in link.resolve_target(target, f.file, corpus)::Vector{String}
+        for target in include_targets(f.tree, query, f.source)
+            for path in link.resolve_target(target.path, f.file, corpus)::Vector{String}
                 j = get(index, path, 0)
                 j == 0 && continue
-                push!(edges[i], (j, module_path_of(regions, from, to)))
+                push!(edges[i], (j, module_path_of(regions, target.from, target.to)))
                 included[j] = true
                 parent[uf_find(parent, j)] = uf_find(parent, i)
             end
@@ -822,14 +854,14 @@ function import_visible(
         defs_by_file::Dict{String, Vector{Int}}, exports_by_file::Dict{String, Set{String}}
     )
     names = Dict{String, Vector{Int}}()
-    for (module_name, imported) in file_imports(f)
-        for path in link.resolve_target(module_name, f.file, corpus)::Vector{String}
+    for statement in file_imports(f)
+        for path in link.resolve_target(statement.module_name, f.file, corpus)::Vector{String}
             exports = get(() -> Set{String}(), exports_by_file, path)
             for di in get(defs_by_file, path, Int[])
                 d = table.defs[di]
                 d.file == f.file && continue
                 link.is_exported(d, exports)::Bool || continue
-                (isempty(imported) || d.name in imported) || continue
+                (isempty(statement.names) || d.name in statement.names) || continue
                 push!(get!(() -> String[], names, d.name), di)
             end
         end

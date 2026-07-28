@@ -174,39 +174,6 @@ function declared_edges(files::Vector{ParsedFile}, corpus::Corpus, nodes::Dict{S
     return out
 end
 
-# The linkage targets one file declares, each as the string its language's resolver maps to
-# corpus paths and the 1-based line the statement sits on. An `@import` region takes its own
-# line and its `@import.from` child names the module, pairing the two geometrically as
-# `file_imports` does; an `@include.path` capture is the splice target itself, on the line
-# of the call that spliced it.
-function declared_targets(file::ParsedFile)
-    query = imports_query_for(file)
-    query === nothing && return Tuple{String, Int}[]
-    regions = Tuple{Int, Int, Int}[]
-    froms = TreeSitter.Node[]
-    targets = Tuple{String, Int}[]
-    for cap in TreeSitter.each_capture(file.tree, query, file.source)
-        name = TreeSitter.capture_name(query, cap)
-        if name == "import"
-            from, to = TreeSitter.byte_range(cap.node)
-            push!(regions, (from, to, line_of(cap.node)))
-        elseif name == "import.from"
-            push!(froms, cap.node)
-        elseif name == "include.path"
-            push!(targets, (String(TreeSitter.slice(file.source, cap.node)), line_of(cap.node)))
-        end
-    end
-    for (from, to, line) in regions
-        for node in froms
-            nf, nt = TreeSitter.byte_range(node)
-            (from <= nf && nt <= to) || continue
-            push!(targets, (String(strip(TreeSitter.slice(file.source, node))), line))
-            break
-        end
-    end
-    return targets
-end
-
 """
     module_graph(fg, key=dirname) -> ModuleGraph
 
