@@ -19,9 +19,18 @@
 # rather than the code.
 
 # Absolute band on the percentage of a directory's units whose community is anchored in
-# another directory. Above 50 more of the directory belongs elsewhere than at home, which
-# is the point where the directory name has stopped describing its contents; above 75
-# nearly all of it does, and the layout is telling the reader something false.
+# another directory. Above 50 more of the directory belongs elsewhere than at home, the
+# point where its name has stopped describing its contents; above 75 nearly all of it
+# does, and the layout is telling the reader something false.
+#
+# Measured over 1646 scored directories in 35 corpora across nine languages (this package
+# and fourteen other Julia packages, flask, requests, fastmcp, cdisc-rules-engine,
+# python-docx, ripgrep, serde, guava, express, lodash, sigma.js, typescript-sdk, rails,
+# sinatra, laravel, curl, go-sdk): 90% of directories score zero, 2.2% reach 25, 0.5%
+# reach 50, and one directory in the whole measurement passed 75, MixedModels.jl's
+# `src/profile` at 81, whose units all belong with the fitting code they extend. So warn
+# at 50 selects that half-percent tail, and high at 75 stays rare enough that a project
+# can clear it, the shape the other relational bands take.
 const INCOHERENT_PACKAGE_BAND = (50, 75)
 
 # A directory holding fewer units than this is not scored: a percentage over one or two

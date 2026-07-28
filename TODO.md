@@ -40,3 +40,12 @@
 - `cluster_unnatural` reads its percentile over cross-entropies rather than over the
   scored value, so it uses neither `two_scores` nor `fires` while spelling out the same
   guard. Worth reconciling if the ranking key is ever unified.
+- A source file holding a NUL byte throws out of `parse_corpus`. `commons-lang` carries a
+  fuzzer test case with embedded NULs, and the whole scan dies on
+  `ArgumentError: embedded NULs are not allowed in C strings` rather than skipping the
+  file. A parse boundary should report the file and carry on.
+- The unit graph resolves no cross-file edges at all in several corpora. Every unit in
+  guava, express, lodash, laravel, sinatra, and typescript-sdk is its own community, so
+  `:misplaced`, `:scattered`, and `:incoherent_package` are silent on them, while Julia,
+  Python, C, and Go corpora couple normally. Worth finding out whether the linkage or the
+  reference capture is the gap, since three rules depend on it.

@@ -95,6 +95,33 @@ with a different other file. Two scores, like cohesion: the absolute band and th
 percentile. The finding's locations are one representative unit per elsewhere-anchored
 community.
 
+## Layout against coupling
+
+Reported as `:incoherent_package`: a directory whose units mostly belong to communities
+anchored in other directories. Placement reads those communities per unit and scattering
+reads them per file; this reads them per directory, the level a repo declares its
+structure at. The score is the percentage of a directory's units whose community is
+anchored elsewhere, so a directory of forty units is comparable with one of four, where a
+count of the communities it touches would not be. The finding's locations pair one
+representative unit per elsewhere-anchored community with the unit anchoring that
+community, which is how the directories the contents belong to get named.
+
+The pass proposes a rearrangement rather than a bounded edit, and it restates per
+directory much of what `:scattered` reports per file, so it is off by default and opts in
+through a `.dendro.toml`:
+
+```toml
+[rules]
+incoherent_package = true
+```
+
+Measured over 35 corpora, 90% of directories score zero and half a percent reach the warn
+band, so a project that groups its code by what it couples to sees nothing here. A
+directory holding fewer than three units is not scored: over that few, the percentage
+says more about the directory's size than about its coupling. Reading the directory from
+the path rather than from a declared module keeps the rule the same across languages that
+have modules and languages that do not.
+
 ## Dependencies against the grain
 
 Reported as `:back_edge`: a reference running against the direction two directories

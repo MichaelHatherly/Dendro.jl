@@ -219,6 +219,66 @@ end
     end
 end
 
+@testitem "the incoherent package pass is deterministic across thread counts" tags = [:parallel] begin
+    mktempdir() do dir
+        # Two packages of four files each, every file coupled to a different one of four
+        # other directories, so both packages belong wholly elsewhere. Thirteen files in
+        # total, more than PARALLEL_MIN.
+        homes = ("a", "b", "c", "d")
+        for h in homes
+            mkpath(joinpath(dir, h))
+            write(joinpath(dir, h, "$h.jl"), "$(h)y() = $(h)z()\n$(h)z() = $(h)y()\n")
+        end
+        for pkg in ("pkg", "lib")
+            mkpath(joinpath(dir, pkg))
+            for (i, h) in enumerate(homes)
+                write(joinpath(dir, pkg, "f$i.jl"), "$(pkg)$i() = $(h)y() + $(h)z()\n")
+            end
+        end
+        write(
+            joinpath(dir, "mod.jl"),
+            join("include(\"$h/$h.jl\")\n" for h in homes) *
+                join("include(\"$pkg/f$i.jl\")\n" for pkg in ("pkg", "lib") for i in 1:4)
+        )
+
+        # A byte-identical serialisation is the guarantee: neither the communities, the
+        # directory grouping, nor the representative pairs may follow a Dict's iteration
+        # order.
+        script = raw"""
+        import Dendro
+        function digest(fs)
+            io = IOBuffer()
+            for f in fs
+                print(io, f.metric, '|', f.value, '|', f.absolute, '|', f.percentile, '|')
+                for l in f.locations
+                    print(io, basename(dirname(l.file)), '/', basename(l.file), ':', l.line, ':', l.unit, ';')
+                end
+                print(io, '\n')
+            end
+            return String(take!(io))
+        end
+        files = Dendro.parse_corpus(Dendro.source_files(ARGS[1]))
+        table = Dendro.corpus_symbols(files)
+        graph = Dendro.build_corpus_graph(files, table)
+        fs = Dendro.cluster_incoherent_packages(files, graph)
+        print(digest(fs), '|', length(fs))
+        """
+
+        # `--startup-file=no` pins the captured stdout, as the analyze determinism item does.
+        proj = Base.active_project()
+        runs = [
+            read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -t$t -e $script $dir`, String)
+                for t in (1, 2, 4, 8)
+        ]
+
+        @test runs[1] == runs[2]
+        @test runs[1] == runs[3]
+        @test runs[1] == runs[4]
+        # Two packages are planted, so a match on an empty result is no proof.
+        @test parse(Int, split(runs[1], '|')[end]) == 2
+    end
+end
+
 @testitem "the dependency cycle pass is deterministic across thread counts" tags = [:parallel] begin
     mktempdir() do dir
         # A fourteen-file ring plus a disjoint pair, more than PARALLEL_MIN files in total.

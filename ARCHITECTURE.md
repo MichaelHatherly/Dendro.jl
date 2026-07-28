@@ -51,10 +51,11 @@ corpus files
 ```
 
 `analyze` hoists `corpus_visibility` and hands it to both graphs. Cohesion, placement,
-scattering, and reachability run over the unit graph; `:back_edge`, `:dependency_cycle`
-and `:hub` run over the one file graph, the substrate for the rules that read the corpus
-as files depending on files. It is built before the clone passes report, since they rank
-their clusters by distance in its directory contraction.
+scattering, reachability, and the opt-in `:incoherent_package` run over the unit graph;
+`:back_edge`, `:dependency_cycle` and `:hub` run over the one file graph, the substrate
+for the rules that read the corpus as files depending on files. It is built before the
+clone passes report, since they rank their clusters by distance in its directory
+contraction.
 
 The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus at
 collection time, inside `source_files`, before any parsing. Excluded files leave
@@ -419,7 +420,8 @@ Reporting:
   highest-degree members (`tangle_locations`). Included after `back_edge.jl`.
 - `placement.jl` defines cross-file placement, the fourth corpus-relational pass.
   `own_affinity` reads each unit's same-file coupling from `index.bindings`;
-  `community_plurality` finds the file each community is anchored in; `cluster_misplaced`
+  `community_plurality` finds the group each community is anchored in, the unit's file by
+  default and whatever its `key` names otherwise; `cluster_misplaced`
   emits a `:misplaced` finding per envious unit, scored by the share of its whole
   coupling landing in the one other file it leans toward most, carrying the absolute
   `MISPLACED_BAND` and the corpus percentile, gated by the community anchor. Included
@@ -431,6 +433,16 @@ Reporting:
   `:scattered` finding per file, scored by the count of distinct communities its units
   occupy whose plurality anchor is another file, carrying the absolute `SCATTERED_BAND`
   and the corpus percentile. Included after `placement.jl`.
+- `incoherent_package.jl` reads the same communities per directory, the opt-in pass
+  `analyze` gates on `cfg.rules`. `community_plurality` keyed by `dirname` anchors each
+  community in a directory, `community_anchor` picks the unit representing it there, and
+  `cluster_incoherent_packages` emits an `:incoherent_package` finding per directory,
+  scored by the percentage of its units whose community is anchored elsewhere against
+  `INCOHERENT_PACKAGE_BAND` and the corpus percentile. It reads the filtered graph, as
+  placement does, since community detection needs the cross-cutting cut. Its locations pair
+  a representative unit of the directory with the unit anchoring that unit's community,
+  which is how the finding names a directory without inventing a path. Included after
+  `scattered.jl`.
 - `unreferenced.jl` defines dead-code detection by reachability, not the corpus graph but
   a dedicated reference graph over `table.defs` that keeps non-unit targets and discounts
   no cross-cutting utility. `reach_graph` builds the forward edges (within-file bindings
@@ -494,13 +506,14 @@ Reporting:
   orchestrating corpus, baseline, per-file findings, the file graph and the
   `ModulePlacement` the clone passes rank against, exact and near duplicates, the
   config-gated reimplementation pass fed the clone findings it defers to,
-  naturalness, then the corpus graph and the three passes that read it, low cohesion,
-  cross-file placement, scattering, the audience pass over the symbol table, the three
-  passes over the file graph, and optional diff scoping). It is included after
+  naturalness, then the corpus graph and the passes that read it, low cohesion,
+  cross-file placement, scattering, the config-gated directory-layout pass, the audience
+  pass over the symbol table, the three passes over the file graph, and optional diff
+  scoping). It is included after
   `report.jl`, `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`,
   `file_graph.jl`, `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
-  `cohesion.jl`, `hub.jl`, and `split_audience.jl` so everything it calls is defined
-  first.
+  `incoherent_package.jl`, `cohesion.jl`, `hub.jl`, and `split_audience.jl` so everything
+  it calls is defined first.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, and the clone clusters into mermaid
   `flowchart` text, with `:file` and `:unit` granularity and active findings overlaid.
@@ -577,7 +590,12 @@ since findings carry absolute paths that `relpath` against `root` regardless of 
 over an ad-hoc NamedTuple.
 
 `Location` (`report.jl`). A code site: file, 1-based line, and enclosing unit
-name. A `Finding` carries one or more.
+name. A `Finding` carries one or more. A finding about something larger than a unit
+points at a representative real site rather than inventing one: `:scattered` names one
+unit per community, and `:incoherent_package`, whose subject is a directory, names a
+representative unit in it. Both `scope_clusters` and the gate's `fkey` resolve a
+location's path and line, so a synthetic path or line would throw in the ratchet and
+misbehave under `base`.
 
 `Finding` (`report.jl`). One reported issue over a set of `Location`s: the metric,
 the locations, the scalar value (the member count for `:duplicate`, the weakest

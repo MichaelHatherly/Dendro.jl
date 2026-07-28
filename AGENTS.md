@@ -174,6 +174,19 @@ absolute band here is weaker than any per-function one and the percentile carrie
 the weight, which is the two-score model earning its place rather than a defect to tune
 away.
 
+Layout is the same reading taken per directory. Placement asks where a unit belongs and
+scattering asks it per file; `:incoherent_package` asks it of the directory, the level a
+repo declares its structure at, scoring how much of a directory sits in communities
+anchored somewhere else. It reads the filtered unit graph, the one place among the
+architecture rules that does, because community detection needs the cross-cutting cut or
+a shared helper collapses the corpus into one community. A percentage, not a count, so a
+large directory is comparable with a small one. It proposes a rearrangement rather than a
+bounded edit and restates per directory much of what `:scattered` says per file, so it
+ships off by default and never reaches the gate floor. The overlap was measured before
+shipping it, two of 24 findings across 35 corpora landing in directories `:scattered`
+already covered file by file, and that measurement is the standard any future
+directory-level rule answers to.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment
