@@ -371,3 +371,30 @@ function discover_config(roots; explicit = nothing, use_files = true)
         scalars.reimpl_threshold, acc.languages,
     )
 end
+
+"""
+    override_config(config; cut=nothing, min_size=nothing, threshold=nothing, radius_factor=nothing) -> Config
+
+`config` with the thresholds a caller named directly applied over it, the last layer of
+the cascade [`discover_config`](@ref) resolves the earlier ones of. A `nothing` keeps the
+config's own value.
+
+[`analyze`](@ref) folds its keywords in through this, so a threshold is resolved once and
+every pass reads it from the same place rather than from a keyword the caller may or may
+not have set.
+"""
+function override_config(
+        config::Config; cut = nothing, min_size = nothing,
+        threshold = nothing, radius_factor = nothing
+    )
+    return Config(
+        cut === nothing ? config.cut : Float64(cut), config.bands,
+        config.unnatural, config.low_cohesion, config.scattered, config.split_audience,
+        config.misplaced, config.back_edge, config.dependency_cycle, config.hub,
+        config.incoherent_package, config.rules,
+        min_size === nothing ? config.min_size : Int(min_size),
+        threshold === nothing ? config.threshold : Float64(threshold),
+        radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
+        config.reimpl_threshold, config.languages,
+    )
+end

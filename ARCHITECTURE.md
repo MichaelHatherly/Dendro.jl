@@ -23,7 +23,7 @@ source text
   -> show / active / gate
 ```
 
-`analyze` (corpus.jl) is the one entrypoint. It resolves one or more paths to a corpus
+`analyze` (analyze.jl) is the one entrypoint. It resolves one or more paths to a corpus
 (every profile-resolvable file under each folder, or a named file), parses each once,
 builds a baseline from that corpus, runs the per-file path above against it for each
 file, and appends the corpus-relational findings: cross-file duplicates, naturalness
@@ -314,7 +314,7 @@ Reporting:
   `:high`-band findings, applied after `active`. With `since`, `base_floor_counts`
   archives the base revision and `ratchet` subtracts its floor by `fkey`, a
   line-independent location-set key. Built on plain `analyze`, it adds no branch to
-  the pipeline. `git_toplevel` (`corpus.jl`) resolves the repo root for both the
+  the pipeline. `git_toplevel` (`analyze.jl`) resolves the repo root for both the
   ratchet base and the spatial `base` scope.
 - `clones.jl` defines both duplicate passes over a shared subtree index. `subtrees`
   hashes every named subtree of a function bottom-up. Exact: `anchor_floor` and `cluster_duplicates`
@@ -327,7 +327,7 @@ Reporting:
   findings). It also defines the ranking the three clone passes share: `ModulePlacement`
   resolves a corpus file to its module node and that module to its community, and
   `rank_clones!` sorts a pass's findings by `clone_distance`. Included after
-  `file_graph.jl`, whose `ModuleGraph` the ranking reads, and before `corpus.jl`, which
+  `file_graph.jl`, whose `ModuleGraph` the ranking reads, and before `analyze.jl`, which
   calls it.
 - `reimplementation.jl` defines the opt-in vocabulary pass. `subtokens` splits an
   identifier into lowercase word fragments; `reimpl_units` fingerprints each
@@ -338,7 +338,7 @@ Reporting:
   `reimpl_score` is the IDF-weighted Jaccard; `cluster_reimplementations` applies
   the gates and emits `:reimplementation` findings. Serial throughout, the scoring
   is linear in term-set size over an already-pruned candidate list. Included after
-  `clones.jl`, whose `subtrees` it reuses, before `corpus.jl`, which calls it.
+  `clones.jl`, whose `subtrees` it reuses, before `analyze.jl`, which calls it.
 - `naturalness.jl` defines cross-entropy scoring, the other corpus-relational pass.
   `token_stream` reduces a function to leaf tokens (identifier and literal text
   abstracted, the grammar's anonymous tokens kept); `build_model` counts a per-language
@@ -350,7 +350,7 @@ Reporting:
   absolute cross-entropy band and the corpus percentile, skipping a language whose
   corpus is below `MIN_CORPUS_TOKENS`. A surprising function
   reads as unidiomatic, which correlates with bugs. Structure only, no symbol
-  resolution; within one language. Included before `corpus.jl`, which calls it.
+  resolution; within one language. Included before `analyze.jl`, which calls it.
 - `linkage.jl` defines corpus-wide symbol resolution. `corpus_symbols` builds a
   `SymbolTable` of every top-level definition across the corpus, each carrying its
   enclosing module path (from a per-language `@module` capture, so a nested module is
@@ -407,7 +407,7 @@ Reporting:
   file edges running the minority way, and `edge_reference_sites` resolves the references
   behind them back to `Location`s. `cluster_back_edge` emits a `:back_edge` finding per
   minority file edge, carrying the absolute `BACK_EDGE_BAND` and the percentile over the
-  bidirectional pairs. Included after `file_graph.jl`, before `corpus.jl` calls it.
+  bidirectional pairs. Included after `file_graph.jl`, before `analyze.jl` calls it.
 - `dependency_cycle.jl` defines the cycle rule over the same graph. `successors` reads the
   graph's sorted edge keys into adjacency lists, `strong_components` runs Tarjan over them
   (`TarjanState` carries the recursion's index, low-link, and stack), and per component
@@ -425,7 +425,7 @@ Reporting:
   emits a `:misplaced` finding per envious unit, scored by the share of its whole
   coupling landing in the one other file it leans toward most, carrying the absolute
   `MISPLACED_BAND` and the corpus percentile, gated by the community anchor. Included
-  before `corpus.jl`, which calls it.
+  before `analyze.jl`, which calls it.
 - `scattered.jl` defines cross-file scattering, the file-level companion to
   `:low_cohesion`. `cluster_scattered` reads `communities(adjacency(graph; within = true))`,
   the corpus graph with each file's within-file binding edges folded in, so `communities`
@@ -470,7 +470,7 @@ Reporting:
   `split_audience.jl`'s `consumer_sets` and `audience_components` with the hub's own
   per-group consumer floor, `audience_reps` taking one representative per group as the
   extra locations on the finding. Consumer sets resolve only for files that fire.
-  Included after `split_audience.jl`, whose grouping it calls, before `corpus.jl`, which
+  Included after `split_audience.jl`, whose grouping it calls, before `analyze.jl`, which
   calls it.
 - `split_audience.jl` defines the outward dual of cohesion, the corpus-relational pass
   that reads the resolved references without either graph, and the audience machinery
@@ -496,20 +496,27 @@ Reporting:
 - `config.jl` defines the immutable `Config` and the threshold cascade:
   `discover_config` (accumulate the user-global then repo `.dendro.toml` overrides and
   build one `Config`), `apply_toml!` (one layer, warning on unknown keys), and
-  `resolve_rules` (the config's rule set). Included before `corpus.jl`, which calls it.
-- `corpus.jl` defines the entrypoint and its machinery: `source_files` (recurse a
-  folder for analysable files, pruning ignored paths), `collect_corpus` (resolve a
-  list of roots to the unique set of file paths to parse, the shared front of
-  `analyze` and `mermaid`), `parse_corpus` (parse each path once and build its query
-  index into a `Vector{ParsedFile}`), `baseline_from`, `scope_clusters` (the shared
-  diff filter for the relational passes), and `analyze` (the public entrypoint,
-  orchestrating corpus, baseline, per-file findings, the file graph and the
-  `ModulePlacement` the clone passes rank against, exact and near duplicates, the
-  config-gated reimplementation pass fed the clone findings it defers to,
-  naturalness, then the corpus graph and the passes that read it, low cohesion,
-  cross-file placement, scattering, the config-gated directory-layout pass, the audience
-  pass over the symbol table, the three passes over the file graph, and optional diff
-  scoping). It is included after
+  `resolve_rules` (the config's rule set). Included before `analyze.jl`, which calls it.
+- `corpus.jl` gathers the corpus and nothing more: `source_files` (recurse a folder for
+  analysable files, pruning ignored paths), `collect_corpus` (resolve a list of roots to
+  the unique set of file paths to parse, the shared front of `analyze` and `mermaid`),
+  `parse_corpus` (parse each path once and build its query index into a
+  `Vector{ParsedFile}`), and `parse_chunk!` (one chunk of that fan-out, with its own
+  parser pool). Gathering and driving are separate files because one file holding both
+  has its units pulled toward every pass it calls as well as the parsing primitives,
+  which is what `:scattered` measures; splitting on that seam is the fix the rule asks
+  for rather than a band retune.
+- `analyze.jl` drives the passes over those records: `analyze` (the public entrypoint,
+  orchestrating corpus, baseline, per-file findings, then the clone and relational
+  passes), `resolve_corpus` (the `CorpusResolution` the passes past a single file share,
+  the symbol table, the visibility map, and both graphs, built once), `clone_clusters`
+  (exact and near duplicates plus the config-gated reimplementation pass, each ranked
+  against the `ModulePlacement`), `relational_clusters` (naturalness, low cohesion,
+  cross-file placement, scattering, unreferenced definitions, the audience pass over the
+  symbol table, the config-gated directory-layout pass, and the three passes over the
+  file graph, in the order a report reads them), and the diff scope, `Scope` and
+  `scope_clusters`, which live here because they are `analyze`'s framing of the question
+  rather than a property of the corpus. It is included after `corpus.jl` and after
   `report.jl`, `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`,
   `file_graph.jl`, `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
   `incoherent_package.jl`, `cohesion.jl`, `hub.jl`, and `split_audience.jl` so everything
@@ -582,7 +589,7 @@ file-to-module-node map and the community label per module node. `analyze` resol
 hands it to every clone pass, so a corpus with three of them pays for one community
 optimisation. `clone_distance` is the only reader.
 
-`Scope` (`corpus.jl`). The diff-scoped view's data: the git toplevel `root` and the
+`Scope` (`analyze.jl`). The diff-scoped view's data: the git toplevel `root` and the
 changed line ranges per file relative to it (`Dict{String, Vector{UnitRange{Int}}}`).
 `analyze` builds one from `base`'s diff, and `scope_clusters` filters cluster findings
 to it. Several scanned roots still resolve to one toplevel and one repo-wide diff,

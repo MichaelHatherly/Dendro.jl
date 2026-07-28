@@ -208,11 +208,11 @@ end
     table = Dendro.corpus_symbols(files)
     graph = Dendro.build_corpus_graph(files, table)
 
-    # corpus.jl calls `cluster_low_cohesion`, defined in cohesion.jl. The include splice
+    # analyze.jl calls `cluster_low_cohesion`, defined in cohesion.jl. The include splice
     # in Dendro.jl puts both files in one module, so the call resolves across files. The
     # realistic integration test for Julia splice resolution.
     found = any(graph.edges) do ((s, d), _)
-        endswith(graph.units[s].file, "corpus.jl") && endswith(graph.units[d].file, "cohesion.jl")
+        endswith(graph.units[s].file, "analyze.jl") && endswith(graph.units[d].file, "cohesion.jl")
     end
     @test found
 end
