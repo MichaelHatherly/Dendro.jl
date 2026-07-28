@@ -138,28 +138,6 @@ end
     @test [(l.file, l.unit) for l in findings[1].locations] == [("b.jl", "cut -> a.jl")]
 end
 
-@testitem "every relational band lands on its own Config field" tags = [:dependency_cycle, :config] begin
-    using Dendro: RELATIONAL_BANDS, discover_config
-
-    # `Config` is built positionally and every relational band has the same type, so a
-    # merge that reorders those arguments compiles, typechecks, and attaches each band to
-    # the wrong metric in silence. Giving each one a distinct value and asserting them
-    # individually is what makes that reorder fail loudly.
-    mktempdir() do dir
-        bands = Dict(name => (10 * i, 10 * i + 1) for (i, name) in enumerate(RELATIONAL_BANDS))
-        toml = joinpath(dir, "c.toml")
-        write(toml, string("[bands]\n", join("$name = [$(b[1]), $(b[2])]\n" for (name, b) in bands)))
-        cfg = mktempdir() do xdg
-            withenv("XDG_CONFIG_HOME" => xdg) do
-                discover_config([dir]; explicit = toml)
-            end
-        end
-        for name in RELATIONAL_BANDS
-            @test getfield(cfg, name) == bands[name]
-        end
-    end
-end
-
 @testitem "a config band reaches the cycle rule" tags = [:dependency_cycle] begin
     using Dendro: analyze, discover_config
 

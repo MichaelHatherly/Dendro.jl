@@ -60,6 +60,45 @@ end
     end
 end
 
+@testitem "each relational band reaches its own Config field" tags = [:config] begin
+    using Dendro: RELATIONAL_BANDS, discover_config
+
+    # `Config` is built positionally from a run of same-typed band arguments, so a
+    # reordered argument list would compile, typecheck, and silently attach each band to
+    # the wrong metric. A distinct value per field is what makes that fail loudly.
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        write(
+            f,
+            """
+            [bands]
+            unnatural = [11, 12]
+            low_cohesion = [21, 22]
+            scattered = [31, 32]
+            misplaced = [41, 42]
+            back_edge = [51, 52]
+            dependency_cycle = [61, 62]
+            """
+        )
+        cfg = mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                discover_config([dir]; explicit = f)
+            end
+        end
+        @test cfg.unnatural == (11, 12)
+        @test cfg.low_cohesion == (21, 22)
+        @test cfg.scattered == (31, 32)
+        @test cfg.misplaced == (41, 42)
+        @test cfg.back_edge == (51, 52)
+        @test cfg.dependency_cycle == (61, 62)
+        # A band added to `RELATIONAL_BANDS` and not to the lines above would leave its
+        # field unpinned, which is how this test came to miss one when two rules landed
+        # in parallel. Pin the set so the omission fails here rather than going unnoticed.
+        @test Set(RELATIONAL_BANDS) ==
+            Set([:unnatural, :low_cohesion, :scattered, :misplaced, :back_edge, :dependency_cycle])
+    end
+end
+
 @testitem "config sets clone-detection thresholds" setup = [Fixtures] tags = [:config] begin
     using Dendro: analyze
 

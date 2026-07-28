@@ -195,35 +195,3 @@ end
     # says nothing. File-to-file bidirectionality is ordinary and would be noise.
     @test isempty(Dendro.cluster_back_edge(files, fg, table; band = (85, 95)))
 end
-
-@testitem "each relational band reaches its own Config field" tags = [:config] begin
-    using Dendro: discover_config
-
-    # `Config` is built positionally from a run of same-typed band arguments, so a
-    # reordered argument list would compile, typecheck, and silently attach each band to
-    # the wrong metric. A distinct value per field is what makes that fail loudly.
-    mktempdir() do dir
-        f = joinpath(dir, "c.toml")
-        write(
-            f,
-            """
-            [bands]
-            unnatural = [11, 12]
-            low_cohesion = [21, 22]
-            scattered = [31, 32]
-            misplaced = [41, 42]
-            back_edge = [51, 52]
-            """
-        )
-        cfg = mktempdir() do xdg
-            withenv("XDG_CONFIG_HOME" => xdg) do
-                discover_config([dir]; explicit = f)
-            end
-        end
-        @test cfg.unnatural == (11, 12)
-        @test cfg.low_cohesion == (21, 22)
-        @test cfg.scattered == (31, 32)
-        @test cfg.misplaced == (41, 42)
-        @test cfg.back_edge == (51, 52)
-    end
-end
