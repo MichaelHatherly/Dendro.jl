@@ -43,6 +43,12 @@ const MIN_AUDIENCE_CONSUMERS = 2
 # A file with fewer units than this is too small to read as serving separate audiences.
 const MIN_AUDIENCE_UNITS = 3
 
+# The fewest audiences that name a split. One audience is the metric's own reading of a
+# file with nothing to separate, so it is never reported, however unusual it is for the
+# corpus. Such a file still counts toward the distribution: it is the population two
+# audiences are unusual against.
+const MIN_SPLIT_GROUPS = 2
+
 # The corpus needs this many scored files before the group-count percentile means
 # anything; under it only the absolute band fires, as cohesion does on a thin corpus.
 const MIN_AUDIENCE_FILES = 5
@@ -118,6 +124,10 @@ caller is not an audience. Each finding carries both scores, the absolute `band`
 count and the corpus percentile, fired when either trips. The locations are one
 representative definition per group, earliest line first, the split the finding proposes.
 
+A file serving one audience has nothing to separate, so it is never reported, whatever
+the corpus distribution says. It stays in the scored population, since it is what makes
+two audiences unusual or ordinary for a corpus.
+
 A file with fewer than `$MIN_AUDIENCE_UNITS` units is too small to read this way, and a
 file fewer than `$MIN_AUDIENCE_CONSUMERS` other files consume has one audience by
 construction and is left out of the scored population entirely, so the percentile compares
@@ -142,7 +152,6 @@ function cluster_split_audience(
         min_files::Integer = MIN_AUDIENCE_FILES,
         visible::Dict{String, Dict{String, Vector{Int}}} = corpus_visibility(files, table)
     )
-    findings = Finding[]
     consumers = consumer_files(files, table, visible)
     consumed = Dict{String, Vector{Int}}()
     for di in sort!(collect(keys(consumers)))
@@ -165,17 +174,8 @@ function cluster_split_audience(
         locations = Location[Location(f.file, table.defs[di].line, table.defs[di].name) for di in reps]
         push!(scored, (f, length(locations), locations))
     end
-    isempty(scored) && return findings
-
-    counts = sort([s[2] for s in scored])
-    enough = length(scored) >= min_files
-    for (f, count, locations) in scored
-        absolute = severity(count, band)
-        pct = enough ? searchsortedlast(counts, count) / length(counts) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
-        sup = is_suppressed(f.directives, locations[1].line, RELATIONAL.split_audience)
-        push!(findings, Finding(RELATIONAL.split_audience, locations, count, absolute, pct, :scalar, sup))
-    end
-    sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
-    return findings
+    return scored_findings(
+        RELATIONAL.split_audience, scored, band, cut, min_files;
+        min_reported = MIN_SPLIT_GROUPS
+    )
 end

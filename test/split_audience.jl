@@ -29,10 +29,31 @@ end
     y = Fixtures.parsedfile(:julia, "y1() = fc() + fd() + fe()\n"; file = "y.jl")
     files = [mod, f, x, y]
     table = Dendro.corpus_symbols(files)
-    hit = only(Dendro.cluster_split_audience(files, table; band = (1, 2)))
+    consumers = Dendro.consumer_files(files, table, Dendro.corpus_visibility(files, table))
+    defs = sort!(Int[di for di in keys(consumers) if table.defs[di].file == "f.jl"])
 
-    @test hit.value == 1
-    @test [(l.unit, l.line) for l in hit.locations] == [("fa", 1)]
+    @test length(Dendro.audience_groups(defs, consumers)) == 1
+    # One audience is nothing to split, so the pass stays silent whatever the band says.
+    @test isempty(Dendro.cluster_split_audience(files, table; band = (1, 2)))
+end
+
+@testitem ":split_audience stays silent on a corpus of single-audience files" setup = [Fixtures] tags = [:split_audience] begin
+    # Every provider serves one audience, so every scored file sits at the top of the
+    # corpus distribution. The percentile must not turn a uniform corpus into six
+    # findings that name no split.
+    files = Dendro.ParsedFile[]
+    includes = String[]
+    for i in 1:6
+        push!(files, Fixtures.parsedfile(:julia, "pa$i() = 1\npb$i() = 2\npc$i() = 3\n"; file = "p$i.jl"))
+        push!(files, Fixtures.parsedfile(:julia, "x$i() = pa$i() + pb$i()\n"; file = "x$i.jl"))
+        push!(files, Fixtures.parsedfile(:julia, "y$i() = pb$i() + pc$i()\n"; file = "y$i.jl"))
+        append!(includes, ["include(\"p$i.jl\")", "include(\"x$i.jl\")", "include(\"y$i.jl\")"])
+    end
+    pushfirst!(files, Fixtures.parsedfile(:julia, join(includes, "\n") * "\n"; file = "mod.jl"))
+    table = Dendro.corpus_symbols(files)
+
+    # A cut of 0 puts every scored file at or above the percentile, the worst case.
+    @test isempty(Dendro.cluster_split_audience(files, table; cut = 0.0))
 end
 
 @testitem ":split_audience reads a language with no export marker the same way" setup = [Fixtures] tags = [:split_audience] begin

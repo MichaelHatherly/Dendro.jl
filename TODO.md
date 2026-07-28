@@ -31,7 +31,10 @@
   scan, and `:hub` ignores a corpus below `MIN_HUB_CORPUS_FILES`, so a single-file gate run
   pays for a graph no rule reads. The floors differ per rule, so the guard belongs once
   beside the shared build rather than in each pass.
-- The two-score emission tail (severity, percentile, suppression, `push!`) is written out
-  once per file-level relational pass, in `cluster_low_cohesion`, `cluster_scattered`,
-  `cluster_misplaced`, `cluster_split_audience`, and the file-graph rules. One helper
-  taking the scored vector and the metric name would carry the ones that share the shape.
+- The two-score emission tail still stands on its own in `cluster_misplaced` and the three
+  file-graph rules. `scored_findings` carries the file-level shape; those four score
+  something other than a file, so they share the band-and-percentile reading rather than
+  the whole tail.
+- `cluster_misplaced` does not use `scored_findings`: it keys by unit rather than file,
+  looks its directives up in a per-file dict, and reports a second location for the
+  suggested home. Widening the helper to cover it would carry those three differences.

@@ -40,11 +40,10 @@ function cluster_scattered(
         band::Tuple{Int, Int} = SCATTERED_BAND, cut::Real = 0.95,
         min_files::Integer = MIN_SCATTERED_FILES
     )
-    findings = Finding[]
     comm = communities(adjacency(graph; within = true))
     plur = community_plurality(graph, comm)
 
-    scored = Tuple{ParsedFile, Int, Vector{Int}}[]
+    scored = Tuple{ParsedFile, Int, Vector{Location}}[]
     for f in files
         scopes_query_for(f) === nothing && continue
         units = functions(f.index)
@@ -61,20 +60,8 @@ function cluster_scattered(
         end
         isempty(reps) && continue
         nodes = sort!(collect(values(reps)); by = nd -> graph.units[nd].line)
-        push!(scored, (f, length(nodes), nodes))
+        locations = Location[Location(f.file, graph.units[nd].line, graph.units[nd].name) for nd in nodes]
+        push!(scored, (f, length(locations), locations))
     end
-    isempty(scored) && return findings
-
-    counts = sort([s[2] for s in scored])
-    enough = length(scored) >= min_files
-    for (f, score, nodes) in scored
-        absolute = severity(score, band)
-        pct = enough ? searchsortedlast(counts, score) / length(counts) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
-        locations = [Location(f.file, graph.units[nd].line, graph.units[nd].name) for nd in nodes]
-        sup = is_suppressed(f.directives, locations[1].line, RELATIONAL.scattered)
-        push!(findings, Finding(RELATIONAL.scattered, locations, score, absolute, pct, :scalar, sup))
-    end
-    sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
-    return findings
+    return scored_findings(RELATIONAL.scattered, scored, band, cut, min_files)
 end

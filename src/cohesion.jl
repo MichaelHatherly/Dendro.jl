@@ -55,28 +55,16 @@ function cluster_low_cohesion(
         files::Vector{ParsedFile}, graph::CorpusGraph; band::Tuple{Int, Int} = LOW_COHESION_BAND,
         cut::Real = 0.95, min_files::Integer = MIN_COHESION_FILES
     )
-    findings = Finding[]
     adj = adjacency(graph; within = true)
-    scored = Tuple{ParsedFile, Int, Vector{Int}}[]
+    scored = Tuple{ParsedFile, Int, Vector{Location}}[]
     for f in files
         scopes_query_for(f) === nothing && continue
         n = length(functions(f.index))
         n < MIN_COHESION_UNITS && continue
         nodes = Int[graph.unit_index[(f.file, u)] for u in 1:n]
         reps = component_reps(graph, components(adj, nodes))
-        push!(scored, (f, length(reps), reps))
+        locations = Location[Location(f.file, graph.units[nd].line, graph.units[nd].name) for nd in reps]
+        push!(scored, (f, length(locations), locations))
     end
-    isempty(scored) && return findings
-    counts = sort([s[2] for s in scored])
-    enough = length(scored) >= min_files
-    for (f, count, reps) in scored
-        absolute = severity(count, band)
-        pct = enough ? searchsortedlast(counts, count) / length(counts) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
-        locations = [Location(f.file, graph.units[nd].line, graph.units[nd].name) for nd in reps]
-        sup = is_suppressed(f.directives, graph.units[reps[1]].line, RELATIONAL.low_cohesion)
-        push!(findings, Finding(RELATIONAL.low_cohesion, locations, count, absolute, pct, :scalar, sup))
-    end
-    sort!(findings; by = f -> (-something(f.value), first(f.locations).file, first(f.locations).line))
-    return findings
+    return scored_findings(RELATIONAL.low_cohesion, scored, band, cut, min_files)
 end

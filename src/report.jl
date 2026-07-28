@@ -156,6 +156,39 @@ function findings_for(scan::Scan)
 end
 
 """
+    scored_findings(metric, scored, band, cut, min_files; min_reported=1) -> Vector{Finding}
+
+One `metric` finding per entry of `scored`, the emission the file-level corpus passes
+share. Each entry pairs a file with its value and the locations to report it at, the
+first of which is the site a `dendro-ignore` covers. A finding is emitted when the value
+breaches the absolute `band` or lands at or above the `cut` percentile of the scored
+values, the two-score model; the percentile is read only once the corpus holds
+`min_files` scored entries, and is `nothing` below that.
+
+`min_reported` is the smallest value that names something to act on. Entries below it
+stay in the scored population, so they count toward the percentile of the entries above,
+but never emit. Findings come back sorted by descending value, then file and line.
+"""
+function scored_findings(
+        metric::Symbol, scored::Vector{Tuple{ParsedFile, Int, Vector{Location}}},
+        band::Tuple{Int, Int}, cut::Real, min_files::Integer; min_reported::Int = 1
+    )
+    findings = Finding[]
+    counts = sort([s[2] for s in scored])
+    enough = length(scored) >= min_files
+    for (f, value, locations) in scored
+        value >= min_reported || continue
+        absolute = severity(value, band)
+        pct = enough ? searchsortedlast(counts, value) / length(counts) : nothing
+        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
+        sup = is_suppressed(f.directives, locations[1].line, metric)
+        push!(findings, Finding(metric, locations, value, absolute, pct, :scalar, sup))
+    end
+    sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
+    return findings
+end
+
+"""
     Findings <: AbstractVector{Finding}
 
 The result of [`analyze`](@ref): the findings it produced, printed as a report.
