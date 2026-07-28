@@ -15,3 +15,10 @@
   suite, one per tree, and multiplies the reported pass count. Either exclude nested
   worktrees in the `@run_package_tests` filter or document that the suite must run from
   a clean export.
+- Document `:dependency_cycle` in `docs/src`. The metric name belongs in the
+  `suppression.md` list a directive may name, the rule wants a section beside `:scattered`
+  in `cohesion.md`, and `languages.md` should say it needs a linkage query like the other
+  cross-file passes.
+- Resolve `corpus_references` once per scan. `analyze` hoists `corpus_visibility` but
+  `build_corpus_graph` and `build_file_graph` each walk the references themselves, so the
+  resolution runs twice on every scan.
