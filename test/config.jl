@@ -80,6 +80,7 @@ end
             back_edge = [51, 52]
             dependency_cycle = [61, 62]
             hub = [71, 72]
+            incoherent_package = [81, 82]
             """
         )
         cfg = mktempdir() do xdg
@@ -95,6 +96,7 @@ end
         @test cfg.back_edge == (51, 52)
         @test cfg.dependency_cycle == (61, 62)
         @test cfg.hub == (71, 72)
+        @test cfg.incoherent_package == (81, 82)
         # A band added to `RELATIONAL_BANDS` and not to the lines above would leave its
         # field unpinned, which is how this test came to miss one when two rules landed
         # in parallel. Pin the set so the omission fails here rather than going unnoticed.
@@ -102,7 +104,7 @@ end
             Set(
             [
                 :unnatural, :low_cohesion, :scattered, :split_audience, :misplaced,
-                :back_edge, :dependency_cycle, :hub,
+                :back_edge, :dependency_cycle, :hub, :incoherent_package,
             ]
         )
     end

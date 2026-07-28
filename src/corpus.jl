@@ -260,6 +260,17 @@ function analyze(
         findings,
         scope_clusters(cluster_split_audience(files, table; cut = ecut, band = cfg.split_audience, visible), scope)
     )
+    # Opt-in corpus pass, gated here rather than resolved into the rule set. It reads the
+    # same filtered graph as placement: a directory-level finding proposes a rearrangement
+    # rather than an edit, so it stays out of the default set and out of the gate floor.
+    if get(cfg.rules, RELATIONAL.incoherent_package, false)
+        append!(
+            findings,
+            scope_clusters(
+                cluster_incoherent_packages(files, graph; cut = ecut, band = cfg.incoherent_package), scope
+            )
+        )
+    end
     append!(findings, scope_clusters(cluster_back_edge(files, fg, table; cut = ecut, band = cfg.back_edge, visible), scope))
     append!(
         findings,
