@@ -194,3 +194,15 @@ end
     @test issorted(edge.names)
     @test edge.weight == 14
 end
+
+@testitem "a single-file corpus builds a file graph with no edges" setup = [Fixtures] tags = [:file_graph] begin
+    # An edge joins two files, so a corpus of one carries none: its own definitions sit
+    # outside its visibility map and a self-edge is dropped anyway. The node is still there,
+    # since every corpus file is one, and the build stops before the reference walk.
+    a = Fixtures.parsedfile(:julia, "helper() = 1\nf() = helper()\n"; file = "a.jl")
+    fg = Dendro.build_file_graph([a], Dendro.corpus_symbols([a]), Dendro.Corpus([a]))
+
+    @test fg.files == ["a.jl"]
+    @test fg.first_line == [1]
+    @test isempty(fg.edges)
+end

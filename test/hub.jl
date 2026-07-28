@@ -20,9 +20,9 @@
 
     table = Dendro.corpus_symbols(files)
     corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
-    visible = Dendro.corpus_visibility(files, table)
-    fg = Dendro.build_file_graph(files, table, corpus; visible)
-    findings = Dendro.cluster_hub(files, fg, table; visible, band = (2, 3), min_files = 5)
+    linkage = Dendro.resolve_linkage(files, table)
+    fg = Dendro.build_file_graph(files, table, corpus; linkage)
+    findings = Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5)
 
     @test length(findings) == 1
     f = only(findings)
@@ -59,9 +59,9 @@ end
 
     table = Dendro.corpus_symbols(files)
     corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
-    visible = Dendro.corpus_visibility(files, table)
-    fg = Dendro.build_file_graph(files, table, corpus; visible)
-    f = only(Dendro.cluster_hub(files, fg, table; visible, band = (2, 3), min_files = 5))
+    linkage = Dendro.resolve_linkage(files, table)
+    fg = Dendro.build_file_graph(files, table, corpus; linkage)
+    f = only(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
 
     @test f.value == 3
     @test [(l.file, l.line, l.unit) for l in f.locations] == [("hub.jl", 1, "")]
@@ -86,9 +86,9 @@ end
 
     table = Dendro.corpus_symbols(files)
     corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
-    visible = Dendro.corpus_visibility(files, table)
-    fg = Dendro.build_file_graph(files, table, corpus; visible)
-    f = only(Dendro.cluster_hub(files, fg, table; visible, band = (2, 3), min_files = 5))
+    linkage = Dendro.resolve_linkage(files, table)
+    fg = Dendro.build_file_graph(files, table, corpus; linkage)
+    f = only(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
 
     @test f.value == 3
     @test [(l.file, l.line, l.unit) for l in f.locations] == [("hub.jl", 1, "")]
@@ -111,13 +111,13 @@ end
 
     table = Dendro.corpus_symbols(files)
     corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
-    visible = Dendro.corpus_visibility(files, table)
-    fg = Dendro.build_file_graph(files, table, corpus; visible)
+    linkage = Dendro.resolve_linkage(files, table)
+    fg = Dendro.build_file_graph(files, table, corpus; linkage)
 
     @test length(fg.files) < Dendro.MIN_HUB_CORPUS_FILES
-    @test isempty(Dendro.cluster_hub(files, fg, table; visible, band = (2, 3)))
+    @test isempty(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3)))
     # The same corpus scores once the floor is lowered, so the floor is what silenced it.
-    @test !isempty(Dendro.cluster_hub(files, fg, table; visible, band = (2, 3), min_files = 5))
+    @test !isempty(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
 end
 
 @testitem ":hub re-reports through the ratchet when its audiences change" setup = [Fixtures] tags = [:hub] begin
@@ -181,9 +181,38 @@ end
 
     table = Dendro.corpus_symbols(files)
     corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
-    visible = Dendro.corpus_visibility(files, table)
-    fg = Dendro.build_file_graph(files, table, corpus; visible)
-    hit = only(Dendro.cluster_hub(files, fg, table; visible, band = (2, 3), min_files = 5))
+    linkage = Dendro.resolve_linkage(files, table)
+    fg = Dendro.build_file_graph(files, table, corpus; linkage)
+    hit = only(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
 
     @test hit.suppressed
+end
+
+@testitem ":hub labels each audience representative with the files consuming it" setup = [Fixtures] tags = [:hub] begin
+    # The proposed split is only actionable if the finding names who each half serves. The
+    # anchor is the file itself, so it carries no label; each representative carries its
+    # audience's consumers, the same evidence `:split_audience` attaches.
+    sources = [
+        "hub.jl" => "ha(x) = d1(x)\nhb(x) = d2(x)\nhc(x) = d3(x)\nhd(x) = d1(x) + d2(x)\n",
+        "util.jl" => "u1(x) = x\n",
+        "orch.jl" => "o1(x) = d1(x) + d2(x) + d3(x) + u1(x)\n",
+        "dep1.jl" => "d1(x) = x\n",
+        "dep2.jl" => "d2(x) = x\n",
+        "dep3.jl" => "d3(x) = x\n",
+        "x1.jl" => "x1a(x) = ha(x) + hb(x) + u1(x)\n",
+        "x2.jl" => "x2a(x) = ha(x) + hb(x) + u1(x)\n",
+        "y1.jl" => "y1a(x) = hc(x) + hd(x) + u1(x)\n",
+        "y2.jl" => "y2a(x) = hc(x) + hd(x) + u1(x)\n",
+    ]
+    mod = "mod.jl" => join("include(\"$p\")\n" for (p, _) in sources)
+    files = [Fixtures.parsedfile(:julia, s; file = p) for (p, s) in [mod; sources]]
+
+    table = Dendro.corpus_symbols(files)
+    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    linkage = Dendro.resolve_linkage(files, table)
+    fg = Dendro.build_file_graph(files, table, corpus; linkage)
+    f = only(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
+
+    @test [(l.unit, l.label) for l in f.locations] ==
+        [("", ""), ("ha", "used by x1.jl, x2.jl"), ("hc", "used by y1.jl, y2.jl")]
 end

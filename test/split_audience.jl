@@ -29,8 +29,7 @@ end
     y = Fixtures.parsedfile(:julia, "y1() = fc() + fd() + fe()\n"; file = "y.jl")
     files = [mod, f, x, y]
     table = Dendro.corpus_symbols(files)
-    visible = Dendro.corpus_visibility(files, table)
-    consumed = Dendro.consumer_sets(files, table, visible, Set(["f.jl"]))
+    consumed = Dendro.resolve_linkage(files, table).consumers
 
     @test length(Dendro.audience_components(consumed["f.jl"], table)) == 1
     # One audience is nothing to split, so the pass stays silent whatever the band says.
@@ -138,4 +137,19 @@ end
         @test hit.value == 2
         @test basename(first(hit.locations).file) == "f.jl"
     end
+end
+
+@testitem ":split_audience labels each group with the files consuming it" setup = [Fixtures] tags = [:split_audience] begin
+    # The score counts a file's audiences; what names the split is who each one serves, so
+    # every representative carries its consumers. Without it the finding says "this file has
+    # two audiences" and leaves working out which two to the reader.
+    mod = Fixtures.parsedfile(:julia, "include(\"f.jl\")\ninclude(\"x.jl\")\ninclude(\"y.jl\")\n"; file = "mod.jl")
+    f = Fixtures.parsedfile(:julia, "fa() = 1\nfb() = 2\nfc() = 3\nfd() = 4\n"; file = "f.jl")
+    x = Fixtures.parsedfile(:julia, "x1() = fa() + fb()\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "y1() = fc() + fd()\n"; file = "y.jl")
+    files = [mod, f, x, y]
+    hit = only(Dendro.cluster_split_audience(files, Dendro.corpus_symbols(files); band = (2, 3)))
+
+    @test [(l.unit, l.label) for l in hit.locations] ==
+        [("fa", "used by x.jl"), ("fc", "used by y.jl")]
 end

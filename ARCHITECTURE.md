@@ -38,19 +38,25 @@ setup, for a single file as much as a folder: a file's own functions are the
 distribution it is scored against.
 
 Above that per-file path sits the corpus resolution the relational passes share.
-`corpus_symbols` indexes every top-level definition, `corpus_visibility` works out
-what each file can see across the boundary, and each graph over the corpus reads
-that one map.
+`corpus_symbols` indexes every top-level definition and `resolve_linkage` resolves the
+corpus against it once, yielding the four readings six passes want: what each file can
+see across the boundary, the references that visibility admits, who consumes each
+definition, and each file's public surface.
 
 ```
 corpus files
   -> corpus_symbols          top-level definitions across the corpus
-  -> corpus_visibility       each file's cross-file candidates, by name
+  -> resolve_linkage         one ResolvedLinkage: visible, references,
+                             consumers, surface
        -> build_corpus_graph   units, cross-cutting references dropped
        -> build_file_graph     files, every resolved reference kept
 ```
 
-`analyze` hoists `corpus_visibility` and hands it to both graphs. Cohesion, placement,
+`analyze` hoists that one `ResolvedLinkage` and hands it to both graphs and to every pass
+that reads references, reachability, the audience pass, the hub proposal, and the back-edge
+reference sites among them, so a scan resolves the corpus once rather than six times. It
+travels through the keyword slot the bare visibility map used to occupy, so no pass grew a
+parameter to take it. Cohesion, placement,
 scattering, reachability, and the opt-in `:incoherent_package` run over the unit graph;
 `:back_edge`, `:dependency_cycle` and `:hub` run over the one file graph, the substrate
 for the rules that read the corpus as files depending on files. It is built before the
@@ -351,29 +357,41 @@ Reporting:
   corpus is below `MIN_CORPUS_TOKENS`. A surprising function
   reads as unidiomatic, which correlates with bugs. Structure only, no symbol
   resolution; within one language. Included before `analyze.jl`, which calls it.
-- `linkage.jl` defines corpus-wide symbol resolution. `corpus_symbols` builds a
-  `SymbolTable` of every top-level definition across the corpus, each carrying its
-  enclosing module path (from a per-language `@module` capture, so a nested module is
-  distinguished from the file root); `unbound_references` collects the references the
-  per-file resolver left unbound. `Linkage`/`LINKAGES` carry how a
-  language lets one file see another's names: `splice_resolve` maps a Julia `include`
-  to a corpus file, `visible_defs` groups files into shared namespaces by an inclusion
-  union-find and returns each file's cross-file candidates, and `corpus_references` is the
-  shared resolver yielding every cross-file reference with its candidates (the corpus graph
-  and the reachability pass both read it). `corpus_visibility` exposes that visibility map
-  so a caller reading both it and the references resolves the corpus once, and
-  `definition_reach` counts, per definition, the units that can see it, the denominator the
-  graph's cross-cutting cut measures breadth against. The `:package` model (Java) unions import
-  visibility with `package_visible`, the same-directory types a package resolves without an
-  import, so a package-private class reference resolves. `Linkage.is_public` and the
-  per-language predicates (`export_public`, `underscore_public`, `capitalized_public`,
-  `modifier_public`) decide public-API membership, and `public_surface` gives each file its
-  export set, the file's own for an import model, the inclusion component's for a splice.
-  The convention predicates read a `CorpusDef`'s name; `modifier_public` reads its
-  `visibility`, set by `def_visibility` from a grammar-specific modifier (Rust `pub`, a
-  C/C++ `static` function, a Ruby/Java/PHP `private` method, a package-private Java class).
-  Reuses the `bindings.jl` capture walk and the `clones.jl` union-find. Included after
-  `naturalness.jl`.
+- `linkage.jl` is the registry side of cross-file resolution: how each language lets one
+  file see another's names, and the readings of a language's linkage query those rules are
+  written over. `Linkage`/`LINKAGES` carry the model per language, `:splice`, `:import`,
+  `:directory`, or `:package`, with `resolve_target` mapping a declared target to corpus
+  paths (`splice_resolve` for a Julia `include`, `js_resolve` for an ECMAScript specifier,
+  which also tries a `.js` specifier's TypeScript source, and so on). `Linkage.is_public`
+  and the per-language predicates (`export_public`, `underscore_public`,
+  `capitalized_public`, `modifier_public`) decide public-API membership; the convention
+  predicates read a `CorpusDef`'s name, `modifier_public` reads its `visibility`, set by
+  `def_visibility` from a grammar-specific modifier (Rust `pub`, a C/C++ `static` function,
+  a Ruby/Java/PHP `private` method, a package-private Java class). It also holds what each
+  model makes visible for one file, `file_visible` over `member_visible`, `import_visible`,
+  `package_visible` and `merge_visible`, where the `:package` model (Java) unions import
+  visibility with the same-directory types a package resolves without an import, so a
+  package-private class reference resolves. The query readings live here too: `file_exports`,
+  `file_imports`, `include_targets`, `declared_targets`, and `module_regions`, along with
+  `file_symbols!`, what one language declares as a top-level symbol. `CorpusDef` and
+  `SymbolTable` are defined here rather than beside the pass that builds them, because every
+  per-language predicate is written over one. `Corpus` and the POSIX path helpers back the
+  resolvers. One independent rule per language with nothing to connect them, so the file
+  carries `dendro-ignore-file: low_cohesion` by design. Included after `naturalness.jl`.
+- `resolution.jl` resolves the corpus against that registry, the layer every pass past a
+  single file reads. `corpus_symbols` fans `file_symbols!` over the corpus into one
+  `SymbolTable`; `unbound_references` collects the references the per-file resolver left
+  unbound, and `CorpusReference` pairs one with the candidates its name reaches.
+  `splice_graph` groups files into shared namespaces by an inclusion union-find,
+  `DeclaredLinkage` holds it beside each file's export set so one walk serves both readings,
+  `visible_defs` returns each file's cross-file candidates over a shared `VisibilityIndex`,
+  and `corpus_references` yields every resolved cross-file reference. Three per-definition
+  summaries sit on top: `consumer_sets` (who references each consumed definition, read by
+  `:split_audience` and `:hub`) and `public_surface` (each file's export gate, the file's own
+  for an import model, the inclusion component's for a splice). `ResolvedLinkage` and
+  `resolve_linkage` bundle the visibility, the references, the consumers and the surface into
+  the one value a scan resolves once and every pass takes. Reuses the `bindings.jl` capture
+  walk and the `clones.jl` union-find. Included after `linkage.jl`.
 - `corpus_graph.jl` defines the corpus unit graph, the one structure the three placement
   passes read. `build_corpus_graph` resolves every unbound reference against the symbol
   table through `visible_defs`, recording weighted unit-to-unit `edges` and per-unit file
@@ -388,7 +406,8 @@ Reporting:
   `components` flood-fills the within view restricted to one file's nodes for cohesion.
   Both denominators are local by design: a unit's placement verdict follows from the code
   that can couple to it, never from how much unrelated source shares the corpus.
-  Included after `linkage.jl`.
+  `definition_reach` lives here rather than with the rest of the resolution, since the
+  ubiquity cut is its only reader. Included after `resolution.jl`.
 - `file_graph.jl` defines the corpus file graph, the same resolution read one level up.
   `build_file_graph` walks `corpus_references` and records a weighted `FileEdge` per
   ordered file pair, carrying the definition names behind it (`top_names`, capped at
@@ -399,8 +418,10 @@ Reporting:
   `module_graph` contracts the graph by a grouping function, `dirname` by default, summing
   weights and dropping within-group edges, and `module_communities` runs `corpus_graph.jl`'s
   modularity optimisation over the undirected reading of that contraction. It reads a
-  prebuilt `visible` from `corpus_visibility`, the same map `build_corpus_graph` accepts.
-  Included after `corpus_graph.jl`, before `clones.jl` ranks against it.
+  prebuilt `ResolvedLinkage` from `resolve_linkage`, the same value `build_corpus_graph`
+  accepts, and returns its nodes without walking anything when the corpus holds one file,
+  since an edge joins two. Included after `corpus_graph.jl`, before `clones.jl` ranks
+  against it.
 - `back_edge.jl` defines the first rule over the file graph. `dominated_pairs` reads the
   directory-contracted graph for each pair coupled both ways whose majority direction
   clears `BACK_EDGE_MIN_MAJOR`, scoring the dominance percent; `minority_edges` names the
@@ -467,9 +488,10 @@ Reporting:
   from a utility or an orchestrator; `cluster_hub` emits a `:hub` finding per file, carrying
   the absolute `HUB_BAND` and the percentile over the files that cross at all, skipping a
   corpus below `MIN_HUB_CORPUS_FILES`. The proposal is the split, read through
-  `split_audience.jl`'s `consumer_sets` and `audience_components` with the hub's own
-  per-group consumer floor, `audience_reps` taking one representative per group as the
-  extra locations on the finding. Consumer sets resolve only for files that fire.
+  `resolution.jl`'s `consumer_sets` and `split_audience.jl`'s `audience_components` with the
+  hub's own per-group consumer floor, `audience_reps` taking one representative per group as
+  the extra locations on the finding. The consumer index comes off the shared
+  `ResolvedLinkage`, which `:split_audience` reads over every file anyway.
   Included after `split_audience.jl`, whose grouping it calls, before `analyze.jl`, which
   calls it.
 - `split_audience.jl` defines the outward dual of cohesion, the corpus-relational pass
@@ -502,14 +524,20 @@ Reporting:
   the unique set of file paths to parse, the shared front of `analyze` and `mermaid`),
   `parse_corpus` (parse each path once and build its query index into a
   `Vector{ParsedFile}`), and `parse_chunk!` (one chunk of that fan-out, with its own
-  parser pool). Gathering and driving are separate files because one file holding both
+  parser pool). Parsing is the one boundary that turns a file away: tree-sitter takes the
+  source as a C string, so a file carrying an embedded NUL cannot be parsed at all.
+  `parse_chunk!` warns with the path and leaves the slot unassigned, and `parse_corpus`
+  compacts in index order, so one such file, a fuzzer test case checked in beside real
+  source, is reported rather than taking the scan down. Gathering and driving are separate
+  files because one file holding both
   has its units pulled toward every pass it calls as well as the parsing primitives,
   which is what `:scattered` measures; splitting on that seam is the fix the rule asks
   for rather than a band retune.
 - `analyze.jl` drives the passes over those records: `analyze` (the public entrypoint,
   orchestrating corpus, baseline, per-file findings, then the clone and relational
   passes), `resolve_corpus` (the `CorpusResolution` the passes past a single file share,
-  the symbol table, the visibility map, and both graphs, built once), `clone_clusters`
+  the symbol table, the `ResolvedLinkage` over it, and both graphs, built once),
+  `clone_clusters`
   (exact and near duplicates plus the config-gated reimplementation pass, each ranked
   against the `ModulePlacement`), `relational_clusters` (naturalness, low cohesion,
   cross-file placement, scattering, unreferenced definitions, the audience pass over the
@@ -584,6 +612,25 @@ structural hash, node, location, and suppression flag. `cluster_duplicates` buil
 vector of these and `subsumed` reads it, a concrete record so the maximality filter
 stays type-stable.
 
+`CorpusReference` (`resolution.jl`). One resolved cross-file reference: the file it sits
+in, the `UnboundRef` itself, and the `SymbolTable.defs` indices its name reaches. A name
+matching several visible definitions carries all of them, since picking one would need
+dispatch resolution. A concrete record rather than the three-tuple it replaced, so the
+five passes that walk the references read fields instead of positions.
+
+`DeclaredLinkage` (`resolution.jl`). What the corpus declares about linkage, walked once:
+each file's export names and the splice graph joining files into one namespace.
+`visible_defs` and `public_surface` are both readings of it, which is what stopped the
+scan walking the export and include captures twice.
+
+`ResolvedLinkage` (`resolution.jl`). The corpus resolved against itself, and the value a
+pass takes instead of resolving again: each file's cross-file candidates by name, the
+references those candidates admit, who consumes each definition, and each file's public
+surface. `resolve_linkage` builds one per scan. It occupies the keyword slot the bare
+visibility map used to, so widening what is shared cost no pass a parameter, which matters
+because `parameter_count` at its `:high` band would put a rule into Dendro's own error
+floor.
+
 `ModulePlacement` (`clones.jl`). Where each corpus file sits in the module graph: the
 file-to-module-node map and the community label per module node. `analyze` resolves one and
 hands it to every clone pass, so a corpus with three of them pays for one community
@@ -596,13 +643,24 @@ to it. Several scanned roots still resolve to one toplevel and one repo-wide dif
 since findings carry absolute paths that `relpath` against `root` regardless of root. A concrete record, so the diff-scoping passes dispatch statically rather than
 over an ad-hoc NamedTuple.
 
-`Location` (`report.jl`). A code site: file, 1-based line, and enclosing unit
-name. A `Finding` carries one or more. A finding about something larger than a unit
+`Location` (`report.jl`). A code site: file, 1-based line, enclosing unit name, and an
+optional label. A `Finding` carries one or more. A finding about something larger than a unit
 points at a representative real site rather than inventing one: `:scattered` names one
 unit per community, and `:incoherent_package`, whose subject is a directory, names a
 representative unit in it. Both `scope_clusters` and the gate's `fkey` resolve a
 location's path and line, so a synthetic path or line would throw in the ratchet and
 misbehave under `base`.
+
+The label is what turns a score into an edit. A pass that computes the other end of a
+relation and reports only its own side leaves the reader to rebuild the graph: `:scattered`
+labels each unit with the file its community is anchored in, and `:split_audience` and
+`:hub` label each representative with the files consuming its audience (`label_path` in
+`placement.jl` renders the path, `audience_location` in `split_audience.jl` the consumer
+list, capped at `AUDIENCE_CONSUMERS_MAX` with a count for the rest). A label is evidence,
+not identity, so `fkey` reads file and unit alone and labelling a site never moves a ratchet
+key. Where the label *is* the identity, `:dependency_cycle`'s choice of which edge to cut,
+it goes in the unit field instead and does enter the key. `:misplaced` needs no label: its
+second location is a real site in the target file.
 
 `Finding` (`report.jl`). One reported issue over a set of `Location`s: the metric,
 the locations, the scalar value (the member count for `:duplicate`, the weakest
@@ -757,7 +815,7 @@ the extreme, every file a single class. Most cohesion signal lives below that li
 answers which file depends on which. Nodes are every corpus file, sorted, and a directed
 edge records that one file's code references definitions in another.
 
-Both walk `corpus_references` against one `corpus_visibility` map, and both split a
+Both read the `corpus_references` of one shared `ResolvedLinkage`, and both split a
 reference matching `k` visible definitions `1/k` across them. What differs is the filter and
 the level. The unit graph drops a reference to a definition more than `CORPUS_UBIQUITY` of
 the units that can see it reach, so a shared helper does not pull a unit toward its file;
@@ -899,8 +957,9 @@ uses is ordinary, and a proposal built from singletons would name every definiti
 audience. The first location is the file at its first unit and the surviving
 representatives follow, so the extra locations are the proposed edit. A hub left with fewer
 than two audiences carries the file alone: a warning with no proposal states its case
-better than a split that does not hold. Consumer sets resolve only for the files that fire,
-so a corpus with no hub pays nothing for the proposal.
+better than a split that does not hold. The consumer index comes off the corpus resolution
+the scan already shares, so the proposal costs this rule the grouping of a firing file's
+definitions and nothing more.
 
 That puts consumer structure in the location set, which the ratchet keys on. A change that
 merges or splits a hub's audiences rewrites `fkey` and the gate reports the finding as new,

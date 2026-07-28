@@ -131,10 +131,10 @@ end
         import Dendro
         files = Dendro.parse_corpus(Dendro.source_files(ARGS[1]))
         table = Dendro.corpus_symbols(files)
-        visible = Dendro.corpus_visibility(files, table)
+        linkage = Dendro.resolve_linkage(files, table)
         corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
-        fg = Dendro.build_file_graph(files, table, corpus; visible)
-        fs = Dendro.cluster_hub(files, fg, table; visible, band = (2, 3), min_files = 10)
+        fg = Dendro.build_file_graph(files, table, corpus; linkage)
+        fs = Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 10)
         io = IOBuffer()
         for f in fs
             print(io, f.value, '|', f.absolute, '|', f.percentile, '|', f.suppressed, '|')

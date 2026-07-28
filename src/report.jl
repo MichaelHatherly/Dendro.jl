@@ -4,14 +4,27 @@
 """
     Location
 
-A code site: its `file` path, 1-based `line`, and enclosing `unit` name ("" when
-no name node is found).
+A code site: its `file` path, 1-based `line`, enclosing `unit` name ("" when no name node
+is found), and an optional `label`, what this site means to the finding carrying it.
+
+A label is what lets a finding name an edit rather than only score one. `:scattered` counts
+how many communities a file's units are pulled into; the label on each location says which
+file it is pulled toward, which is the move. `:split_audience` and `:hub` label each
+representative with the files consuming its audience, which is the split. Without them a
+reader has to rebuild the corpus graph to recover what the pass already computed.
+
+A label is evidence, not identity: the gate's `fkey` reads `file` and `unit` alone, so
+labelling a site never moves a ratchet key and never re-reports a finding. Where the label
+*is* the identity, `:dependency_cycle`'s choice of which edge to cut, it goes in `unit`
+instead and does enter the key.
 """
 struct Location
     file::String
     line::Int
     unit::String
+    label::String
 end
+Location(file, line, unit) = Location(file, line, unit, "")
 
 """
     Finding
@@ -185,6 +198,16 @@ values, the two-score model; the percentile is read only once the corpus holds
 `min_reported` is the smallest value that names something to act on. Entries below it
 stay in the scored population, so they count toward the percentile of the entries above,
 but never emit. Findings come back sorted by descending value, then file and line.
+
+An entry is keyed by its `ParsedFile` because the suppression directive is read off it, and
+that is what bounds this to the passes scoring a file. `:misplaced` scores a unit,
+`:back_edge` a directory pair, `:dependency_cycle` a cyclic component, and `:hub` a graph
+node; each reads its directives out of a path-keyed dict instead, and `:hub` resolves its
+locations only for the entries that fire, which this shape cannot express because it takes
+them upfront. Those four emit directly and share the part that is genuinely common, the
+band-and-percentile reading through `two_scores` and `fires`. Widening this to cover them
+would take a subject type parameter and a lazy-location callback to save six lines each,
+which is the wrong trade.
 """
 function scored_findings(
         metric::Symbol, scored::Vector{Tuple{ParsedFile, Int, Vector{Location}}},
@@ -228,6 +251,10 @@ active(findings) = Findings(filter(f -> !f.suppressed, findings))
 
 # The score column shared by every renderer: the absolute band, plus the corpus
 # percentile when one ranks the value.
+# A location's label as it renders, set off from the unit name so the two read apart. Empty
+# for a site whose finding attached no meaning to it, which is every per-file metric.
+note(loc::Location) = isempty(loc.label) ? "" : string("  [", loc.label, "]")
+
 function score_suffix(f::Finding)
     rel = f.percentile === nothing ? "" : string("; p", round(Int, f.percentile * 100))
     return string("(", f.absolute, rel, ")")
@@ -248,10 +275,10 @@ function Base.show(io::IO, ::MIME"text/plain", findings::Findings)
         loc = string(anchor.file, ":", anchor.line)
         label = isempty(anchor.unit) ? "" : string("  ", anchor.unit)
         val = f.value === nothing ? "" : string(" ", f.value)
-        println(io, loc, label, "  ", f.metric, val, " ", score_suffix(f))
+        println(io, loc, label, note(anchor), "  ", f.metric, val, " ", score_suffix(f))
         for extra in Iterators.drop(f.locations, 1)
             tag = isempty(extra.unit) ? "" : string("  ", extra.unit)
-            println(io, "    also at ", extra.file, ":", extra.line, tag)
+            println(io, "    also at ", extra.file, ":", extra.line, tag, note(extra))
         end
         shown += 1
     end
@@ -272,9 +299,9 @@ function annotation_message(f::Finding)
     anchor = first(f.locations)
     prefix = isempty(anchor.unit) ? "" : string(anchor.unit, ": ")
     val = f.value === nothing ? "" : string(" ", f.value)
-    msg = string(prefix, f.metric, val, " ", score_suffix(f))
+    msg = string(prefix, f.metric, val, " ", score_suffix(f), note(anchor))
     for extra in Iterators.drop(f.locations, 1)
-        msg = string(msg, "; also at ", extra.file, ":", extra.line)
+        msg = string(msg, "; also at ", extra.file, ":", extra.line, note(extra))
     end
     return msg
 end

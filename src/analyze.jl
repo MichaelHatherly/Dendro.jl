@@ -33,15 +33,15 @@ end
 """
     CorpusResolution
 
-The corpus-wide name resolution the passes past a single file share: the symbol `table`,
-the `visible` map of what each file can see, the filtered `unit_graph` the placement rules
-read, and the unfiltered `file_graph` the architecture rules read. Built once by
-[`resolve_corpus`](@ref), since visibility is one of the more expensive passes and both
-graphs want the same map.
+Everything the passes past a single file share: the symbol `table`, the `linkage` resolving
+the corpus against itself, the filtered `unit_graph` the placement rules read, and the
+unfiltered `file_graph` the architecture rules read. Built once by [`resolve_corpus`](@ref),
+since resolving a corpus is among the most expensive steps in a scan and six passes want the
+same answer.
 """
 struct CorpusResolution
     table::SymbolTable
-    visible::Dict{String, Dict{String, Vector{Int}}}
+    linkage::ResolvedLinkage
     unit_graph::CorpusGraph
     file_graph::FileGraph
 end
@@ -49,18 +49,18 @@ end
 """
     resolve_corpus(files) -> CorpusResolution
 
-Resolve `files` against each other once: the symbol table, the visibility map, and the two
-graphs over them. The file graph keeps the references the unit graph drops as cross-cutting,
+Resolve `files` against each other once: the symbol table, the linkage over it, and the two
+graphs over that. The file graph keeps the references the unit graph drops as cross-cutting,
 since a definition everything reaches for is what an architecture question is about, where
 placement needs it discounted.
 """
 function resolve_corpus(files::Vector{ParsedFile})
     table = corpus_symbols(files)
-    visible = corpus_visibility(files, table)
+    linkage = resolve_linkage(files, table)
     return CorpusResolution(
-        table, visible,
-        build_corpus_graph(files, table; visible),
-        build_file_graph(files, table, Corpus(files); visible),
+        table, linkage,
+        build_corpus_graph(files, table; linkage),
+        build_file_graph(files, table, Corpus(files); linkage),
     )
 end
 
@@ -92,16 +92,16 @@ end
 # the gate floor.
 function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res::CorpusResolution)
     ecut = cfg.cut
-    table, visible = res.table, res.visible
+    table, linkage = res.table, res.linkage
     graph, fg = res.unit_graph, res.file_graph
     findings = scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope)
     append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = ecut, band = cfg.low_cohesion), scope))
     append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
-    append!(findings, scope_clusters(cluster_unreferenced(files, table), scope))
+    append!(findings, scope_clusters(cluster_unreferenced(files, table; linkage), scope))
     append!(
         findings,
-        scope_clusters(cluster_split_audience(files, table; cut = ecut, band = cfg.split_audience, visible), scope)
+        scope_clusters(cluster_split_audience(files, table; cut = ecut, band = cfg.split_audience, linkage), scope)
     )
     if get(cfg.rules, RELATIONAL.incoherent_package, false)
         append!(
@@ -111,12 +111,12 @@ function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res:
             )
         )
     end
-    append!(findings, scope_clusters(cluster_back_edge(files, fg, table; cut = ecut, band = cfg.back_edge, visible), scope))
+    append!(findings, scope_clusters(cluster_back_edge(files, fg, table; cut = ecut, band = cfg.back_edge, linkage), scope))
     append!(
         findings,
         scope_clusters(cluster_dependency_cycles(files, fg; cut = ecut, band = cfg.dependency_cycle), scope)
     )
-    append!(findings, scope_clusters(cluster_hub(files, fg, table; visible, cut = ecut, band = cfg.hub), scope))
+    append!(findings, scope_clusters(cluster_hub(files, fg, table; linkage, cut = ecut, band = cfg.hub), scope))
     return findings
 end
 

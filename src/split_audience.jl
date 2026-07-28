@@ -15,6 +15,10 @@
 # Name-based and lexical throughout, like the rest of placement: a consumer is a file
 # holding a reference that resolves to a definition here by name, never by type or
 # dispatch.
+#
+# Who consumes each definition is `consumer_sets` in `resolution.jl`, beside the resolution
+# it reads and shared with `:hub`, which proposes a split along the same groups. What lives
+# here is the projection into audiences and the score over them.
 
 # Absolute band on the number of audience groups a file serves. One group is a file with
 # a single audience, the ordinary case. No external standard sets this, so it sits above
@@ -56,28 +60,27 @@ const MIN_SPLIT_GROUPS = 2
 # anything; under it only the absolute band fires, as cohesion does on a thin corpus.
 const MIN_AUDIENCE_FILES = 5
 
-# For each file in `targets`, the definitions in it that something else references and the
-# set of files referencing each. The audience a definition serves is who names it, so this
-# reads the same resolved references the graphs are built from; a file's own definitions
-# are outside its visibility map, so every reference here crosses a file boundary. A
-# reference matching several visible definitions counts toward each: the match is by name,
-# and picking one would need the dispatch resolution this never does. A reference in
-# top-level code counts like any other, since the question is which file consumes the
-# definition, not which unit.
-function consumer_sets(
-        files::Vector{ParsedFile}, table::SymbolTable,
-        visible::Dict{String, Dict{String, Vector{Int}}}, targets::Set{String}
+# The most consumer files one audience label names before it stands for the rest. A group can
+# serve dozens, which is a label nobody reads, so the nearest few stand for them and the count
+# says how many there really are.
+const AUDIENCE_CONSUMERS_MAX = 3
+
+# One audience group's representative definition, labelled with the files that consume the
+# group. The count of groups is the score; naming who each one serves is what makes the split
+# an edit rather than an observation. Shared with `:hub`, which proposes a split along the
+# same groups.
+function audience_location(
+        file::String, group::Vector{Int}, defs::Dict{Int, Set{String}}, table::SymbolTable
     )
-    out = Dict{String, Dict{Int, Set{String}}}()
-    for (f, _, candidates) in corpus_references(files, visible)
-        for di in candidates
-            d = table.defs[di]
-            d.file in targets || continue
-            defs = get!(() -> Dict{Int, Set{String}}(), out, d.file)
-            push!(get!(() -> Set{String}(), defs, di), f.file)
-        end
+    consumers = Set{String}()
+    for di in group
+        union!(consumers, get(() -> Set{String}(), defs, di))
     end
-    return out
+    shown = sort!(String[label_path(c, file) for c in consumers])
+    extra = length(shown) - AUDIENCE_CONSUMERS_MAX
+    extra > 0 && (resize!(shown, AUDIENCE_CONSUMERS_MAX); push!(shown, string("+", extra, " more")))
+    rep = table.defs[first(group)]
+    return Location(file, rep.line, rep.name, string("used by ", join(shown, ", ")))
 end
 
 # The audience groups among one file's consumed definitions, `defs` mapping each to the
@@ -127,11 +130,11 @@ function audience_components(
 end
 
 """
-    cluster_split_audience(files, table; band=$SPLIT_AUDIENCE_BAND, cut=0.95, min_files=$MIN_AUDIENCE_FILES, visible=corpus_visibility(files, table)) -> Vector{Finding}
+    cluster_split_audience(files, table; band=$SPLIT_AUDIENCE_BAND, cut=0.95, min_files=$MIN_AUDIENCE_FILES, linkage=resolve_linkage(files, table)) -> Vector{Finding}
 
 Files serving several disjoint audiences, reported as `:split_audience`. For each
-definition something outside its file references, the consumer files are collected from
-[`corpus_references`](@ref); two definitions are linked when their consumer sets meet, and
+definition something outside its file references, the consumer files come from
+[`consumer_sets`](@ref); two definitions are linked when their consumer sets meet, and
 the connected components of that projection are the file's audiences. The score is the
 count of groups holding at least `$MIN_AUDIENCE_DEFS` definitions, so a helper with one
 caller is not an audience. Each finding carries both scores, the absolute `band` on that
@@ -152,8 +155,9 @@ returns nothing for a language with no export marker, where an export reading wo
 degenerate into file size. Where a language does declare exports they gate what a consumer
 can see, through the same visibility map the rest of placement reads.
 
-Pass a prebuilt `visible` from [`corpus_visibility`](@ref) to share one resolution with a
-caller that has already resolved the corpus.
+Pass a prebuilt `linkage` from [`resolve_linkage`](@ref) to share one resolution with a
+caller that has already resolved the corpus. Its [`consumer_sets`](@ref) index is what this
+scores, so no reference is walked twice.
 
 Failure modes: a genuine multi-purpose utility module serves several audiences by design
 and is answered with a suppression, not a smarter model. A file that `:hub` also flags is
@@ -164,9 +168,9 @@ function cluster_split_audience(
         files::Vector{ParsedFile}, table::SymbolTable;
         band::Tuple{Int, Int} = SPLIT_AUDIENCE_BAND, cut::Real = 0.95,
         min_files::Integer = MIN_AUDIENCE_FILES,
-        visible::Dict{String, Dict{String, Vector{Int}}} = corpus_visibility(files, table)
+        linkage::ResolvedLinkage = resolve_linkage(files, table)
     )
-    consumed = consumer_sets(files, table, visible, Set{String}(f.file for f in files))
+    consumed = linkage.consumers
 
     scored = Tuple{ParsedFile, Int, Vector{Location}}[]
     for f in files
@@ -179,9 +183,7 @@ function cluster_split_audience(
         length(audience) < MIN_SPLIT_CONSUMERS && continue
         groups = audience_components(defs, table)
         isempty(groups) && continue
-        locations = Location[
-            Location(f.file, table.defs[first(g)].line, table.defs[first(g)].name) for g in groups
-        ]
+        locations = Location[audience_location(f.file, g, defs, table) for g in groups]
         push!(scored, (f, length(locations), locations))
     end
     return scored_findings(

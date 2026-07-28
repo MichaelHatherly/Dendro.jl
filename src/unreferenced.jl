@@ -31,20 +31,26 @@ function enclosing_def(ranges::Vector{Tuple{Int, Int, Int}}, from::Int, to::Int)
 end
 
 """
-    reach_graph(files, table) -> (adj, roots)
+    reach_graph(files, table; linkage=resolve_linkage(files, table)) -> (adj, roots)
 
 The forward reference graph over `table.defs` and the root set a dead-code search starts
 from. `adj[i]` lists the definition indices definition `i` references; `roots` holds the
 declared-public definitions and those referenced from top-level code. Edges come from
 within-file bindings and cross-file references, each attributed to its enclosing top-level
 definition by byte range; a reference in top-level code seeds a root rather than an edge.
+
+The cross-file edges and the public surface both come out of `linkage`, so a scan that has
+already resolved the corpus does not resolve it again here.
 """
-function reach_graph(files::Vector{ParsedFile}, table::SymbolTable)
+function reach_graph(
+        files::Vector{ParsedFile}, table::SymbolTable;
+        linkage::ResolvedLinkage = resolve_linkage(files, table)
+    )
     n = length(table.defs)
     adj = [Int[] for _ in 1:n]
     roots = Set{Int}()
     file_by_path = Dict{String, ParsedFile}(f.file => f for f in files)
-    surface = public_surface(files)
+    surface = linkage.surface
 
     # The top-level function body ranges per file, a definition's index keyed by its
     # name-node identity, and the definitions sharing a file and name, the three lookups
@@ -84,15 +90,15 @@ function reach_graph(files::Vector{ParsedFile}, table::SymbolTable)
 
     # Cross-file edges: each resolved reference attributes to its enclosing top-level def,
     # its targets every candidate definition the name reaches.
-    for (f, ref, candidates) in corpus_references(files, table)
-        ranges = get(topfns, f.file, empty_ranges)
-        src = enclosing_def(ranges, ref.id[1], ref.id[2])
+    for reference in linkage.references
+        ranges = get(topfns, reference.file.file, empty_ranges)
+        src = enclosing_def(ranges, reference.ref.id[1], reference.ref.id[2])
         if src == 0
-            for target in candidates
+            for target in reference.candidates
                 push!(roots, target)
             end
         else
-            append!(adj[src], candidates)
+            append!(adj[src], reference.candidates)
         end
     end
     return adj, roots
@@ -124,7 +130,7 @@ function reachable(adj::Vector{Vector{Int}}, roots::Set{Int})
 end
 
 """
-    cluster_unreferenced(files, table) -> Vector{Finding}
+    cluster_unreferenced(files, table; linkage=resolve_linkage(files, table)) -> Vector{Finding}
 
 Top-level definitions no path reaches from the corpus's public surface, reported as
 `:unreferenced`, one finding per definition. Reachability follows [`reach_graph`](@ref):
@@ -133,10 +139,16 @@ within-file and cross-file reference edges carry liveness from there. An unreach
 definition is necessarily private, so no public recheck is needed. Suppressed when its
 line carries a `dendro-ignore: unreferenced` directive. Sound only over a whole module: a
 definition referenced from a same-module file outside the scan is falsely flagged.
+
+Pass a prebuilt `linkage` from [`resolve_linkage`](@ref) to share one resolution with a
+caller that has already resolved the corpus.
 """
-function cluster_unreferenced(files::Vector{ParsedFile}, table::SymbolTable)
+function cluster_unreferenced(
+        files::Vector{ParsedFile}, table::SymbolTable;
+        linkage::ResolvedLinkage = resolve_linkage(files, table)
+    )
     findings = Finding[]
-    adj, roots = reach_graph(files, table)
+    adj, roots = reach_graph(files, table; linkage)
     seen = reachable(adj, roots)
     directives = Dict{String, Vector{Directive}}(f.file => f.directives for f in files)
     for (i, d) in enumerate(table.defs)

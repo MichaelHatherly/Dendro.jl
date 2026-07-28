@@ -62,7 +62,7 @@ const BACK_EDGE_EDGE_CAP = 5
 const MIN_BACK_EDGE_PAIRS = 5
 
 """
-    cluster_back_edge(files, fg, table; band=$BACK_EDGE_BAND, cut=0.95, min_major=$BACK_EDGE_MIN_MAJOR, visible=corpus_visibility(files, table)) -> Vector{Finding}
+    cluster_back_edge(files, fg, table; band=$BACK_EDGE_BAND, cut=0.95, min_major=$BACK_EDGE_MIN_MAJOR, linkage=resolve_linkage(files, table)) -> Vector{Finding}
 
 References running against a directory pair's established direction, reported as
 `:back_edge`. The file graph contracted by directory gives the reference weight between
@@ -114,7 +114,7 @@ function cluster_back_edge(
         files::Vector{ParsedFile}, fg::FileGraph, table::SymbolTable;
         band::Tuple{Int, Int} = BACK_EDGE_BAND, cut::Real = 0.95,
         min_major::Integer = BACK_EDGE_MIN_MAJOR,
-        visible::Dict{String, Dict{String, Vector{Int}}} = corpus_visibility(files, table)
+        linkage::ResolvedLinkage = resolve_linkage(files, table)
     )
     findings = Finding[]
     mg = module_graph(fg)
@@ -137,7 +137,7 @@ function cluster_back_edge(
     end
     isempty(flagged) && return findings
 
-    sites = edge_reference_sites(files, table, fg, Set{Tuple{Int, Int}}(e[1] for e in flagged), visible)
+    sites = edge_reference_sites(table, fg, Set{Tuple{Int, Int}}(e[1] for e in flagged), linkage.references)
     directives = Dict{String, Vector{Directive}}(f.file => f.directives for f in files)
     for (edge, dominance, absolute, pct) in flagged
         locations = [fg.edges[edge].declared; get(() -> Location[], sites, edge)]
@@ -179,21 +179,22 @@ end
 
 # Every reference site behind each of the `wanted` file edges. The file graph records an
 # edge's weight and the names on it, not where each reference sits, and a finding that
-# has to survive diff scoping needs the sites themselves. Resolved from the same
-# `visible` map the graph was built from, so the sites are the references that built it.
+# has to survive diff scoping needs the sites themselves. Read off the same resolved
+# `references` the graph was built from, so the sites are the references that built it.
 # A reference matching several definitions in one target file names that edge once.
 function edge_reference_sites(
-        files::Vector{ParsedFile}, table::SymbolTable, fg::FileGraph,
-        wanted::Set{Tuple{Int, Int}}, visible::Dict{String, Dict{String, Vector{Int}}}
+        table::SymbolTable, fg::FileGraph,
+        wanted::Set{Tuple{Int, Int}}, references::Vector{CorpusReference}
     )
     out = Dict{Tuple{Int, Int}, Vector{Location}}()
     sources = Set{String}(fg.files[e[1]] for e in wanted)
     lines = Dict{String, Dict{NodeId, Int}}()
     unit_labels = Dict{String, Vector{String}}()
-    for (f, ref, candidates) in corpus_references(files, visible)
+    for reference in references
+        f, ref = reference.file, reference.ref
         f.file in sources || continue
         src = fg.index[f.file]
-        for di in candidates
+        for di in reference.candidates
             edge = (src, get(fg.index, table.defs[di].file, 0))
             edge in wanted || continue
             byid = get!(() -> reference_lines(f), lines, f.file)

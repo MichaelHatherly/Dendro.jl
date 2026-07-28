@@ -45,7 +45,7 @@ const MIN_AUDIENCE_CONSUMERS = 2
 const MIN_HUB_CORPUS_FILES = 20
 
 """
-    cluster_hub(files, fg, table; visible=corpus_visibility(files, table), band=$HUB_BAND, cut=0.95, min_files=$MIN_HUB_CORPUS_FILES) -> Vector{Finding}
+    cluster_hub(files, fg, table; linkage=resolve_linkage(files, table), band=$HUB_BAND, cut=0.95, min_files=$MIN_HUB_CORPUS_FILES) -> Vector{Finding}
 
 Files that both depend on much of the corpus and are depended on by much of it, reported
 as `:hub`. The score is `min(fan_in, fan_out)` over the distinct files an edge of `fg`
@@ -77,12 +77,14 @@ audience rewrites the key and the ratchet reports the hub as new. This is the sa
 audiences has changed what the finding proposes, and a gate that stayed quiet through it
 would be reporting a stale edit.
 
-Consumer sets are resolved only for the files that fire, so a corpus with no hub pays
-nothing for the split proposal.
+The consumer sets come off `linkage`, the one corpus resolution the scan shares, so the
+proposal costs this rule the grouping of a firing file's definitions and nothing more:
+`:split_audience` reads the same index over every file, which is why building it per hub
+would have been the second walk rather than the first.
 """
 function cluster_hub(
         files::Vector{ParsedFile}, fg::FileGraph, table::SymbolTable;
-        visible::Dict{String, Dict{String, Vector{Int}}} = corpus_visibility(files, table),
+        linkage::ResolvedLinkage = resolve_linkage(files, table),
         band::Tuple{Int, Int} = HUB_BAND, cut::Real = 0.95,
         min_files::Integer = MIN_HUB_CORPUS_FILES
     )
@@ -105,14 +107,13 @@ function cluster_hub(
     isempty(hits) && return findings
 
     byfile = Dict{String, ParsedFile}(f.file => f for f in files)
-    audiences = consumer_sets(files, table, visible, Set{String}(fg.files[node] for (node, _, _, _) in hits))
+    audiences = linkage.consumers
     for (node, value, absolute, pct) in hits
         path = fg.files[node]
         anchor = Location(path, fg.first_line[node], "")
         locations = [anchor]
-        reps = audience_reps(get(() -> Dict{Int, Set{String}}(), audiences, path), table)
-        length(reps) > 1 &&
-            append!(locations, [Location(path, table.defs[di].line, table.defs[di].name) for di in reps])
+        reps = audience_reps(path, get(() -> Dict{Int, Set{String}}(), audiences, path), table)
+        length(reps) > 1 && append!(locations, reps)
         sup = is_suppressed(byfile[path].directives, anchor.line, RELATIONAL.hub)
         push!(findings, Finding(RELATIONAL.hub, locations, value, absolute, pct, :scalar, sup))
     end
@@ -139,8 +140,11 @@ function crossing_scores(fg::FileGraph)
     return scored
 end
 
-# One representative definition per audience group of a hub file, earliest line first. The
-# grouping is `:split_audience`'s (`audience_components`), read here as a proposal rather
-# than a score, so it carries the hub's own consumer floor.
-audience_reps(defs::Dict{Int, Set{String}}, table::SymbolTable) =
-    Int[first(group) for group in audience_components(defs, table; min_consumers = MIN_AUDIENCE_CONSUMERS)]
+# One labelled representative per audience group of a hub file, earliest line first, each
+# naming the files that consume its group. The grouping is `:split_audience`'s
+# (`audience_components`) and so is the label (`audience_location`), read here as a proposal
+# rather than a score, so it carries the hub's own consumer floor.
+function audience_reps(file::String, defs::Dict{Int, Set{String}}, table::SymbolTable)
+    groups = audience_components(defs, table; min_consumers = MIN_AUDIENCE_CONSUMERS)
+    return Location[audience_location(file, group, defs, table) for group in groups]
+end

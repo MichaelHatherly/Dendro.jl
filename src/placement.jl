@@ -79,6 +79,13 @@ function community_plurality(graph::CorpusGraph, comm::Vector{Int}, key::Functio
     return Dict{Int, String}(c => dominant(groups) for (c, groups) in counts)
 end
 
+# The path of `target` as a label in `from`'s file reads it: relative to that file's
+# directory, so a label names a neighbour rather than repeating the corpus root. Shared by
+# the placement passes that name another file in a label rather than in a second location,
+# `:scattered` and `:split_audience`, where `:misplaced` points at a real site in the target.
+label_path(target::AbstractString, from::AbstractString) =
+    (dir = dirname(from); relpath(target, isempty(dir) ? "." : dir))
+
 # The location to point at in the target file: the unit there the source unit references
 # most, or, when its envy is toward a type or const rather than a unit, the first
 # definition the symbol table holds for that file.

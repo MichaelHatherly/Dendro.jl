@@ -60,7 +60,14 @@ function cluster_scattered(
         end
         isempty(reps) && continue
         nodes = sort!(collect(values(reps)); by = nd -> graph.units[nd].line)
-        locations = Location[Location(f.file, graph.units[nd].line, graph.units[nd].name) for nd in nodes]
+        # Each representative carries the file its community is anchored in. The count is the
+        # score; this is the edit, and recovering it otherwise means rebuilding the graph.
+        locations = Location[
+            Location(
+                    f.file, graph.units[nd].line, graph.units[nd].name,
+                    string("belongs with ", label_path(plur[comm[nd]], f.file))
+                ) for nd in nodes
+        ]
         push!(scored, (f, length(locations), locations))
     end
     return scored_findings(RELATIONAL.scattered, scored, band, cut, min_files)

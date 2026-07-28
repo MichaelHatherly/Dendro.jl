@@ -77,7 +77,7 @@ struct ModuleGraph
 end
 
 """
-    build_file_graph(files, table, corpus; visible=corpus_visibility(files, table)) -> FileGraph
+    build_file_graph(files, table, corpus; linkage=resolve_linkage(files, table)) -> FileGraph
 
 The file dependency graph over `files`, resolved against `table`. Every cross-file
 reference contributes to the edge from the file it sits in to the file it names, and a
@@ -93,12 +93,17 @@ references.
 Self-edges are skipped: a file's coupling to itself is what `:low_cohesion` reads, and
 here it would only swamp every node's degree. `corpus` is the corpus path set the
 language's [`Linkage`](@ref) resolver maps an import target through, which is how an edge
-learns the statement that admits it. Pass a prebuilt `visible` from
-[`corpus_visibility`](@ref) to share one resolution with another pass over the corpus.
+learns the statement that admits it. Pass a prebuilt `linkage` from
+[`resolve_linkage`](@ref) to share one resolution with another pass over the corpus.
+
+A corpus of one file returns its node and stops. Every rule over this graph withholds itself
+on a corpus too thin for its own reason, and those floors differ, so the shared build guards
+only on what none of them could read past: an edge joins two files, so one file carries none.
+That is what spares a single-file gate run the reference walk and the linkage query pass.
 """
 function build_file_graph(
         files::Vector{ParsedFile}, table::SymbolTable, corpus::Corpus;
-        visible::Dict{String, Dict{String, Vector{Int}}} = corpus_visibility(files, table)
+        linkage::ResolvedLinkage = resolve_linkage(files, table)
     )
     paths = sort!(String[f.file for f in files])
     index = Dict{String, Int}(p => i for (i, p) in enumerate(paths))
@@ -107,13 +112,15 @@ function build_file_graph(
         units = f.index.functions
         isempty(units) || (first_line[index[f.file]] = units[1].firstline)
     end
+    length(files) < 2 && return FileGraph(paths, index, Dict{Tuple{Int, Int}, FileEdge}(), first_line)
 
     # A reference in top-level code counts here where the unit graph skips it: the file
     # depends on the target whether or not a function encloses the reference.
     mass = Dict{Tuple{Int, Int}, Float64}()
     names = Dict{Tuple{Int, Int}, Dict{String, Float64}}()
-    for (f, _, candidates) in corpus_references(files, visible)
-        src = index[f.file]
+    for reference in linkage.references
+        src = index[reference.file.file]
+        candidates = reference.candidates
         share = 1.0 / length(candidates)
         for di in candidates
             d = table.defs[di]
