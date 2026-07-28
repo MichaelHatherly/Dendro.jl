@@ -52,3 +52,91 @@ end
     pushref = only(filter(r -> r.name == "push!", refs))
     @test file.index.functions[pushref.unit].firstline == 2
 end
+
+@testitem "unbound references carry the namespace a reference qualifies" setup = [Fixtures] tags = [:linkage] begin
+    # A qualified reference resolves under `Namespace.name`, reading the namespace that
+    # the name sits directly under: `Inner` out of `Outer.Inner.deep`. The qualifier's own
+    # identifiers (`Outer`, `Inner`) stay bare, so only the name side is qualified.
+    file = Fixtures.parsedfile(:julia, "f() = A.callee() + Outer.Inner.deep()\n"; file = "f.jl")
+    names = Set(r.name for r in Dendro.unbound_references(file))
+    @test "A.callee" in names
+    @test "Inner.deep" in names
+    @test "A" in names
+    @test !("callee" in names)
+end
+
+@testitem "a module-nested definition is visible under its qualified name" setup = [Fixtures] tags = [:linkage] begin
+    # Across a splice, a file-scope definition is visible by bare name and one inside a
+    # `module` only by its qualified name, the two forms Julia's namespaces give.
+    mod = Fixtures.parsedfile(:julia, "include(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
+    a = Fixtures.parsedfile(:julia, "spliced() = 1\nmodule A\nnested() = 2\nend\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "f() = 1\n"; file = "b.jl")
+    files = [mod, a, b]
+    visible = Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))
+    names = keys(visible["b.jl"])
+    @test "spliced" in names
+    @test "A.nested" in names
+    @test !("nested" in names)
+end
+
+@testitem "a spliced definition is visible under the module it splices into" setup = [Fixtures] tags = [:linkage] begin
+    # `helper` sits at file scope in a file the `module M` body includes, so it joins M's
+    # namespace: reachable bare, like any spliced name, and equally as `M.helper`.
+    mod = Fixtures.parsedfile(:julia, "module M\ninclude(\"a.jl\")\ninclude(\"b.jl\")\nend\n"; file = "mod.jl")
+    a = Fixtures.parsedfile(:julia, "helper() = 1\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "f() = 1\n"; file = "b.jl")
+    files = [mod, a, b]
+    names = keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["b.jl"])
+    @test "helper" in names
+    @test "M.helper" in names
+end
+
+@testitem "a splice inside a submodule qualifies under that submodule" setup = [Fixtures] tags = [:linkage] begin
+    # The namespace a file lands in is the one enclosing the `include` that pulled it in,
+    # taken through the whole chain: `y.jl` is spliced into `X`, itself spliced into `M`.
+    # Only the innermost name qualifies, the form a reference writes.
+    mod = Fixtures.parsedfile(:julia, "module M\ninclude(\"x.jl\")\ninclude(\"b.jl\")\nend\n"; file = "mod.jl")
+    x = Fixtures.parsedfile(:julia, "module X\ninclude(\"y.jl\")\nend\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "deep() = 1\n"; file = "y.jl")
+    b = Fixtures.parsedfile(:julia, "f() = 1\n"; file = "b.jl")
+    files = [mod, x, y, b]
+    names = keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["b.jl"])
+    @test "X.deep" in names
+    @test !("M.deep" in names)
+end
+
+@testitem "a splice language that reaches no namespace keeps bare names" setup = [Fixtures] tags = [:linkage] begin
+    # C splices a header the same way, but nothing in C reaches a definition by qualifying
+    # a namespace, so its cross-file names carry no qualifier.
+    main = Fixtures.parsedfile(:c, "#include \"a.c\"\n#include \"b.c\"\n"; file = "main.c")
+    a = Fixtures.parsedfile(:c, "int helper(void) { return 1; }\n"; file = "a.c")
+    b = Fixtures.parsedfile(:c, "int other(void) { return 2; }\n"; file = "b.c")
+    files = [main, a, b]
+    names = keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["b.c"])
+    @test "helper" in names
+    @test !any(contains('.'), names)
+end
+
+@testitem "a Ruby module body stays invisible across a require" setup = [Fixtures] tags = [:linkage] begin
+    # Ruby splices and marks namespace regions, but reaching into one needs `Mod::name`,
+    # which is untested, so a method inside a module is visible under neither form.
+    main = Fixtures.parsedfile(:ruby, "require_relative 'a'\nrequire_relative 'b'\n"; file = "main.rb")
+    a = Fixtures.parsedfile(:ruby, "def spliced\n  1\nend\nmodule A\n  def nested\n    2\n  end\nend\n"; file = "a.rb")
+    b = Fixtures.parsedfile(:ruby, "def f\n  1\nend\n"; file = "b.rb")
+    files = [main, a, b]
+    names = keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["b.rb"])
+    @test "spliced" in names
+    @test !("nested" in names)
+    @test !("A.nested" in names)
+end
+
+@testitem "a directory-model language keeps bare names" setup = [Fixtures] tags = [:linkage] begin
+    # Go shares the same member resolver as a splice but reaches no namespace by
+    # qualifying one, so a sibling's exported name stays bare.
+    a = Fixtures.parsedfile(:go, "package p\n\nfunc Helper() int { return 1 }\n"; file = "p/a.go")
+    b = Fixtures.parsedfile(:go, "package p\n\nfunc F() int { return 2 }\n"; file = "p/b.go")
+    files = [a, b]
+    names = keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["p/b.go"])
+    @test "Helper" in names
+    @test !any(contains('.'), names)
+end

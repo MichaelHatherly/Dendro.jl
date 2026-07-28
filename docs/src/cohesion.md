@@ -54,6 +54,19 @@ language resolves without an import (Java). A reference that leaves its file res
 definition it names in a file its linkage exposes, and the result is a corpus-wide graph
 of which unit references which.
 
+A splice carries namespaces in some languages. A definition inside a Julia `module` that
+an included file declares does not join the includer's namespace: nothing reaches it by
+bare name, only by qualifying it (`Mod.f`). Such a definition resolves under its qualified
+name, matched on the namespace enclosing it directly, since the outer modules a reference
+walks through can be declared in a file the definition's own module path never sees.
+
+A definition at file scope answers to both forms. Its file was spliced into whatever
+module the `include` sits inside, a namespace the file itself never declares, so the
+corpus walks the splice chain to find the module path each file lands in. A file-scope
+name is then visible bare and qualified. Reading a qualified reference this way also
+stops a field read (`row.total`) resolving as a bare `total`: the two are the same syntax,
+and a value's field matches no namespace.
+
 The score is the envy percent, the share of a unit's whole coupling, own-file and
 cross-file, that lands in the single other file it leans toward most. A unit devoted to
 one other file scores near 100; a coordinator that reaches into several files spreads

@@ -52,40 +52,6 @@ function parse_chunk!(
     return nothing
 end
 
-# Baseline over already-parsed corpus records. Each chunk samples into its own partial
-# baseline; the merge concatenates per `(language, metric)` and the final `sort!` fixes the
-# order, so the sorted samples are identical to the serial path at any thread count.
-function baseline_from(files::Vector{ParsedFile}, rules = BUILTIN_RULES)
-    partials = parallel_chunks(() -> Baseline(), length(files)) do baseline, idxs
-        sample_chunk!(baseline, files, idxs, rules)
-    end
-    baseline = merge_baselines(partials)
-    for samples in values(baseline.samples)
-        sort!(samples)
-    end
-    return baseline
-end
-
-# Sample one chunk of files into a partial baseline.
-function sample_chunk!(baseline::Baseline, files::Vector{ParsedFile}, idxs, rules)
-    for i in idxs
-        add_samples!(baseline, files[i].index, rules)
-    end
-    return baseline
-end
-
-# Concatenate partial baselines per `(language, metric)`. The caller sorts the merged
-# samples, so the append order does not affect the result.
-function merge_baselines(partials::Vector{Baseline})
-    merged = Baseline()
-    for p in partials
-        for (k, v) in p.samples
-            append!(get!(() -> Float64[], merged.samples, k), v)
-        end
-    end
-    return merged
-end
-
 # The git toplevel containing the first of `paths`, found from that path's directory.
 # The repo root the diff scope and the ratchet base both resolve their relative paths
 # against.

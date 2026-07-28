@@ -89,6 +89,13 @@
 # lowerings, both kinds already counted. It first measured 1170: narrowing `queries_dir` to
 # `String` and typing the per-language applier's `name` and `table` removed 52, so what is
 # left is the applier and kwarg shape rather than inference that could be recovered.
+# Resolving a reference qualified by its namespace raised sound from 1118 to 1120, opt
+# unchanged: `reference_name` adds one, walking an `Any` node's parent and children the
+# same way the metric passes already do, and `splice_graph` adds one over the
+# `inclusion_components` it replaces, its generator closure now building the component map
+# as well as the edge list. Everything else in the diff moves reports between files:
+# `baseline_from` and `sample_chunk!` are counted under `baseline.jl` rather than
+# `corpus.jl`, and `member_visible` reads a `VisibilityIndex` where it read a `SymbolTable`.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -96,7 +103,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1118  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1120  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 22      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
