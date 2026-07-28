@@ -78,6 +78,7 @@ end
             misplaced = [41, 42]
             back_edge = [51, 52]
             dependency_cycle = [61, 62]
+            hub = [71, 72]
             """
         )
         cfg = mktempdir() do xdg
@@ -91,11 +92,12 @@ end
         @test cfg.misplaced == (41, 42)
         @test cfg.back_edge == (51, 52)
         @test cfg.dependency_cycle == (61, 62)
+        @test cfg.hub == (71, 72)
         # A band added to `RELATIONAL_BANDS` and not to the lines above would leave its
         # field unpinned, which is how this test came to miss one when two rules landed
         # in parallel. Pin the set so the omission fails here rather than going unnoticed.
         @test Set(RELATIONAL_BANDS) ==
-            Set([:unnatural, :low_cohesion, :scattered, :misplaced, :back_edge, :dependency_cycle])
+            Set([:unnatural, :low_cohesion, :scattered, :misplaced, :back_edge, :dependency_cycle, :hub])
     end
 end
 

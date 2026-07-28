@@ -153,8 +153,15 @@ src/session.jl:1  hub 18 (warn; p97)
     also at src/session.jl:96  render_token
 ```
 
-A hub whose consumers all reach the whole file carries no such representatives: it is a
-warning with no proposal, and saying so beats proposing a split that does not hold.
+A group counts as an audience only with at least two definitions and two consumer files: a
+definition one file happens to use is ordinary, and a proposal built from singletons would
+name every definition its own audience. A hub left with fewer than two audiences carries no
+representatives: it is a warning with no proposal, and saying so beats proposing a split
+that does not hold.
+
+Because the representatives sit in the finding's locations, a change to who consumes the
+file rewrites the key the gate ratchet matches on, and `errors(; since)` reports the hub
+again. That is intended: the split the earlier finding proposed no longer holds.
 
 Two scores again, and here the corpus percentile does most of the work. Fan-in and fan-out
 both grow with the corpus, so the absolute band can only mark the level at which a crossing

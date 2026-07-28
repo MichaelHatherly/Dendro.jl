@@ -28,9 +28,9 @@ source text
 builds a baseline from that corpus, runs the per-file path above against it for each
 file, and appends the corpus-relational findings: cross-file duplicates, naturalness
 outliers, low-cohesion files, misplaced units, scattered files, unreferenced private
-definitions, dependencies running against a directory pair's grain, and hub files. The active rule
-set is a value it carries, resolved from a `Config` (see Configuration) unless the
-`rules` keyword overrides it, and it threads through baseline sampling, per-file
+definitions, dependencies running against a directory pair's grain, and hub files. The
+active rule set is a value it carries, resolved from a `Config` (see Configuration)
+unless the `rules` keyword overrides it, and it threads through baseline sampling, per-file
 scoring, and suppression validation, so a caller extends the checks without touching the
 pipeline. The baseline-from-the-corpus step is what makes relative scoring work with no
 setup, for a single file as much as a folder: a file's own functions are the
@@ -792,11 +792,19 @@ than only its percentile, since the absolute reading is as size-dependent as the
 The finding proposes the split. `consumer_sets` collects, for each definition in a firing
 file, which files reference it; two definitions belong to the same audience when a consumer
 reaches both, and `audience_reps` reads those groups off the same `components` flood fill
-cohesion uses, returning one representative definition each. The first location is the file
-at its first unit and the representatives follow, so the extra locations are the proposed
-edit. A hub whose consumers all reach the whole file carries the file alone: a warning with
-no proposal states its case better than a split that does not hold. Consumer sets resolve
-only for the files that fire, so a corpus with no hub pays nothing for the proposal.
+cohesion uses, returning one representative definition each. A group under
+`MIN_AUDIENCE_DEFS` or `MIN_AUDIENCE_CONSUMERS` is not an audience: one definition one file
+uses is ordinary, and a proposal built from singletons would name every definition its own
+audience. The first location is the file at its first unit and the surviving
+representatives follow, so the extra locations are the proposed edit. A hub left with fewer
+than two audiences carries the file alone: a warning with no proposal states its case
+better than a split that does not hold. Consumer sets resolve only for the files that fire,
+so a corpus with no hub pays nothing for the proposal.
+
+That puts consumer structure in the location set, which the ratchet keys on. A change that
+merges or splits a hub's audiences rewrites `fkey` and the gate reports the finding as new,
+the trade `:back_edge` makes for the same reason: the proposal the earlier finding carried
+no longer holds, so re-reporting is the behaviour, not a defect in the key.
 
 ## Suppression
 

@@ -30,6 +30,13 @@
 # satisfy.
 const HUB_BAND = (15, 30)
 
+# What a group of definitions has to hold to read as an audience worth splitting off: this
+# many definitions, reaching this many consumer files between them. One definition used by
+# one file is ordinary rather than a seam, and a proposal built from singletons would name
+# every definition its own audience.
+const MIN_AUDIENCE_DEFS = 2
+const MIN_AUDIENCE_CONSUMERS = 2
+
 # The corpus needs this many files before a crossing count means anything. Below it every
 # file touches most of the others, so `min(fan_in, fan_out)` reads corpus shape rather than
 # architecture, in the same spirit as `MIN_COHESION_FILES`. Unlike that floor this one
@@ -58,8 +65,17 @@ The first location is the hub file at its first unit, carrying no unit name: the
 about the file, not one function in it. When the hub's externally-referenced
 definitions fall into two or more audiences, groups of definitions linked by sharing a
 consumer file, one representative definition per audience follows, earliest line first:
-that split is the proposed edit. When they fall into one audience the finding carries the
-file alone, a warning with no proposal rather than a proposal that does not hold.
+that split is the proposed edit. A group is an audience only above `MIN_AUDIENCE_DEFS`
+definitions and `MIN_AUDIENCE_CONSUMERS` consumers, since one definition one file happens
+to use is not a seam. A hub left with fewer than two audiences carries the file alone, a
+warning with no proposal rather than a proposal that does not hold.
+
+That makes the location set depend on who consumes the file, which the gate ratchet reads:
+`fkey` is the metric paired with every location, so a change that merges or splits an
+audience rewrites the key and the ratchet reports the hub as new. This is the same trade
+`:back_edge` makes, and for the same reason. A consumer change that reshapes a hub's
+audiences has changed what the finding proposes, and a gate that stayed quiet through it
+would be reporting a stale edit.
 
 Consumer sets are resolved only for the files that fire, so a corpus with no hub pays
 nothing for the split proposal.
@@ -147,6 +163,8 @@ end
 # One representative definition per audience group, earliest line first. Two definitions
 # belong to the same audience when a consumer file reaches both, so the groups are the
 # connected components of that projection, found with the same flood fill cohesion reads.
+# A group below `MIN_AUDIENCE_DEFS` or `MIN_AUDIENCE_CONSUMERS` is dropped rather than
+# named: a definition or two that one file happens to use is not a seam to cut along.
 # The definitions are line-ordered before the projection is built, so a component's earliest
 # line is its smallest position, and the flood fill seeds components in that order: the
 # representatives come out earliest line first without a second sort.
@@ -170,5 +188,15 @@ function audience_reps(defs::Dict{Int, Set{String}}, table::SymbolTable)
             adj[m][base] = 1.0
         end
     end
-    return Int[dis[minimum(group)] for group in components(adj, collect(eachindex(dis)))]
+    reps = Int[]
+    for group in components(adj, collect(eachindex(dis)))
+        length(group) < MIN_AUDIENCE_DEFS && continue
+        consumers = Set{String}()
+        for i in group
+            union!(consumers, defs[dis[i]])
+        end
+        length(consumers) < MIN_AUDIENCE_CONSUMERS && continue
+        push!(reps, dis[minimum(group)])
+    end
+    return reps
 end
