@@ -732,10 +732,11 @@ pins it, so a later change that "fixes" the re-report argues with a failing test
 
 `cluster_dependency_cycles` (`dependency_cycle.jl`) reads the same graph for cycles, and the
 shape of the finding is the whole design. Cycle membership describes most of a real
-codebase: measured over nine corpora it covered 35% to 77% of the files in the ones that had
-a cycle at all, and a rule firing that broadly names no edit and takes the `errors` floor
-with it. So the finding is the **feedback arc set**, the edges whose removal would make the
-component acyclic.
+codebase: measured over nine corpora it covered 302 of 4527 files overall, and 35% to 77% of
+the files in each corpus that had a cycle at all. A rule firing that broadly names no edit
+and takes the `errors` floor with it. So the finding is the **feedback arc set**, the edges
+whose removal would make the component acyclic. The same nine corpora put six findings in
+the floor.
 
 Tarjan finds the components, over adjacency lists built from the graph's sorted edge keys.
 Each component of two or more files goes to the Eades-Lin-Smyth heuristic, weighted by
@@ -748,9 +749,15 @@ report claims it does.
 
 The score is the component size, against `DEPENDENCY_CYCLE_BAND` and the corpus percentile
 over every cyclic component's size, with `MIN_CYCLE_COMPONENTS` withholding the percentile
-on a corpus too thin to rank against. Locations are where the two kinds of finding part.
+on a corpus too thin to rank against. The percentile half fired on none of the nine
+calibration corpora, since a corpus large enough to rank against carries enough small cycles
+that they tie low; the band carries this metric in practice. Locations are where the two
+kinds of finding part.
 Under `CYCLE_LOCATIONS_MAX` cuts, each location is one edge to remove, at the import
-statement admitting it where the language declares one, labelled `cut -> <target>`. Above
+statement admitting it where the language declares one, labelled `cut -> <target>`, the
+target named relative to the source file's directory. That label is part of the finding's
+ratchet key (`fkey`, `gate.jl`), which is scored once in place and once in a `git archive`
+tempdir, so an absolute target would re-report every cut finding as new. Above
 it, the component has no bounded edit: the locations become its highest-degree members and
 every label reads `tangled: <n> cuts`. Reporting the tangle rather than dropping it is the
 honest-over-silent call, and the label is what tells the two apart without inferring

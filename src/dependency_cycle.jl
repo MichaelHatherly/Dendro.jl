@@ -28,6 +28,11 @@
 # measured was a tangle: HTTP.jl's 22 files, flask's 18, guava's 133, 25, 17 and 13. That
 # put six findings at `high` across 4527 files, a floor a project can actually clear.
 # Flagging cycle membership instead would have flagged 302 of those files.
+#
+# The percentile half fired on none of the nine. A corpus with enough components to rank
+# against has many small ones, and they tie at a low rank; the half earns its place on the
+# corpus holding one large cycle among a few small ones, which none of the nine was. So on
+# real corpora this band, not the percentile, is doing the work.
 const DEPENDENCY_CYCLE_BAND = (5, 10)
 
 # The most locations one cycle finding carries. Past this a feedback set has stopped
@@ -52,13 +57,17 @@ mutable struct TarjanState
     components::Vector{Vector{Int}}
 end
 
-# The file graph's successor lists, in node order. `edges` is a `Dict`, so its keys are
-# sorted before they reach the adjacency: every walk below inherits that order, which is
-# what keeps the components, the arrangement, and the reported locations identical at any
-# thread count.
-function successors(fg::FileGraph)
+# The file graph's edges in a fixed order. `edges` is a `Dict`, so its iteration order is
+# not the corpus order; every walk below reads this vector instead, which is what keeps the
+# components, the arrangement, and the reported locations identical at any thread count.
+# Sorted once per scan and threaded through, since each component would otherwise re-sort
+# the whole corpus's edges.
+edge_keys(fg::FileGraph) = sort!(collect(keys(fg.edges)))
+
+# The file graph's successor lists, in node order.
+function successors(fg::FileGraph, order::Vector{Tuple{Int, Int}})
     adj = [Int[] for _ in eachindex(fg.files)]
-    for (src, dst) in sort!(collect(keys(fg.edges)))
+    for (src, dst) in order
         push!(adj[src], dst)
     end
     return adj
@@ -121,11 +130,11 @@ end
 
 # The subgraph `members` induces in `fg`. Edges leaving the component are dropped: the
 # question is which edges inside it close the cycle.
-function induced_subgraph(fg::FileGraph, members::Vector{Int})
+function induced_subgraph(fg::FileGraph, members::Vector{Int}, order::Vector{Tuple{Int, Int}})
     k = length(members)
     local_of = Dict{Int, Int}(g => i for (i, g) in enumerate(members))
     sub = CycleSub(members, [Tuple{Int, Int, Bool}[] for _ in 1:k], Dict{Tuple{Int, Int}, Int}())
-    for (src, dst) in sort!(collect(keys(fg.edges)))
+    for (src, dst) in order
         s = get(local_of, src, 0)
         d = get(local_of, dst, 0)
         (s == 0 || d == 0) && continue
@@ -209,11 +218,19 @@ end
 # The site of one proposed cut: the import statement admitting the edge where the language
 # declares one, else the source file's representative line. The label names the edge to
 # remove, so an agent reading the location knows which dependency to take out.
+#
+# The target is named relative to the source file's own directory, the way the import being
+# removed already reads, and never as an absolute path. `fkey` (`gate.jl`) keys a finding on
+# each location's `unit` verbatim while it makes the `file` repo-relative, and the ratchet
+# scores the base revision in a `git archive` tempdir. An absolute target would differ
+# between the two roots, so every cut finding would miss its base key and re-report as new
+# on each run.
 function cut_location(fg::FileGraph, sub::CycleSub, arc::Tuple{Int, Int})
     src, dst = sub.members[arc[1]], sub.members[arc[2]]
     edge = fg.edges[(src, dst)]
     line = isempty(edge.declared) ? fg.first_line[src] : edge.declared[1].line
-    return Location(fg.files[src], line, string("cut -> ", fg.files[dst]))
+    from = dirname(fg.files[src])
+    return Location(fg.files[src], line, string("cut -> ", relpath(fg.files[dst], isempty(from) ? "." : from)))
 end
 
 # Where the fire is in a component no bounded edit untangles: the members carrying the most
@@ -238,8 +255,8 @@ end
 # cap, the tangle's busiest members when it does not. A strongly connected component of two
 # or more files holds a cycle, so the feedback set is never empty and the finding always has
 # somewhere to point.
-function cycle_locations(fg::FileGraph, members::Vector{Int})
-    sub = induced_subgraph(fg, members)
+function cycle_locations(fg::FileGraph, members::Vector{Int}, order::Vector{Tuple{Int, Int}})
+    sub = induced_subgraph(fg, members, order)
     arcs = feedback_arcs(sub)
     length(arcs) <= CYCLE_LOCATIONS_MAX && return Location[cut_location(fg, sub, e) for e in arcs]
     return tangle_locations(fg, sub, length(arcs))
@@ -253,7 +270,9 @@ break it. Tarjan finds the strongly connected components of the file graph `fg`,
 component of two or more files is one finding. The score is the component size, carrying
 the absolute `band` and the corpus percentile over the sizes of every cyclic component,
 fired when either trips. Under `min_components` scored components the percentile is
-withheld and only the band fires.
+withheld and only the band fires. Measured over nine corpora the percentile half never
+fired: small cycles are numerous enough on a corpus large enough to rank against that they
+tie low, so the band carries this metric in practice.
 
 The finding is never "this file is in a cycle". Melton and Tempero measured cycles
 spanning a hundred classes in around 45% of the Java applications they studied, so
@@ -296,7 +315,8 @@ function cluster_dependency_cycles(
         min_components::Integer = MIN_CYCLE_COMPONENTS
     )
     findings = Finding[]
-    comps = Vector{Int}[c for c in strong_components(successors(fg)) if length(c) >= 2]
+    order = edge_keys(fg)
+    comps = Vector{Int}[c for c in strong_components(successors(fg, order)) if length(c) >= 2]
     isempty(comps) && return findings
 
     sizes = sort([length(c) for c in comps])
@@ -307,7 +327,7 @@ function cluster_dependency_cycles(
         absolute = severity(score, band)
         pct = enough ? searchsortedlast(sizes, score) / length(sizes) : nothing
         (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
-        locations = cycle_locations(fg, members)
+        locations = cycle_locations(fg, members, order)
         anchor = locations[1]
         sup = is_suppressed(
             get(() -> Directive[], directives, anchor.file), anchor.line, RELATIONAL.dependency_cycle

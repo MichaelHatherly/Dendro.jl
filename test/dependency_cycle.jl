@@ -138,6 +138,28 @@ end
     @test [(l.file, l.unit) for l in findings[1].locations] == [("b.jl", "cut -> a.jl")]
 end
 
+@testitem "every relational band lands on its own Config field" tags = [:dependency_cycle, :config] begin
+    using Dendro: RELATIONAL_BANDS, discover_config
+
+    # `Config` is built positionally and every relational band has the same type, so a
+    # merge that reorders those arguments compiles, typechecks, and attaches each band to
+    # the wrong metric in silence. Giving each one a distinct value and asserting them
+    # individually is what makes that reorder fail loudly.
+    mktempdir() do dir
+        bands = Dict(name => (10 * i, 10 * i + 1) for (i, name) in enumerate(RELATIONAL_BANDS))
+        toml = joinpath(dir, "c.toml")
+        write(toml, string("[bands]\n", join("$name = [$(b[1]), $(b[2])]\n" for (name, b) in bands)))
+        cfg = mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                discover_config([dir]; explicit = toml)
+            end
+        end
+        for name in RELATIONAL_BANDS
+            @test getfield(cfg, name) == bands[name]
+        end
+    end
+end
+
 @testitem "a config band reaches the cycle rule" tags = [:dependency_cycle] begin
     using Dendro: analyze, discover_config
 
@@ -163,6 +185,62 @@ end
         @test tuned.value == 3
         @test tuned.absolute === :high
     end
+end
+
+@testitem "the reference count, not the node order, picks the cut" setup = [Fixtures] tags = [:dependency_cycle] begin
+    # A ring whose weights and whose node order disagree. a -> b carries one reference,
+    # b -> c five, c -> a three. The weighted arrangement cuts a -> b; flatten every weight
+    # to one and the same code cuts c -> a instead, because the index tie-break takes over.
+    # So this fixture fails if the weighting is ever dropped, which the even-weighted rings
+    # above cannot detect.
+    files = [
+        Fixtures.parsedfile(:julia, "include(\"b.jl\")\nfa(x) = gb(x)\nga(y) = y\n"; file = "a.jl"),
+        Fixtures.parsedfile(
+            :julia,
+            "include(\"c.jl\")\nfb(x) = gc(x) + gc(x + 1) + gc(x + 2) + gc(x + 3) + gc(x + 4)\ngb(y) = y\n";
+            file = "b.jl"
+        ),
+        Fixtures.parsedfile(:julia, "include(\"a.jl\")\nfc(x) = ga(x) + ga(x + 1) + ga(x + 2)\ngc(y) = y\n"; file = "c.jl"),
+    ]
+    table = Dendro.corpus_symbols(files)
+    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    fg = Dendro.build_file_graph(files, table, corpus)
+    @test fg.edges[(fg.index["a.jl"], fg.index["b.jl"])].weight == 1
+    @test fg.edges[(fg.index["b.jl"], fg.index["c.jl"])].weight == 5
+    @test fg.edges[(fg.index["c.jl"], fg.index["a.jl"])].weight == 3
+
+    findings = Dendro.cluster_dependency_cycles(files, fg; band = (2, 4))
+    @test [(l.file, l.unit) for l in findings[1].locations] == [("a.jl", "cut -> b.jl")]
+end
+
+@testitem "a cut label survives the ratchet's base revision" tags = [:gate, :dependency_cycle] setup = [Fixtures] begin
+    using Dendro
+
+    # A ten-file ring: over the high band, and one cut breaks it, so the finding is the
+    # kind whose locations carry a `cut -> target` label. `fkey` keys on that label
+    # verbatim while it makes the file path repo-relative, and the base revision is scored
+    # in a `git archive` tempdir. A label naming an absolute path would differ between the
+    # two roots, so a pre-existing cycle would re-report as new on every ratchet run.
+    root, src = Fixtures.gitrepo()
+    for i in 1:10
+        nxt = i == 10 ? 1 : i + 1
+        write(joinpath(src, "r$i.jl"), "include(\"r$nxt.jl\")\nf$i(x) = g$nxt(x)\ng$i(y) = y\n")
+    end
+    Fixtures.commit!(root, "a ring of ten")
+
+    floor = Dendro.errors(src)
+    @test length(filter(f -> f.metric === :dependency_cycle, floor)) == 1
+    # The label is relative to the file the import sits in, so it reads the way the
+    # statement being removed does.
+    cycle = only(filter(f -> f.metric === :dependency_cycle, floor))
+    @test all(l -> startswith(l.unit, "cut -> r"), cycle.locations)
+
+    # The working tree matches HEAD, so the ratchet compares the same code against itself,
+    # scored once in place and once in the archive tempdir. A non-empty floor with an empty
+    # ratchet is what proves every key matched across the two roots; a label naming an
+    # absolute path would miss and re-report the whole floor.
+    @test !isempty(floor)
+    @test isempty(Dendro.errors(src; since = "HEAD"))
 end
 
 @testitem "the percentile carries a small cycle the band leaves alone" setup = [Fixtures] tags = [:dependency_cycle] begin
