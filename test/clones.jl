@@ -230,3 +230,60 @@ end
         @test isempty(Fixtures.duplicates(analyze(dir)))
     end
 end
+
+@testitem "clone clusters rank by module distance" setup = [Fixtures] tags = [:clones] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        # Two directories referencing nothing of each other's, so the module graph leaves
+        # each its own community. The pair duplicated across them spans that boundary; the
+        # triple sits inside one file.
+        mkpath(joinpath(dir, "a"))
+        mkpath(joinpath(dir, "b"))
+        write(joinpath(dir, "a", "x.jl"), Fixtures.chain("p", 6))
+        write(joinpath(dir, "b", "y.jl"), Fixtures.chain("q", 6))
+        write(
+            joinpath(dir, "a", "z.jl"),
+            Fixtures.chain("r", 11) * Fixtures.chain("s", 11) * Fixtures.chain("t", 11)
+        )
+
+        dups = Fixtures.duplicates(analyze(dir))
+        @test length(dups) == 2
+        # The cross-community pair leads the larger same-file cluster: cluster size still
+        # breaks ties inside one distance, but distance decides between them.
+        @test Set(loc.unit for loc in first(dups).locations) == Set(["p", "q"])
+        @test length(last(dups).locations) == 3
+    end
+end
+
+@testitem "the clone re-rank leaves the error floor unchanged" setup = [Fixtures] tags = [:clones] begin
+    using Dendro
+
+    # A clone finding keyed the way the gate ratchet keys it, `fkey`'s (metric, sorted
+    # location set) with the two fields the re-rank must never touch carried alongside.
+    floorkey(f) = (f.metric, sort([(loc.file, loc.unit) for loc in f.locations]), f.value, f.absolute)
+    clonekeys(fs) = sort([floorkey(f) for f in fs if f.metric in (:duplicate, :near_duplicate)])
+    # The clone findings before `analyze` re-ranks them: the pass output itself.
+    unranked(dir) = (
+        files = Dendro.parse_corpus(Dendro.source_files(dir));
+        [Dendro.cluster_duplicates(files); Dendro.cluster_near_duplicates(files)]
+    )
+
+    mktempdir() do dir
+        mkpath(joinpath(dir, "a"))
+        mkpath(joinpath(dir, "b"))
+        write(joinpath(dir, "a", "x.jl"), Fixtures.chain("p", 6))
+        write(joinpath(dir, "b", "y.jl"), Fixtures.chain("q", 6))
+        write(joinpath(dir, "b", "w.jl"), Fixtures.chain("u", 7))
+        write(joinpath(dir, "a", "z.jl"), Fixtures.chain("r", 11) * Fixtures.chain("s", 11))
+
+        before = clonekeys(filter(f -> !f.suppressed, unranked(dir)))
+        # The corpus is built to clone, so an equality between two empty sets is no proof.
+        @test !isempty(before)
+        @test clonekeys(Dendro.errors(dir)) == before
+    end
+
+    # Dendro's own source, the corpus the dogfood floor gates on.
+    srcdir = joinpath(pkgdir(Dendro), "src")
+    @test clonekeys(Dendro.errors(srcdir)) == clonekeys(filter(f -> !f.suppressed, unranked(srcdir)))
+end

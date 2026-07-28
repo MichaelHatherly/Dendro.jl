@@ -197,6 +197,62 @@ function cluster_duplicates(files::Vector{ParsedFile}; min_size::Integer = DEFAU
     return findings
 end
 
+"""
+    ModulePlacement
+
+Where each corpus file sits in the module graph. `module_of` maps a file path to its
+module node, `community` labels each module node with the neighbourhood modularity puts it
+in. Together they are everything [`clone_distance`](@ref) needs, resolved once so a corpus
+with three clone passes over it pays for one community optimisation.
+"""
+struct ModulePlacement
+    module_of::Dict{String, Int}
+    community::Vector{Int}
+end
+
+ModulePlacement(fg::FileGraph, mg::ModuleGraph) = ModulePlacement(
+    Dict{String, Int}(fg.files[i] => g for (g, files) in enumerate(mg.members) for i in files),
+    module_communities(mg)
+)
+
+"""
+    clone_distance(f, placement) -> Int
+
+How far apart a clone cluster's members sit in the module graph: `0` within one file, `1`
+within one directory, `2` within one community of directories, `3` spanning communities.
+
+The scale reads how much of the system a duplicate implicates. Two copies inside one file
+are local sloppiness, an edit one reader makes in one sitting. Two copies either side of a
+community boundary are a missing abstraction: parts of the system that do not otherwise
+couple each built the same thing, and the fix is a shared definition rather than a tidy-up.
+The levels nest, since a file sits in one directory and a directory in one community, so
+the widest gap between any two members is the level the whole cluster reads at.
+"""
+function clone_distance(f::Finding, placement::ModulePlacement)
+    files = Set{String}(loc.file for loc in f.locations)
+    length(files) == 1 && return 0
+    mods = Set{Int}(placement.module_of[file] for file in files)
+    length(mods) == 1 && return 1
+    length(Set{Int}(placement.community[m] for m in mods)) == 1 && return 2
+    return 3
+end
+
+"""
+    rank_clones!(findings, placement) -> Vector{Finding}
+
+Re-rank clone findings by [`clone_distance`](@ref), widest spread first. A stable sort, so
+each pass's own ordering, cluster size and then location for the structural passes, overlap
+score for `:reimplementation`, survives inside one distance and keeps deciding ties.
+
+Ranking only. `value`, `absolute`, and every finding's locations are untouched, so the
+result is a permutation of the input. The gate depends on that: `:duplicate` is emitted at
+the `:high` band and sits inside the floor [`errors`](@ref) returns, and the ratchet keys a
+finding by `(metric, sorted location set)`, so a pure re-rank moves neither the floor nor a
+key.
+"""
+rank_clones!(findings::Vector{Finding}, placement::ModulePlacement) =
+    sort!(findings; by = f -> -clone_distance(f, placement), alg = Base.Sort.MergeSort)
+
 # An anchor is subsumed when its nearest enclosing anchor is a clone of at least the
 # same multiplicity: the larger clone already covers it. Multiplicity never rises
 # going up the tree, so the nearest anchor ancestor is the one to check.

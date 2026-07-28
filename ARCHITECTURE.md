@@ -53,7 +53,8 @@ corpus files
 `analyze` hoists `corpus_visibility` and hands it to both graphs. Cohesion, placement,
 scattering, and reachability run over the unit graph; `:back_edge`, `:dependency_cycle`
 and `:hub` run over the one file graph, the substrate for the rules that read the corpus
-as files depending on files.
+as files depending on files. It is built before the clone passes report, since they rank
+their clusters by distance in its directory contraction.
 
 The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus at
 collection time, inside `source_files`, before any parsing. Excluded files leave
@@ -322,7 +323,11 @@ Reporting:
   order-aware LCS verdict), `near_miss_edges!` (the size-banded characteristic-vector
   prefilter over `NearestNeighbors`, confirmed by `pair_similarity`), and
   `cluster_near_duplicates` (union-find over confirmed pairs into `:near_duplicate`
-  findings). Included before `corpus.jl`, which calls it.
+  findings). It also defines the ranking the three clone passes share: `ModulePlacement`
+  resolves a corpus file to its module node and that module to its community, and
+  `rank_clones!` sorts a pass's findings by `clone_distance`. Included after
+  `file_graph.jl`, whose `ModuleGraph` the ranking reads, and before `corpus.jl`, which
+  calls it.
 - `reimplementation.jl` defines the opt-in vocabulary pass. `subtokens` splits an
   identifier into lowercase word fragments; `reimpl_units` fingerprints each
   function (callee names via `callees_by_unit` from `graph_edges.jl`, identifier
@@ -391,9 +396,10 @@ Reporting:
   language's `Linkage` resolver). It drops no cross-cutting definition and skips self-edges,
   and `edge_weight` floors a split reference at one so rounding never erases an edge.
   `module_graph` contracts the graph by a grouping function, `dirname` by default, summing
-  weights and dropping within-group edges. It reads a prebuilt `visible` from
-  `corpus_visibility`, the same map `build_corpus_graph` accepts. Included after
-  `corpus_graph.jl`.
+  weights and dropping within-group edges, and `module_communities` runs `corpus_graph.jl`'s
+  modularity optimisation over the undirected reading of that contraction. It reads a
+  prebuilt `visible` from `corpus_visibility`, the same map `build_corpus_graph` accepts.
+  Included after `corpus_graph.jl`, before `clones.jl` ranks against it.
 - `back_edge.jl` defines the first rule over the file graph. `dominated_pairs` reads the
   directory-contracted graph for each pair coupled both ways whose majority direction
   clears `BACK_EDGE_MIN_MAJOR`, scoring the dominance percent; `minority_edges` names the
@@ -485,14 +491,14 @@ Reporting:
   `analyze` and `mermaid`), `parse_corpus` (parse each path once and build its query
   index into a `Vector{ParsedFile}`), `baseline_from`, `scope_clusters` (the shared
   diff filter for the relational passes), and `analyze` (the public entrypoint,
-  orchestrating corpus, baseline, per-file findings, exact and near duplicates, the
+  orchestrating corpus, baseline, per-file findings, the file graph and the
+  `ModulePlacement` the clone passes rank against, exact and near duplicates, the
   config-gated reimplementation pass fed the clone findings it defers to,
   naturalness, then the corpus graph and the three passes that read it, low cohesion,
-  cross-file placement, scattering, the audience pass over the symbol table, then the
-  file graph and the three passes over it, and optional diff scoping). It is included
-  after
-  `report.jl`, `diff.jl`, `clones.jl`, `reimplementation.jl`, `naturalness.jl`,
-  `linkage.jl`, `corpus_graph.jl`, `file_graph.jl`, `placement.jl`, `scattered.jl`,
+  cross-file placement, scattering, the audience pass over the symbol table, the three
+  passes over the file graph, and optional diff scoping). It is included after
+  `report.jl`, `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`,
+  `file_graph.jl`, `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
   `cohesion.jl`, `hub.jl`, and `split_audience.jl` so everything it calls is defined
   first.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
@@ -557,6 +563,11 @@ function- or block-shaped subtree large enough to count, with its language,
 structural hash, node, location, and suppression flag. `cluster_duplicates` builds a
 vector of these and `subsumed` reads it, a concrete record so the maximality filter
 stays type-stable.
+
+`ModulePlacement` (`clones.jl`). Where each corpus file sits in the module graph: the
+file-to-module-node map and the community label per module node. `analyze` resolves one and
+hands it to every clone pass, so a corpus with three of them pays for one community
+optimisation. `clone_distance` is the only reader.
 
 `Scope` (`corpus.jl`). The diff-scoped view's data: the git toplevel `root` and the
 changed line ranges per file relative to it (`Dict{String, Vector{UnitRange{Int}}}`).
@@ -661,6 +672,25 @@ with equal digests are dropped: those are exact clones, already reported by tier
 Two reasons near-miss is a separate metric, not a smarter `:duplicate`: the exact
 path stays near-linear, and an exact match and a 0.85 match are different signals a
 reviewer reads differently.
+
+All three clone passes are then ranked against the module graph. `ModulePlacement` holds
+the file-to-module map and `module_communities`' label per module; `clone_distance` reads a
+cluster as `0` inside one file, `1` inside one directory, `2` inside one community of
+directories, `3` across communities. The levels nest, so the widest gap between two members
+is the cluster's level. `rank_clones!` sorts by it, widest first, stably, so each pass's own
+key (cluster size then location for the structural passes, overlap score for
+`:reimplementation`) still decides ties inside one distance. What the scale reads is how
+much of the system a duplicate implicates: two copies in one file are an edit one reader
+makes in one sitting, two copies either side of a community boundary are a missing
+abstraction that parts of the system built twice.
+
+Ranking is all it is. `value`, `absolute`, and every finding's locations come through
+untouched, so the result is a permutation of the pass output. That is not incidental:
+`:duplicate` is emitted at the `:high` band and therefore sits inside the floor `errors`
+returns, and the ratchet keys a finding by `(metric, sorted location set)`. A re-rank that
+touched a band would move that floor under every package gating on Dendro, so the invariant
+is asserted rather than assumed, against the pass output on a fixture corpus and against
+Dendro's own source.
 
 ## Within-file cohesion
 

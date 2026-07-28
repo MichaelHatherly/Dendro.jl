@@ -215,8 +215,23 @@ function analyze(
         findings_for(scan)
     end
 
-    exact = cluster_duplicates(files; min_size = msize)
-    near = cluster_near_duplicates(files; min_size = msize, threshold = thresh, radius_factor = radius)
+    table = corpus_symbols(files)
+    # Resolved once here rather than inside each pass that reads it: cross-file visibility
+    # is one of the more expensive parallel passes, and every graph over the corpus wants
+    # the same map.
+    visible = corpus_visibility(files, table)
+    # The file graph reads the same resolution one level up, unfiltered: the references the
+    # unit graph drops as cross-cutting are the ones an architecture question is about. All
+    # three rules over it read the one graph, and the clone passes rank against its
+    # contraction.
+    fg = build_file_graph(files, table, Corpus(files); visible)
+    placement = ModulePlacement(fg, module_graph(fg))
+
+    exact = rank_clones!(cluster_duplicates(files; min_size = msize), placement)
+    near = rank_clones!(
+        cluster_near_duplicates(files; min_size = msize, threshold = thresh, radius_factor = radius),
+        placement
+    )
     append!(findings, scope_clusters(exact, scope))
     append!(findings, scope_clusters(near, scope))
     # Opt-in corpus pass, gated here rather than resolved into the rule set. It reads
@@ -225,20 +240,17 @@ function analyze(
     if get(cfg.rules, RELATIONAL.reimplementation, false)
         append!(
             findings, scope_clusters(
-                cluster_reimplementations(
-                    files; min_size = msize, threshold = cfg.reimpl_threshold,
-                    clone_findings = [exact; near]
+                rank_clones!(
+                    cluster_reimplementations(
+                        files; min_size = msize, threshold = cfg.reimpl_threshold,
+                        clone_findings = [exact; near]
+                    ), placement
                 ), scope
             )
         )
     end
     append!(findings, scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope))
 
-    table = corpus_symbols(files)
-    # Resolved once here rather than inside each pass that reads it: cross-file visibility
-    # is one of the more expensive parallel passes, and every graph over the corpus wants
-    # the same map.
-    visible = corpus_visibility(files, table)
     graph = build_corpus_graph(files, table; visible)
     append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = ecut, band = cfg.low_cohesion), scope))
     append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
@@ -248,10 +260,6 @@ function analyze(
         findings,
         scope_clusters(cluster_split_audience(files, table; cut = ecut, band = cfg.split_audience, visible), scope)
     )
-    # The file graph reads the same resolution one level up, unfiltered: the references the
-    # unit graph drops as cross-cutting are the ones an architecture question is about. All
-    # three rules over it read the one graph.
-    fg = build_file_graph(files, table, Corpus(files); visible)
     append!(findings, scope_clusters(cluster_back_edge(files, fg, table; cut = ecut, band = cfg.back_edge, visible), scope))
     append!(
         findings,

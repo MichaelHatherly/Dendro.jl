@@ -51,10 +51,19 @@ end
         # running back, so the cross-file graph passes have a grain to read as well.
         mkpath(joinpath(dir, "core"))
         mkpath(joinpath(dir, "api"))
-        write(joinpath(dir, "core", "c.jl"), "core_a(x) = x\nbackc(x) = apihelp(x)\n")
+        # One function duplicated across those two directories, longer than anything in the
+        # flat set so it clones only its own copy. It sits at a wider module distance than
+        # the flat clones, so the clone re-rank has an ordering to decide rather than a
+        # constant to sort by.
+        chain(name) = string(
+            "function $name($(name)0)\n",
+            join("    $name$i = $name$(i - 1) + $i\n" for i in 1:16),
+            "    return $name$(16)\nend\n"
+        )
+        write(joinpath(dir, "core", "c.jl"), "core_a(x) = x\nbackc(x) = apihelp(x)\n" * chain("dupc"))
         write(
             joinpath(dir, "api", "a.jl"),
-            "apihelp(y) = y\nusea(x) = " * join(("core_a(x)" for _ in 1:20), " + ") * "\n"
+            "apihelp(y) = y\nusea(x) = " * join(("core_a(x)" for _ in 1:20), " + ") * "\n" * chain("dupa")
         )
         write(joinpath(dir, "layered.jl"), "include(\"core/c.jl\")\ninclude(\"api/a.jl\")\n")
 
@@ -74,8 +83,13 @@ end
             end
             return join(lines, '\n')
         end
+        spans(f) = f.metric === :duplicate &&
+            length(Set(basename(dirname(x.file)) for x in f.locations)) > 1
         fs = Dendro.analyze(ARGS[1])
-        print(hash(digest(fs)), '|', length(fs), '|', count(f -> f.metric === :back_edge, fs))
+        print(
+            hash(digest(fs)), '|', length(fs), '|', count(f -> f.metric === :back_edge, fs),
+            '|', count(spans, fs)
+        )
         """
 
         # `--startup-file=no` pins the captured stdout: `julia_cmd` propagates the flag only
@@ -91,6 +105,9 @@ end
         # count above is satisfied by the clone files alone, so without this the coverage
         # could vanish and the item would stay green.
         @test parse(Int, split(serial, '|')[3]) > 0
+        # Same guard for the clone re-rank: the flat clones all share one directory, so
+        # without a cross-directory clone the ranking pass would sort a constant.
+        @test parse(Int, split(serial, '|')[4]) > 0
     end
 end
 

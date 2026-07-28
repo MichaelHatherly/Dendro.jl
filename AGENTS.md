@@ -80,6 +80,12 @@ A control-free whole function is boilerplate too, a dispatch stub or forwarding
 overload, so it clears the block floor, not the function floor. Only a function with
 control flow is a meaningful unit at the lower floor.
 The moment clone detection reaches for types or call graphs, it has left the bargain.
+Clusters are then ordered by how far apart their members sit in the module graph, one
+file to one directory to one community of directories to across communities, because two
+copies either side of a boundary are a missing abstraction where two copies in one file
+are a tidy-up. That is a ranking and nothing more: it never moves a finding's value, its
+band, or its membership of the floor `errors` gates on, since a package downstream gates
+its own tests on that floor.
 
 Reimplementation candidates are vocabulary, still not meaning. A helper rewritten
 with a different shape shares no subtrees with the original, so the clone passes miss
