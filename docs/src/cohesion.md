@@ -171,6 +171,28 @@ is not scored: below it every file touches most of the others and the count says
 about the architecture. A deliberate facade sits between two halves of a system by design;
 accept one with `dendro-ignore-file: hub`.
 
+## Audience splits
+
+Reported as `:split_audience`: a file whose definitions serve two or more groups of
+consumers that never overlap, the outward dual of `:low_cohesion`. Cohesion reads inward
+and splits a file by the bindings its own functions share; this reads outward and splits
+it by the files that consume its definitions. The two are independent: a file can share
+helpers throughout, so it reads as cohesive, while serving two audiences that never meet.
+
+For each definition something outside the file references, Dendro collects the consumer
+files, links two definitions whose consumer sets meet, and takes the connected components
+of that graph as the file's audiences. The score is the number of audiences holding at
+least two definitions, so a helper with a single caller is not one. The band is `[3, 5]`:
+across ten measured corpora 85% of scored files serve a single audience and 4% serve
+three, so three separated interfaces is the tail and five is rare enough to gate on. Two
+audiences is common enough that the corpus percentile carries it. The locations are one
+representative definition per audience, the split the finding proposes.
+
+The audience comes from resolved references, not from declared exports. A language with
+no export marker (Python, Go, C) exposes every top-level name, so an export-counting
+reading would collapse into file size. A file fewer than two other files consume has one
+audience by construction and is not scored at all.
+
 ## Unreferenced definitions
 
 Reported as `:unreferenced`: a private top-level definition no path reaches from the

@@ -253,3 +253,43 @@ end
         @test parse(Int, split(runs[1], '|')[end]) == 2
     end
 end
+
+@testitem ":split_audience is deterministic across thread counts" tags = [:parallel] begin
+    mktempdir() do dir
+        # Six provider files, each read by two consumers that share no definition, over
+        # enough files to clear the fan-out floor in the reference resolution the pass
+        # reads. Every provider splits into two audiences.
+        includes = String[]
+        for i in 1:6
+            write(joinpath(dir, "p$i.jl"), "pa$i() = 1\npb$i() = 2\npc$i() = 3\npd$i() = 4\n")
+            write(joinpath(dir, "x$i.jl"), "x$i() = pa$i() + pb$i()\n")
+            write(joinpath(dir, "y$i.jl"), "y$i() = pc$i() + pd$i()\n")
+            append!(includes, ["include(\"p$i.jl\")", "include(\"x$i.jl\")", "include(\"y$i.jl\")"])
+        end
+        write(joinpath(dir, "mod.jl"), join(includes, "\n") * "\n")
+
+        # The digest keeps the audience findings and their locations in returned order:
+        # the guarantee under test is byte-identical output at any thread count.
+        script = raw"""
+        import Dendro
+        fs = filter(f -> f.metric === :split_audience, Dendro.analyze(ARGS[1]; cut = 0.5))
+        io = IOBuffer()
+        for f in fs
+            print(io, f.value, '|', f.absolute, '|')
+            for x in f.locations
+                print(io, basename(x.file), ':', x.line, ':', x.unit, ';')
+            end
+            print(io, '\n')
+        end
+        print(hash(String(take!(io))), '|', length(fs))
+        """
+
+        proj = Base.active_project()
+        serial = read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -t1 -e $script $dir`, String)
+        parallel = read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -t4 -e $script $dir`, String)
+
+        @test serial == parallel
+        # A match on an empty result would prove nothing: the corpus is built to split.
+        @test parse(Int, split(serial, '|')[2]) == 6
+    end
+end

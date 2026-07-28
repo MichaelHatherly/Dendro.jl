@@ -28,8 +28,9 @@ source text
 builds a baseline from that corpus, runs the per-file path above against it for each
 file, and appends the corpus-relational findings: cross-file duplicates, naturalness
 outliers, low-cohesion files, misplaced units, scattered files, unreferenced private
-definitions, dependencies running against a directory pair's grain, and hub files. The
-active rule set is a value it carries, resolved from a `Config` (see Configuration)
+definitions, files serving disjoint audiences, dependencies running against a directory
+pair's grain, and hub files. The active rule set is a value it carries, resolved from a
+`Config` (see Configuration)
 unless the `rules` keyword overrides it, and it threads through baseline sampling, per-file
 scoring, and suppression validation, so a caller extends the checks without touching the
 pipeline. The baseline-from-the-corpus step is what makes relative scoring work with no
@@ -444,6 +445,22 @@ Reporting:
   definitions by shared consumer through `components` and returns one representative each,
   the extra locations on the finding. Consumer sets resolve only for files that fire.
   Included after `cohesion.jl`, before `corpus.jl`, which calls it.
+- `split_audience.jl` defines the outward dual of cohesion, the corpus-relational pass
+  that reads the resolved references without either graph. `consumer_files` collects,
+  per definition referenced from outside its file, the files that reference it;
+  `audience_groups` links two definitions whose consumer sets meet (star-linking each
+  consumer's definitions, so the components match pairwise linking at linear cost) and
+  reads the components through `components`, the same flood fill cohesion uses;
+  `cluster_split_audience` emits a `:split_audience` finding per file through
+  `scored_findings`, scored by the count of groups holding at least `MIN_AUDIENCE_DEFS`
+  definitions, carrying the absolute `SPLIT_AUDIENCE_BAND` and the corpus percentile,
+  with one representative definition per group as its locations. A file below
+  `MIN_SPLIT_GROUPS` audiences names no split and is never reported, but stays in the
+  scored population the percentile reads. Resolved consumers rather than declared
+  exports, since a language with no export marker exposes every top-level name. Reads
+  the whole corpus where `:hub` reads only a firing file, so the two share the grouping
+  through `audience_components`. Included after `hub.jl`, before `config.jl`, whose band
+  cascade names its band.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
@@ -461,11 +478,13 @@ Reporting:
   orchestrating corpus, baseline, per-file findings, exact and near duplicates, the
   config-gated reimplementation pass fed the clone findings it defers to,
   naturalness, then the corpus graph and the three passes that read it, low cohesion,
-  cross-file placement, scattering, then the file graph and the hub pass over it, and
-  optional diff scoping). It is included after
+  cross-file placement, scattering, the audience pass over the symbol table, then the
+  file graph and the three passes over it, and optional diff scoping). It is included
+  after
   `report.jl`, `diff.jl`, `clones.jl`, `reimplementation.jl`, `naturalness.jl`,
   `linkage.jl`, `corpus_graph.jl`, `file_graph.jl`, `placement.jl`, `scattered.jl`,
-  `cohesion.jl`, and `hub.jl` so everything it calls is defined first.
+  `cohesion.jl`, `hub.jl`, and `split_audience.jl` so everything it calls is defined
+  first.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, and the clone clusters into mermaid
   `flowchart` text, with `:file` and `:unit` granularity and active findings overlaid.

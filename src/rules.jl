@@ -84,6 +84,7 @@ const RELATIONAL = (
     unnatural = :unnatural,
     low_cohesion = :low_cohesion,
     scattered = :scattered,
+    split_audience = :split_audience,
     misplaced = :misplaced,
     unreferenced = :unreferenced,
     reimplementation = :reimplementation,

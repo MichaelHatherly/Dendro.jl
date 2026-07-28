@@ -244,6 +244,10 @@ function analyze(
     append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
     append!(findings, scope_clusters(cluster_unreferenced(files, table), scope))
+    append!(
+        findings,
+        scope_clusters(cluster_split_audience(files, table; cut = ecut, band = cfg.split_audience, visible), scope)
+    )
     # The file graph reads the same resolution one level up, unfiltered: the references the
     # unit graph drops as cross-cutting are the ones an architecture question is about. All
     # three rules over it read the one graph.
