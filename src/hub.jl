@@ -98,9 +98,8 @@ function cluster_hub(
     enough = length(scored) >= min_files
     hits = Tuple{Int, Int, Symbol, Union{Float64, Nothing}}[]
     for (node, value) in scored
-        absolute = severity(value, band)
-        pct = enough ? searchsortedlast(counts, value) / length(counts) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
+        absolute, pct = two_scores(value, counts, band, enough)
+        fires(absolute, pct, cut) || continue
         push!(hits, (node, value, absolute, pct))
     end
     isempty(hits) && return findings

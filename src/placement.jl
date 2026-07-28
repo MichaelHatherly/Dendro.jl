@@ -136,9 +136,8 @@ function cluster_misplaced(
     counts = sort([s[2] for s in scored])
     enough = length(scored) >= min_files
     for (src, score, target) in scored
-        absolute = severity(score, band)
-        pct = enough ? searchsortedlast(counts, score) / length(counts) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
+        absolute, pct = two_scores(score, counts, band, enough)
+        fires(absolute, pct, cut) || continue
         unit = graph.units[src]
         locations = [Location(unit.file, unit.line, unit.name), target]
         sup = is_suppressed(get(() -> Directive[], directives, unit.file), unit.line, RELATIONAL.misplaced)

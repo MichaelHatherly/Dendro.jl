@@ -31,10 +31,12 @@
   scan, and `:hub` ignores a corpus below `MIN_HUB_CORPUS_FILES`, so a single-file gate run
   pays for a graph no rule reads. The floors differ per rule, so the guard belongs once
   beside the shared build rather than in each pass.
-- The two-score emission tail still stands on its own in `cluster_misplaced` and the three
-  file-graph rules. `scored_findings` carries the file-level shape; those four score
-  something other than a file, so they share the band-and-percentile reading rather than
-  the whole tail.
-- `cluster_misplaced` does not use `scored_findings`: it keys by unit rather than file,
-  looks its directives up in a per-file dict, and reports a second location for the
-  suggested home. Widening the helper to cover it would carry those three differences.
+- `cluster_misplaced` and the three file-graph rules build their own findings rather than
+  going through `scored_findings`. Each scores something other than a file, a unit, a
+  directory pair, a cycle, or a graph node, and each reads its directives from a per-file
+  dict; `:hub` also resolves its locations only for the entries that fire. They share the
+  band-and-percentile reading through `two_scores` and `fires`, which is the part that is
+  genuinely the same.
+- `cluster_unnatural` reads its percentile over cross-entropies rather than over the
+  scored value, so it uses neither `two_scores` nor `fires` while spelling out the same
+  guard. Worth reconciling if the ranking key is ever unified.

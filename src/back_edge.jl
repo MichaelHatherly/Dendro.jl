@@ -93,9 +93,8 @@ function cluster_back_edge(
     enough = length(scored) >= MIN_BACK_EDGE_PAIRS
     flagged = Tuple{Tuple{Int, Int}, Int, Symbol, Union{Float64, Nothing}}[]
     for (minority, majority, dominance) in scored
-        absolute = severity(dominance, band)
-        pct = enough ? searchsortedlast(dominances, dominance) / length(dominances) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
+        absolute, pct = two_scores(dominance, dominances, band, enough)
+        fires(absolute, pct, cut) || continue
         for edge in minority_edges(fg, mg, minority, majority)
             push!(flagged, (edge, dominance, absolute, pct))
         end

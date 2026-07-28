@@ -325,9 +325,8 @@ function cluster_dependency_cycles(
     directives = Dict{String, Vector{Directive}}(f.file => f.directives for f in files)
     for members in comps
         score = length(members)
-        absolute = severity(score, band)
-        pct = enough ? searchsortedlast(sizes, score) / length(sizes) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
+        absolute, pct = two_scores(score, sizes, band, enough)
+        fires(absolute, pct, cut) || continue
         locations = cycle_locations(fg, members, order)
         anchor = locations[1]
         sup = is_suppressed(

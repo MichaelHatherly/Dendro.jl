@@ -292,11 +292,13 @@ Reporting:
 - `report.jl` defines `Location`, `Finding`, `Scan`, `findings_for`,
   `Findings` (the result wrapper, an `AbstractVector{Finding}` with a `show`
   method that renders the report), and `active`. This is where measurement,
-  scoring, and suppression meet. `scored_findings` is the two-score emission the
-  file-level corpus passes share: given each file's value and the locations to report
-  it at, it fires on the absolute band or the corpus percentile, reads the suppression
-  directive at the first location, and returns the findings sorted. `min_reported`
-  holds back a value that names nothing to act on while keeping it in the
+  scoring, and suppression meet. `two_scores` reads one value against its band and its
+  rank among the values scored alongside it, and `fires` decides whether either half
+  trips: every corpus-relational pass reads a value that way, whatever it scores.
+  `scored_findings` is the whole emission the file-level passes share on top of that:
+  given each file's value and the locations to report it at, it scores, reads the
+  suppression directive at the first location, and returns the findings sorted.
+  `min_reported` holds back a value that names nothing to act on while keeping it in the
   distribution, which is how `:split_audience` scores a single audience. Two renderers
   walk `Findings`: the `show`
   method for `text/plain`, and `github_annotations`, a standalone function (not a

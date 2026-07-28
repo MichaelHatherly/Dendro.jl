@@ -155,6 +155,23 @@ function findings_for(scan::Scan)
     return out
 end
 
+# The two scores one value carries: its severity against the fixed `band`, and its
+# percentile among `counts`, the values of everything scored alongside it. The percentile
+# is `nothing` unless `enough` of them were scored to rank against, so a thin corpus is
+# read on the absolute band alone. Every corpus-relational pass reads a value this way,
+# whatever it scores, a file, a directory pair, or a cycle.
+function two_scores(value::Int, counts::Vector{Int}, band::Tuple{Int, Int}, enough::Bool)
+    absolute = severity(value, band)
+    pct = enough ? searchsortedlast(counts, value) / length(counts) : nothing
+    return absolute, pct
+end
+
+# Whether a reading is reported: either score trips, the absolute band or the corpus rank.
+# Both halves are kept, since absolute alone misses an outlier in a uniformly weak corpus
+# and the rank alone calls that corpus fine.
+fires(absolute::Symbol, pct::Union{Float64, Nothing}, cut::Real) =
+    absolute !== :ok || (pct !== nothing && pct >= cut)
+
 """
     scored_findings(metric, scored, band, cut, min_files; min_reported=1) -> Vector{Finding}
 
@@ -178,9 +195,8 @@ function scored_findings(
     enough = length(scored) >= min_files
     for (f, value, locations) in scored
         value >= min_reported || continue
-        absolute = severity(value, band)
-        pct = enough ? searchsortedlast(counts, value) / length(counts) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
+        absolute, pct = two_scores(value, counts, band, enough)
+        fires(absolute, pct, cut) || continue
         sup = is_suppressed(f.directives, locations[1].line, metric)
         push!(findings, Finding(metric, locations, value, absolute, pct, :scalar, sup))
     end
