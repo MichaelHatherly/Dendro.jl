@@ -697,7 +697,7 @@ whose files sit in one directory contracts to one group and yields no pairs at a
 
 Dominance is a ratio, so a high score says the direction is one-way and never that the way
 back is short. A pair with a large majority side clears the band while carrying dozens of
-minority references, one finding each: CommonMark.jl's root against `writers` scores 96 on
+minority references, one finding each: CommonMark.jl's root against `writers` scores 95 on
 15 references over 14 file edges. The location count is what bounds the edit.
 
 Higher dominance is worse, the direction the band model expects: a pair at 60/40 is a

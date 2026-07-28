@@ -14,7 +14,7 @@
 # admits, never a type or a dispatch.
 
 # Absolute band on the dominance percent, the share of the traffic between two directories
-# running the majority way. Measured over 64 qualifying pairs from nine corpora in five
+# running the majority way. Measured over 69 qualifying pairs from nine corpora in five
 # languages: Documenter.jl, Pkg.jl, Pluto.jl, DataFrames.jl and Julia's Base, Flask,
 # ripgrep, Laravel, and the julia-vscode extension.
 #
@@ -28,9 +28,10 @@
 # What the measurement does not fix is the size of the resulting edit, and the band must
 # not be read as bounding it. Dominance is a ratio, so a pair with a large majority side
 # clears 95 while carrying a large minority side: CommonMark.jl's root against `writers`
-# scores 96 on 15 references spread over 14 file edges, which is 14 findings and 14 gate
-# errors from one observation. A high score says the direction is one-way. It never says
-# one import removal restores it. The location count is what says that.
+# scores 95, exactly at the high threshold, on 15 references spread over 14 file edges,
+# which is 14 findings and 14 gate errors from one observation. A high score says the
+# direction is one-way. It never says one import removal restores it. The location count
+# is what says that.
 const BACK_EDGE_BAND = (85, 95)
 
 # The majority direction needs at least this much traffic before the pair has a grain to
