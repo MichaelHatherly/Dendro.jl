@@ -132,6 +132,38 @@ ratchet catches worsening, and another reference across a back edge is worsening
 Deliberate callbacks and plugin registration point backwards by design. Accept one with
 `dendro-ignore: back_edge`.
 
+## Hub files
+
+Reported as `:hub`: a file that both depends on much of the corpus and is depended on by
+much of it, the Crossing anti-pattern. The reading comes from the file dependency graph,
+the same resolution placement uses one level up, with nothing filtered out: the score is
+`min(fan_in, fan_out)` over the count of distinct files depending on this one and the
+count it depends on. The conjunction is the whole signal. Fan-in alone is every utility
+module and fan-out alone every orchestrator, neither of which is a smell; a file with both
+is the one that propagates every change in either direction.
+
+The finding's first location is the file, at its first unit. When the hub's
+externally-referenced definitions fall into two or more audiences, groups of definitions
+linked by sharing a consumer file, one representative definition per audience follows, and
+that split is the proposed edit:
+
+```
+src/session.jl:1  hub 18 (warn; p97)
+    also at src/session.jl:12  open_session
+    also at src/session.jl:96  render_token
+```
+
+A hub whose consumers all reach the whole file carries no such representatives: it is a
+warning with no proposal, and saying so beats proposing a split that does not hold.
+
+Two scores again, and here the corpus percentile does most of the work. Fan-in and fan-out
+both grow with the corpus, so the absolute band can only mark the level at which a crossing
+reads as central whatever the corpus, while the rank places one file against another. The
+ranked population is the files that cross at all, and a corpus below `MIN_HUB_CORPUS_FILES`
+is not scored: below it every file touches most of the others and the count says nothing
+about the architecture. A deliberate facade sits between two halves of a system by design;
+accept one with `dendro-ignore-file: hub`.
+
 ## Unreferenced definitions
 
 Reported as `:unreferenced`: a private top-level definition no path reaches from the

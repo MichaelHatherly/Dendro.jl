@@ -28,7 +28,7 @@ source text
 builds a baseline from that corpus, runs the per-file path above against it for each
 file, and appends the corpus-relational findings: cross-file duplicates, naturalness
 outliers, low-cohesion files, misplaced units, scattered files, unreferenced private
-definitions, and dependencies running against a directory pair's grain. The active rule
+definitions, dependencies running against a directory pair's grain, and hub files. The active rule
 set is a value it carries, resolved from a `Config` (see Configuration) unless the
 `rules` keyword overrides it, and it threads through baseline sampling, per-file
 scoring, and suppression validation, so a caller extends the checks without touching the
@@ -50,9 +50,9 @@ corpus files
 ```
 
 `analyze` hoists `corpus_visibility` and hands it to both graphs. Cohesion, placement,
-scattering, and reachability run over the unit graph; `:back_edge` and `:dependency_cycle`
-run over the one file graph, the substrate for the rules that read the corpus as files
-depending on files.
+scattering, and reachability run over the unit graph; `:back_edge`, `:dependency_cycle`
+and `:hub` run over the one file graph, the substrate for the rules that read the corpus
+as files depending on files.
 
 The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus at
 collection time, inside `source_files`, before any parsing. Excluded files leave
@@ -434,6 +434,16 @@ Reporting:
   percentile. The LCOM4 reading of independent concerns cohabiting. Binding-keyed but
   still syntactic, within one file. Included after `scattered.jl`, since its signature
   names `CorpusGraph`.
+- `hub.jl` defines the Crossing pass over the file graph, the one relational metric read at
+  file-graph level. `crossing_scores` counts each file's distinct dependents and
+  dependencies and scores `min(fan_in, fan_out)`, the conjunction that separates a crossing
+  from a utility or an orchestrator; `cluster_hub` emits a `:hub` finding per file, carrying
+  the absolute `HUB_BAND` and the percentile over the files that cross at all, skipping a
+  corpus below `MIN_HUB_CORPUS_FILES`. The proposal is the split: `consumer_sets` collects
+  who references each definition in a firing file, and `audience_reps` groups those
+  definitions by shared consumer through `components` and returns one representative each,
+  the extra locations on the finding. Consumer sets resolve only for files that fire.
+  Included after `cohesion.jl`, before `corpus.jl`, which calls it.
 - `ignore.jl` defines the path filter behind `analyze`'s `ignore` keyword:
   `glob_to_regex` translates one gitignore pattern, `compile_ignores` builds the
   pattern list, `is_ignored` decides a path (last match wins, negation re-includes).
@@ -451,10 +461,11 @@ Reporting:
   orchestrating corpus, baseline, per-file findings, exact and near duplicates, the
   config-gated reimplementation pass fed the clone findings it defers to,
   naturalness, then the corpus graph and the three passes that read it, low cohesion,
-  cross-file placement, scattering, and optional diff scoping). It is included after
+  cross-file placement, scattering, then the file graph and the hub pass over it, and
+  optional diff scoping). It is included after
   `report.jl`, `diff.jl`, `clones.jl`, `reimplementation.jl`, `naturalness.jl`,
-  `linkage.jl`, `corpus_graph.jl`, `placement.jl`, `scattered.jl`, and `cohesion.jl`
-  so everything it calls is defined first.
+  `linkage.jl`, `corpus_graph.jl`, `file_graph.jl`, `placement.jl`, `scattered.jl`,
+  `cohesion.jl`, and `hub.jl` so everything it calls is defined first.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, and the clone clusters into mermaid
   `flowchart` text, with `:file` and `:unit` granularity and active findings overlaid.
@@ -761,6 +772,31 @@ it, the component has no bounded edit: the locations become its highest-degree m
 every label reads `tangled: <n> cuts`. Reporting the tangle rather than dropping it is the
 honest-over-silent call, and the label is what tells the two apart without inferring
 anything from the location count.
+
+## Hub files
+
+`cluster_hub` (`hub.jl`) reads the same graph per file, for the Crossing anti-pattern:
+a file both depended on by much of the corpus and depending on much of it propagates every
+change in either direction. The score is `min(fan_in, fan_out)` over distinct file counts,
+and the `min` is the whole rule. Fan-in alone is every utility module and fan-out alone
+every orchestrator; only the conjunction names the file in the middle. A file with no edge
+in one direction is not a crossing, so it neither fires nor enters the population the
+percentile ranks against.
+
+Both scores fire it, and here the rank does most of the work: fan-in and fan-out grow with
+the corpus, so `HUB_BAND` can only mark the level at which a crossing reads as central
+whatever the corpus. `MIN_HUB_CORPUS_FILES` silences the rule below a corpus where every
+file touches most of the others, and unlike `MIN_COHESION_FILES` it gates the rule rather
+than only its percentile, since the absolute reading is as size-dependent as the rank.
+
+The finding proposes the split. `consumer_sets` collects, for each definition in a firing
+file, which files reference it; two definitions belong to the same audience when a consumer
+reaches both, and `audience_reps` reads those groups off the same `components` flood fill
+cohesion uses, returning one representative definition each. The first location is the file
+at its first unit and the representatives follow, so the extra locations are the proposed
+edit. A hub whose consumers all reach the whole file carries the file alone: a warning with
+no proposal states its case better than a split that does not hold. Consumer sets resolve
+only for the files that fire, so a corpus with no hub pays nothing for the proposal.
 
 ## Suppression
 

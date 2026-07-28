@@ -157,6 +157,17 @@ defect: one more reference across a back edge is worsening, and the ratchet is t
 catch worsening. Deliberate callbacks and plugin registration point backwards on purpose;
 answer those with a suppression, not a smarter model.
 
+A hub is that graph read per file. A file both depended on by much of the corpus and
+depending on much of it propagates every change in either direction, so `:hub` scores
+`min(fan_in, fan_out)` over distinct files and nothing else: fan-in alone is every utility
+and fan-out alone every orchestrator, and only the conjunction names the file in the
+middle. Keep the `min`. The proposal is the split, the hub's definitions grouped by who
+consumes them, and a hub whose consumers all reach the whole file is reported as a warning
+with no proposal rather than dressed up as one. Both counts grow with the corpus, so the
+absolute band here is weaker than any per-function one and the percentile carries most of
+the weight, which is the two-score model earning its place rather than a defect to tune
+away.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment

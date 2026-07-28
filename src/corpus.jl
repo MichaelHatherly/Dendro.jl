@@ -245,13 +245,14 @@ function analyze(
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
     append!(findings, scope_clusters(cluster_unreferenced(files, table), scope))
     # The file graph reads the same resolution one level up, unfiltered: the references the
-    # unit graph drops as cross-cutting are the ones an architecture question is about. Both
-    # rules over it read the one graph.
+    # unit graph drops as cross-cutting are the ones an architecture question is about. All
+    # three rules over it read the one graph.
     fg = build_file_graph(files, table, Corpus(files); visible)
     append!(findings, scope_clusters(cluster_back_edge(files, fg, table; cut = ecut, band = cfg.back_edge, visible), scope))
     append!(
         findings,
         scope_clusters(cluster_dependency_cycles(files, fg; cut = ecut, band = cfg.dependency_cycle), scope)
     )
+    append!(findings, scope_clusters(cluster_hub(files, fg, table; visible, cut = ecut, band = cfg.hub), scope))
     return Findings(findings)
 end

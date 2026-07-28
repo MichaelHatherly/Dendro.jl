@@ -94,6 +94,56 @@ end
     end
 end
 
+@testitem "the hub pass is deterministic across thread counts" tags = [:parallel] begin
+    mktempdir() do dir
+        # Two interleaved chains: `a$i` reaches three files back, `b$i` six back, so every
+        # middle file both depends on six others and is depended on by six, and its two
+        # audiences share no consumer. That exercises the crossing score and the audience
+        # split together.
+        for i in 1:24
+            back(offsets, prefix) = join(("$prefix$(i - k)(x)" for k in offsets if i - k >= 1), " + ")
+            a = back(1:3, "a")
+            b = back(4:6, "b")
+            write(joinpath(dir, "f$i.jl"), "a$i(x) = $(isempty(a) ? "x" : a)\nb$i(x) = $(isempty(b) ? "x" : b)\n")
+        end
+        write(joinpath(dir, "mod.jl"), join("include(\"f$i.jl\")\n" for i in 1:24))
+
+        # Byte-identical findings are the guarantee: no Dict iteration order may reach the
+        # crossing scores, the audience groups, or the representative each one reports.
+        script = raw"""
+        import Dendro
+        files = Dendro.parse_corpus(Dendro.source_files(ARGS[1]))
+        table = Dendro.corpus_symbols(files)
+        visible = Dendro.corpus_visibility(files, table)
+        corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+        fg = Dendro.build_file_graph(files, table, corpus; visible)
+        fs = Dendro.cluster_hub(files, fg, table; visible, band = (2, 3), min_files = 10)
+        io = IOBuffer()
+        for f in fs
+            print(io, f.value, '|', f.absolute, '|', f.percentile, '|', f.suppressed, '|')
+            for l in f.locations
+                print(io, basename(l.file), ':', l.line, ':', l.unit, ';')
+            end
+            print(io, '\n')
+        end
+        print(String(take!(io)), '|', length(fs))
+        """
+
+        # `--startup-file=no` pins the captured stdout, as the analyze determinism item does.
+        proj = Base.active_project()
+        runs = [
+            read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -t$t -e $script $dir`, String)
+                for t in (1, 2, 4, 8)
+        ]
+
+        @test runs[1] == runs[2]
+        @test runs[1] == runs[3]
+        @test runs[1] == runs[4]
+        # The corpus is built to produce hubs, so a match on an empty result is no proof.
+        @test parse(Int, split(runs[1], '|')[end]) > 0
+    end
+end
+
 @testitem "the file graph is deterministic across thread counts" tags = [:parallel] begin
     mktempdir() do dir
         # More than PARALLEL_MIN files, chained so every file resolves a reference into

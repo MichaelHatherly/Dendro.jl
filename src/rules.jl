@@ -89,6 +89,7 @@ const RELATIONAL = (
     reimplementation = :reimplementation,
     back_edge = :back_edge,
     dependency_cycle = :dependency_cycle,
+    hub = :hub,
 )
 const RELATIONAL_METRICS = values(RELATIONAL)
 

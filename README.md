@@ -179,7 +179,8 @@ threshold = 0.6            # vocabulary overlap a candidate pair must reach
 ```
 
 `[bands]` keys are the scalar metric names plus the relational names (`unnatural`,
-`low_cohesion`, `scattered`, `misplaced`, `back_edge`, `dependency_cycle`); `[rules]` keys are any rule
+`low_cohesion`, `scattered`, `misplaced`, `back_edge`, `dependency_cycle`, `hub`);
+`[rules]` keys are any rule
 name, plus `reimplementation` to gate that corpus pass; `[clones]` and
 `[reimplementation]` set the duplicate- and reimplementation-detection thresholds. An
 unknown key warns and is ignored, so a typo is visible rather than silent. The bands,
@@ -213,6 +214,6 @@ The [documentation](https://MichaelHatherly.github.io/Dendro.jl/stable) covers t
 rest: the two-score model and every metric, duplicate and near-duplicate detection,
 within-file cohesion, cross-file placement and scattering, dependencies running against
 a directory pair's grain, dependency cycles reported as the edges that break them
-(`dependency_cycle`, banded on the number of files caught in the cycle at `[5, 10]`), dead
-private code by reachability, suppression directives and path ignores, custom rules, and
-the public API reference.
+(`dependency_cycle`, banded on the number of files caught in the cycle at `[5, 10]`), hub
+files by fan-in and fan-out, dead private code by reachability, suppression directives and
+path ignores, custom rules, and the public API reference.
