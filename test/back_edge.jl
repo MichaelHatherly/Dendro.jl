@@ -179,6 +179,45 @@ end
     end
 end
 
+@testitem "a wide minority side reports without gating" setup = [Fixtures] tags = [:back_edge] begin
+    # `n` minority file edges, each one core file naming one definition in api, against 20
+    # references per file the other way. Dominance is 20n/21n whatever `n` is, so the pair
+    # sits at 95 and only the width of its minority side changes.
+    function spread(n::Int)
+        files = Dendro.ParsedFile[]
+        for i in 1:n
+            push!(
+                files,
+                Fixtures.parsedfile(:julia, "t$i(x) = x\nback$i(x) = api_helper(x)\n"; file = "core/c$i.jl")
+            )
+        end
+        heavy = join((join(("t$i(x)" for _ in 1:20), " + ") for i in 1:n), " + ")
+        push!(files, Fixtures.parsedfile(:julia, "api_helper(y) = y\nusea(x) = $heavy\n"; file = "api/a.jl"))
+        includes = join("include(\"core/c$i.jl\")\n" for i in 1:n) * "include(\"api/a.jl\")\n"
+        push!(files, Fixtures.parsedfile(:julia, includes; file = "all.jl"))
+        table = Dendro.corpus_symbols(files)
+        fg = Dendro.build_file_graph(files, table, Dendro.Corpus(files))
+        return Dendro.cluster_back_edge(files, fg, table; band = (85, 95))
+    end
+
+    # At the cap the pair still names a bounded edit, so it gates as any back edge does.
+    narrow = spread(Dendro.BACK_EDGE_EDGE_CAP)
+    @test length(narrow) == Dendro.BACK_EDGE_EDGE_CAP
+    @test all(f -> f.absolute === :high, narrow)
+    @test all(f -> f.value == 95, narrow)
+
+    # One edge wider and there is no single edit to propose, so the same observation is
+    # still reported at every edge and stops entering the error floor. A burst of gate
+    # errors from one architectural observation is what this prevents.
+    wide = spread(Dendro.BACK_EDGE_EDGE_CAP + 1)
+    @test length(wide) == Dendro.BACK_EDGE_EDGE_CAP + 1
+    @test !any(f -> f.absolute === :high, wide)
+    @test all(f -> f.absolute === :warn, wide)
+    @test all(f -> f.value == 95, wide)
+    # Every minority edge is still named; the finding is demoted, never dropped.
+    @test length(unique(first(f.locations).file for f in wide)) == Dendro.BACK_EDGE_EDGE_CAP + 1
+end
+
 @testitem "a shallow tree has no directory pairs to score" setup = [Fixtures] tags = [:back_edge] begin
     heavy = join(("core_a(x)" for _ in 1:20), " + ")
     files = [

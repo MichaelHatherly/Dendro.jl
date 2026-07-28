@@ -146,6 +146,12 @@ small. A pair with a large majority side clears a high band while still carrying
 of references home, and each of those is its own finding. Read how many findings a pair
 produced, not the score, to judge how large the edit is.
 
+A pair spread over more than a few file edges is therefore reported without gating: the
+findings still name every edge, but none of them is error severity, whatever the
+dominance. There is no single edit to propose for such a pair, and one architectural
+observation should not become a dozen errors in a CI gate. It is the same treatment a
+dependency cycle too tangled to cut receives.
+
 One finding is emitted per file edge in the minority direction rather than one per pair,
 since the edit is to an edge. Its locations are the import statement admitting the edge,
 where the language declares one, then every reference site across it. That is wider than

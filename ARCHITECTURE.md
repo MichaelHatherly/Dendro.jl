@@ -800,6 +800,15 @@ back is short. A pair with a large majority side clears the band while carrying 
 minority references, one finding each: CommonMark.jl's root against `writers` scores 95 on
 15 references over 14 file edges. The location count is what bounds the edit.
 
+`BACK_EDGE_EDGE_CAP` is what keeps that difference out of the gate. A pair spreading its
+minority direction over more file edges than the cap reports below `:high` whatever its
+dominance, so one architectural observation cannot become a dozen gate errors when no
+single edit resolves it. The findings still name every minority edge; they stop claiming
+an edit the pair cannot deliver. Same reasoning as a cycle component too tangled to cut,
+reported as a tangle rather than as a feedback set. Of the seventeen pairs reaching the
+high threshold across the calibration corpora, sixteen spread over one to four edges and
+the seventeenth over fourteen, so the cap sits in a measured gap.
+
 Higher dominance is worse, the direction the band model expects: a pair at 60/40 is a
 genuinely mutual dependency, which is a cycle rather than a violated grain. Scored like the
 other relational metrics, the absolute `BACK_EDGE_BAND` on the dominance percent and the

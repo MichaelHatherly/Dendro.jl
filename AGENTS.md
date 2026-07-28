@@ -154,7 +154,10 @@ corpus rather than from a declared layer map nobody maintains. Higher dominance 
 because a pair that couples both ways in earnest is a cycle rather than a violated grain.
 The score is a ratio, so it never bounds the size of the resulting edit: a pair with a
 large majority side clears the band while still carrying dozens of references home, one
-finding each. The location count says how big the edit is; the score does not.
+finding each. The location count says how big the edit is; the score does not, which is
+why a pair spread over more than a few file edges reports below `:high` whatever its
+dominance: it still names every edge, it just stops claiming an edit it cannot deliver,
+and one observation stays one observation rather than a burst of gate errors.
 Its locations are the import statement and then every reference across the edge, which is
 wider than any per-file metric's and is what lets a diff that adds a use of an
 already-imported name still scope the finding in. The consequence, that the gate ratchet

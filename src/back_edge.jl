@@ -28,16 +28,29 @@
 # What the measurement does not fix is the size of the resulting edit, and the band must
 # not be read as bounding it. Dominance is a ratio, so a pair with a large majority side
 # clears 95 while carrying a large minority side: CommonMark.jl's root against `writers`
-# scores 95, exactly at the high threshold, on 15 references spread over 14 file edges,
-# which is 14 findings and 14 gate errors from one observation. A high score says the
-# direction is one-way. It never says one import removal restores it. The location count
-# is what says that.
+# scores 95, exactly at the high threshold, on 15 references spread over 14 file edges. A
+# high score says the direction is one-way. It never says one import removal restores it.
+# `BACK_EDGE_EDGE_CAP` is what keeps that difference out of the gate.
 const BACK_EDGE_BAND = (85, 95)
 
 # The majority direction needs at least this much traffic before the pair has a grain to
 # violate. Two directories exchanging a handful of references each way have settled on no
 # direction, and reading one as dominant would be reading noise.
 const BACK_EDGE_MIN_MAJOR = 10
+
+# The widest minority side that still names a bounded edit. A pair spreading its minority
+# direction over more file edges than this reports below `:high` whatever its dominance, so
+# one architectural observation cannot become a burst of gate errors when there is no single
+# edit to propose. The same reasoning as a cycle component too tangled to cut: report it,
+# stop pretending it names an edit.
+#
+# Measured over the twelve calibration corpora. Of the seventeen pairs reaching the high
+# threshold, sixteen spread their minority side over one to four file edges and the
+# seventeenth over fourteen, CommonMark.jl's root against `writers`. Nothing lands between
+# five and thirteen, so the cap sits in a real gap rather than on a judgement call. The
+# pairs it excludes are the wide ones in the warn band, at 7, 8, 18, 56 and 135 edges,
+# which are tangles by any reading.
+const BACK_EDGE_EDGE_CAP = 5
 
 # The corpus needs this many bidirectional directory pairs before the dominance percentile
 # means anything; under it only the absolute band fires, as cohesion does on a thin corpus.
@@ -57,6 +70,16 @@ direction clears `min_major`, scores the dominance percent, `100 * major / (majo
 Each finding carries the absolute `band` on that percent and the corpus percentile over
 the bidirectional pairs, fired when either trips. One finding is emitted per file edge in
 the minority direction, since the edit is to an edge rather than to a pair.
+
+A pair whose minority direction spans more than `BACK_EDGE_EDGE_CAP` file edges reports
+below `:high` whatever its dominance. Dominance fixes where a settled direction begins and
+says nothing about how far back the way home is, so a pair with a large majority side
+clears the high threshold while spreading its minority side over a dozen files. Emitting
+those at `:high` turns one architectural observation into a dozen gate errors and offers
+no bounded edit for any of them. The findings still name every minority edge, so nothing
+is hidden; they stop claiming an edit the pair cannot deliver. This follows the same
+reasoning as a cycle component too tangled to cut, which is reported as a tangle rather
+than as a feedback set.
 
 The locations are the minority edge's import statement first, where the language declares
 one, then every reference site across the edge. That is wider than the per-file metrics
@@ -95,8 +118,12 @@ function cluster_back_edge(
     for (minority, majority, dominance) in scored
         absolute, pct = two_scores(dominance, dominances, band, enough)
         fires(absolute, pct, cut) || continue
-        for edge in minority_edges(fg, mg, minority, majority)
-            push!(flagged, (edge, dominance, absolute, pct))
+        edges = minority_edges(fg, mg, minority, majority)
+        # A minority side spread this wide proposes no single edit, so it is reported and
+        # not gated. Demoted rather than dropped: the observation stands, the claim does not.
+        reported = length(edges) > BACK_EDGE_EDGE_CAP && absolute === :high ? :warn : absolute
+        for edge in edges
+            push!(flagged, (edge, dominance, reported, pct))
         end
     end
     isempty(flagged) && return findings
