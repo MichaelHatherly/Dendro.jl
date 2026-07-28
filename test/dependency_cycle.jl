@@ -138,6 +138,33 @@ end
     @test [(l.file, l.unit) for l in findings[1].locations] == [("b.jl", "cut -> a.jl")]
 end
 
+@testitem "a config band reaches the cycle rule" tags = [:dependency_cycle] begin
+    using Dendro: analyze, discover_config
+
+    mktempdir() do dir
+        # A three-file cycle, under the default band and over the configured one. The band
+        # is positional in `Config`, so this pins that it lands on this metric and not a
+        # neighbouring one.
+        write(joinpath(dir, "a.jl"), "include(\"b.jl\")\nfa(x) = gb(x) + gb(x + 1)\nga(y) = y\n")
+        write(joinpath(dir, "b.jl"), "include(\"c.jl\")\nfb(x) = gc(x) + gc(x + 1)\ngb(y) = y\n")
+        write(joinpath(dir, "c.jl"), "include(\"a.jl\")\nfc(x) = ga(x)\ngc(y) = y\n")
+        toml = joinpath(dir, "c.toml")
+        write(toml, "[bands]\ndependency_cycle = [2, 3]\n")
+        cfg = mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                discover_config([dir]; explicit = toml)
+            end
+        end
+        @test cfg.dependency_cycle == (2, 3)
+
+        cycles(fs) = filter(f -> f.metric === :dependency_cycle, fs)
+        @test isempty(cycles(analyze(dir)))
+        tuned = only(cycles(analyze(dir; config = cfg)))
+        @test tuned.value == 3
+        @test tuned.absolute === :high
+    end
+end
+
 @testitem "the percentile carries a small cycle the band leaves alone" setup = [Fixtures] tags = [:dependency_cycle] begin
     # Six two-file cycles and one four-file cycle. Every one of them sits under the
     # default absolute band, and the corpus-relative half is what reports the outlier:
