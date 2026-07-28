@@ -140,3 +140,31 @@ end
     @test "Helper" in names
     @test !any(contains('.'), names)
 end
+
+@testitem "a TypeScript import resolves a .js specifier to its source file" setup = [Fixtures] tags = [:linkage] begin
+    # TypeScript's ESM output convention has a module specifier name the emitted `.js` file
+    # while the source on disk is `.ts`, so the specifier matches no corpus path directly.
+    # Resolution drops the compiled extension and tries the source extensions behind it;
+    # without that, a corpus written this way resolves nothing across the file boundary.
+    a = Fixtures.parsedfile(:typescript, "export function helper(): number {\n  return 1;\n}\n"; file = "a.ts")
+    b = Fixtures.parsedfile(
+        :typescript,
+        "import { helper } from './a.js';\nexport function f(): number {\n  return helper();\n}\n";
+        file = "b.ts",
+    )
+    files = [a, b]
+    @test "helper" in keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["b.ts"])
+end
+
+@testitem "a JavaScript import still resolves a bare relative specifier" setup = [Fixtures] tags = [:linkage] begin
+    # Dropping a compiled extension must not cost the extensionless form, which is what
+    # JavaScript's own bundler convention writes.
+    a = Fixtures.parsedfile(:javascript, "export function helper() {\n  return 1;\n}\n"; file = "a.js")
+    b = Fixtures.parsedfile(
+        :javascript,
+        "import { helper } from './a';\nexport function f() {\n  return helper();\n}\n";
+        file = "b.js",
+    )
+    files = [a, b]
+    @test "helper" in keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["b.js"])
+end

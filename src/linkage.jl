@@ -478,22 +478,47 @@ end
 # does the gating.
 import_exported(::CorpusDef, ::Set{String}) = true
 
-# Resolve a JavaScript module specifier to corpus files. Only a relative specifier
-# (`./mod`, `../lib/mod`) names a corpus file; a bare specifier is a package. The path
-# resolves against the importing file's directory, trying each module extension and an
-# `index` file in a directory.
+# The extensions a corpus file written in one of the two ECMAScript languages carries, the
+# forms a resolved module path is tried under.
+const JS_SOURCE_EXTENSIONS = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
+
+# The extensions a module specifier names a compiled module under. TypeScript's ESM output
+# convention has the specifier name the emitted `.js` file while the source on disk is
+# `.ts`, so a specifier ending this way is also tried with the extension dropped.
+const JS_OUTPUT_EXTENSIONS = (".js", ".jsx", ".mjs", ".cjs")
+
+# Resolve a JavaScript or TypeScript module specifier to corpus files. Only a relative
+# specifier (`./mod`, `../lib/mod`) names a corpus file; a bare specifier is a package. The
+# path resolves against the importing file's directory, tried as written, under each module
+# extension, and, where the specifier names a compiled module, again with that extension
+# dropped: `./a.js` in a TypeScript corpus names `a.ts`, and without that reading a corpus
+# following the convention resolves nothing across the file boundary. A specifier that
+# matches under both forms resolves to both, the same split a name matching several
+# definitions already takes.
 function js_resolve(target::AbstractString, fromfile::AbstractString, corpus::Corpus)
     spec = strip(target, ['"', '\'', '`'])
     startswith(spec, ".") || return String[]
     base = corpus_join(dirname(fromfile), spec)
     found = String[]
     base in corpus && push!(found, base)
-    for ext in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
+    js_candidates!(found, base, corpus)
+    for ext in JS_OUTPUT_EXTENSIONS
+        endswith(base, ext) || continue
+        js_candidates!(found, chopsuffix(base, ext), corpus)
+        break
+    end
+    return unique(found)
+end
+
+# The corpus files a resolved module path may name: the path under each module extension,
+# and a directory's `index` file under each.
+function js_candidates!(found::Vector{String}, base::AbstractString, corpus::Corpus)
+    for ext in JS_SOURCE_EXTENSIONS
         (base * ext) in corpus && push!(found, base * ext)
         index = corpus_join(base, "index" * ext)
         index in corpus && push!(found, index)
     end
-    return unique(found)
+    return found
 end
 
 # JavaScript exports by name: only a name the module marks `export` is visible to an
