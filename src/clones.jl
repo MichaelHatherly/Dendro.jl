@@ -240,9 +240,11 @@ end
 """
     rank_clones!(findings, placement) -> Vector{Finding}
 
-Re-rank clone findings by [`clone_distance`](@ref), widest spread first. A stable sort, so
-each pass's own ordering, cluster size and then location for the structural passes, overlap
-score for `:reimplementation`, survives inside one distance and keeps deciding ties.
+Re-rank clone findings by [`clone_distance`](@ref), widest spread first. Each distance is
+measured once and the findings permuted by a stable `sortperm` over the readings, so a
+cluster's member set is walked once rather than once per comparison, and each pass's own
+ordering, cluster size and then location for the structural passes, overlap score for
+`:reimplementation`, survives inside one distance and keeps deciding ties.
 
 Ranking only. `value`, `absolute`, and every finding's locations are untouched, so the
 result is a permutation of the input. The gate depends on that: `:duplicate` is emitted at
@@ -250,8 +252,10 @@ the `:high` band and sits inside the floor [`errors`](@ref) returns, and the rat
 finding by `(metric, sorted location set)`, so a pure re-rank moves neither the floor nor a
 key.
 """
-rank_clones!(findings::Vector{Finding}, placement::ModulePlacement) =
-    sort!(findings; by = f -> -clone_distance(f, placement), alg = Base.Sort.MergeSort)
+function rank_clones!(findings::Vector{Finding}, placement::ModulePlacement)
+    distances = Int[clone_distance(f, placement) for f in findings]
+    return permute!(findings, sortperm(distances; rev = true, alg = Base.Sort.MergeSort))
+end
 
 # An anchor is subsumed when its nearest enclosing anchor is a clone of at least the
 # same multiplicity: the larger clone already covers it. Multiplicity never rises

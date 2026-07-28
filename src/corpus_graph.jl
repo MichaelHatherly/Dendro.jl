@@ -149,9 +149,13 @@ function adjacency(graph::CorpusGraph; within::Bool = false)
 end
 
 # Fold directed weighted edges into an undirected neighbour-weight adjacency, each edge
-# added to both endpoints.
-function fold_edges!(adj::Vector{Dict{Int, Float64}}, edges::Dict{Tuple{Int, Int}, Float64})
-    for ((a, b), w) in edges
+# added to both endpoints. Keys are sorted first, so the sums accumulate in corpus order
+# rather than in whatever order the `Dict` yields. The weight type is the caller's: the
+# unit graph counts references as `Float64`, the module graph as `Int`.
+function fold_edges!(adj::Vector{Dict{Int, Float64}}, edges::Dict{Tuple{Int, Int}, <:Real})
+    for key in sort!(collect(keys(edges)))
+        a, b = key
+        w = Float64(edges[key])
         adj[a][b] = get(adj[a], b, 0.0) + w
         adj[b][a] = get(adj[b], a, 0.0) + w
     end

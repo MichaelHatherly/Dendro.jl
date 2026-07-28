@@ -241,16 +241,8 @@ end
 
 A community label per module in `mg`, from the same modularity optimisation
 [`communities`](@ref) runs over the unit graph, here over the undirected reading of the
-contracted edges. Modules that couple heavily land in one neighbourhood; a module nothing
-couples to stands alone. Keys are sorted before folding, so no `Dict` order reaches the
-weights.
+contracted edges that `fold_edges!` builds. Modules that couple heavily land in one
+neighbourhood; a module nothing couples to stands alone.
 """
-function module_communities(mg::ModuleGraph)
-    adj = [Dict{Int, Float64}() for _ in mg.groups]
-    for (a, b) in sort!(collect(keys(mg.edges)))
-        w = Float64(mg.edges[(a, b)])
-        adj[a][b] = get(adj[a], b, 0.0) + w
-        adj[b][a] = get(adj[b], a, 0.0) + w
-    end
-    return communities(adj)
-end
+module_communities(mg::ModuleGraph) =
+    communities(fold_edges!([Dict{Int, Float64}() for _ in mg.groups], mg.edges))

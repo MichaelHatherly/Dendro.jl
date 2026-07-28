@@ -263,11 +263,22 @@ end
     # location set) with the two fields the re-rank must never touch carried alongside.
     floorkey(f) = (f.metric, sort([(loc.file, loc.unit) for loc in f.locations]), f.value, f.absolute)
     clonekeys(fs) = sort([floorkey(f) for f in fs if f.metric in (:duplicate, :near_duplicate)])
-    # The clone findings before `analyze` re-ranks them: the pass output itself.
-    unranked(dir) = (
-        files = Dendro.parse_corpus(Dendro.source_files(dir));
-        [Dendro.cluster_duplicates(files); Dendro.cluster_near_duplicates(files)]
-    )
+    # The clone findings before `analyze` re-ranks them: the pass output itself, run under
+    # the same resolved config both sides use, so a `.dendro.toml` retuning a clone
+    # threshold moves both or neither and can never split them silently.
+    function unranked(dir, cfg)
+        profiles = Dendro.resolve_profiles(cfg)
+        corpus = Dendro.collect_corpus([dir], String[], nothing; profiles)
+        files = Dendro.parse_corpus(corpus; rules = Dendro.resolve_rules(cfg), profiles)
+        return [
+            Dendro.cluster_duplicates(files; min_size = cfg.min_size);
+            Dendro.cluster_near_duplicates(
+                files; min_size = cfg.min_size, threshold = cfg.threshold,
+                radius_factor = cfg.radius_factor
+            )
+        ]
+    end
+    floor_of(dir, cfg) = clonekeys(filter(f -> !f.suppressed, unranked(dir, cfg)))
 
     mktempdir() do dir
         mkpath(joinpath(dir, "a"))
@@ -277,13 +288,146 @@ end
         write(joinpath(dir, "b", "w.jl"), Fixtures.chain("u", 7))
         write(joinpath(dir, "a", "z.jl"), Fixtures.chain("r", 11) * Fixtures.chain("s", 11))
 
-        before = clonekeys(filter(f -> !f.suppressed, unranked(dir)))
+        cfg = Dendro.discover_config([dir])
+        before = floor_of(dir, cfg)
         # The corpus is built to clone, so an equality between two empty sets is no proof.
         @test !isempty(before)
-        @test clonekeys(Dendro.errors(dir)) == before
+        @test clonekeys(Dendro.errors(dir; config = cfg)) == before
     end
 
     # Dendro's own source, the corpus the dogfood floor gates on.
     srcdir = joinpath(pkgdir(Dendro), "src")
-    @test clonekeys(Dendro.errors(srcdir)) == clonekeys(filter(f -> !f.suppressed, unranked(srcdir)))
+    srccfg = Dendro.discover_config([srcdir])
+    @test clonekeys(Dendro.errors(srcdir; config = srccfg)) == floor_of(srcdir, srccfg)
+end
+
+@testitem "clone findings are emitted at the high band" setup = [Fixtures] tags = [:clones] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        write(joinpath(dir, "a.jl"), Fixtures.chain("f", 11))
+        write(joinpath(dir, "b.jl"), Fixtures.chain("g", 11))
+        write(joinpath(dir, "c.jl"), Fixtures.chain("h", 12))
+
+        findings = analyze(dir)
+        # `:high` is what puts a clone inside the floor `errors` gates on, so a package
+        # downstream gating its own tests on Dendro depends on this literal. The re-rank
+        # compares two sides of one run and would not notice the band moving under both.
+        dup = only(Fixtures.duplicates(findings))
+        @test dup.absolute === :high
+        @test dup.value == 2
+        near = only(Fixtures.near_duplicates(findings))
+        @test near.absolute === :high
+        @test 85 <= near.value < 100
+    end
+end
+
+@testitem "the re-rank orders reimplementation pairs without rescoring them" setup = [Fixtures] tags = [:clones, :reimpl] begin
+    using Dendro: analyze, discover_config
+
+    # Two vocabulary families, each written twice: once straight-line, once around a loop,
+    # so no structural pass claims either pair. The first family is split across two
+    # directories that reference nothing of each other's, the second sits in one file.
+    mktempdir() do dir
+        mkpath(joinpath(dir, "net"))
+        mkpath(joinpath(dir, "web"))
+        write(
+            joinpath(dir, "net", "a.jl"),
+            """
+            function fetch_once(url)
+                delay = backoff_delay(url)
+                jitter = compute_jitter(delay)
+                response = http_get(url, delay + jitter)
+                check_status(response)
+                return response
+            end
+            """
+        )
+        write(
+            joinpath(dir, "web", "b.jl"),
+            """
+            function fetch_retrying(url)
+                for attempt in 1:3
+                    delay = backoff_delay(url)
+                    jitter = compute_jitter(delay)
+                    response = http_get(url, delay + jitter)
+                    if check_status(response)
+                        return response
+                    end
+                end
+                return nothing
+            end
+            """
+        )
+        write(
+            joinpath(dir, "net", "c.jl"),
+            """
+            function encode_frame(frame)
+                header = frame_header(frame)
+                checksum = frame_checksum(header)
+                trailer = frame_trailer(checksum)
+                payload = frame_payload(frame, checksum)
+                emit_frame(header, payload, trailer)
+                return payload
+            end
+
+            function encode_frame_stream(frames)
+                for frame in frames
+                    header = frame_header(frame)
+                    checksum = frame_checksum(header)
+                    trailer = frame_trailer(checksum)
+                    payload = frame_payload(frame, checksum)
+                    if emit_frame(header, payload, trailer)
+                        return payload
+                    end
+                end
+                return nothing
+            end
+            """
+        )
+        write(
+            joinpath(dir, "web", "d.jl"),
+            """
+            function sum_lengths(items)
+                total = 0
+                for item in items
+                    total += length(item)
+                end
+                return total
+            end
+            """
+        )
+
+        mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                cfg = discover_config([dir]; use_files = false)
+                cfg.rules[:reimplementation] = true
+
+                profiles = Dendro.resolve_profiles(cfg)
+                corpus = Dendro.collect_corpus([dir], String[], nothing; profiles)
+                files = Dendro.parse_corpus(corpus; rules = Dendro.resolve_rules(cfg), profiles)
+                clones = [
+                    Dendro.cluster_duplicates(files; min_size = cfg.min_size);
+                    Dendro.cluster_near_duplicates(files; min_size = cfg.min_size)
+                ]
+                before = Dendro.cluster_reimplementations(
+                    files; min_size = cfg.min_size, threshold = cfg.reimpl_threshold,
+                    clone_findings = clones
+                )
+                units(f) = Set(loc.unit for loc in f.locations)
+                scores = Dict(units(f) => (f.value, f.absolute) for f in before)
+                @test length(scores) == 2
+
+                after = filter(f -> f.metric === :reimplementation, analyze(dir; config = cfg))
+                @test length(after) == 2
+                # Split across two communities, so it leads the pair sharing one file.
+                @test units(first(after)) == Set(["fetch_once", "fetch_retrying"])
+                @test units(last(after)) == Set(["encode_frame", "encode_frame_stream"])
+                # Ranked, not rescored: the overlap percent and the band come through as
+                # the pass wrote them.
+                @test all(scores[units(f)] == (f.value, f.absolute) for f in after)
+                @test all(f.absolute === :high for f in after)
+            end
+        end
+    end
 end
