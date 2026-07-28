@@ -732,11 +732,10 @@ pins it, so a later change that "fixes" the re-report argues with a failing test
 
 `cluster_dependency_cycles` (`dependency_cycle.jl`) reads the same graph for cycles, and the
 shape of the finding is the whole design. Cycle membership describes most of a real
-codebase: measured over nine corpora it covered 302 of 4527 files overall, and 35% to 77% of
-the files in each corpus that had a cycle at all. A rule firing that broadly names no edit
-and takes the `errors` floor with it. So the finding is the **feedback arc set**, the edges
-whose removal would make the component acyclic. The same nine corpora put six findings in
-the floor.
+codebase: measured over nine corpora it covered 319 of 4528 files overall, and 84% of the
+files in the worst of them. A rule firing that broadly names no edit and takes the `errors`
+floor with it. So the finding is the **feedback arc set**, the edges whose removal would
+make the component acyclic. The same nine corpora put seven findings in the floor.
 
 Tarjan finds the components, over adjacency lists built from the graph's sorted edge keys.
 Each component of two or more files goes to the Eades-Lin-Smyth heuristic, weighted by

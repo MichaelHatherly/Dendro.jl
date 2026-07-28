@@ -20,14 +20,15 @@
 # percentile carries a small cycle that stands out against its corpus.
 #
 # Measured over nine corpora in five languages (this package, HTTP.jl, Pkg.jl, flask,
-# requests, ripgrep, serde, guava, rails; 34 to 3483 files), the size at which a component
-# stops admitting a bounded edit sits between six and eight. Every component of six files
-# or fewer needed one to four cuts, inside `CYCLE_LOCATIONS_MAX`; every component of eight
-# or more needed nine to 278. So `warn` sits at 5, where a component is still worth an
-# edit and the report says which one, and `high` at 10, above which every component
-# measured was a tangle: HTTP.jl's 22 files, flask's 18, guava's 133, 25, 17 and 13. That
-# put six findings at `high` across 4527 files, a floor a project can actually clear.
-# Flagging cycle membership instead would have flagged 302 of those files.
+# requests, ripgrep, serde, guava, rails; 19 to 3483 files), the size at which a component
+# stops admitting a bounded edit sits between seven and eight. Every component of seven
+# files or fewer needed one to four cuts, inside `CYCLE_LOCATIONS_MAX`; every component of
+# eight or more needed eight to 278. So `warn` sits at 5, where a component is still worth
+# an edit and the report says which one, and `high` at 10, above which every component
+# measured was a tangle: HTTP.jl's 24 files, flask's 18, Pkg.jl's 14, guava's 133, 25, 17
+# and 13. That put seven findings at `high` across 4528 files, a floor a project can
+# actually clear. Flagging cycle membership instead would have flagged 319 of those files,
+# up to 84% of a single corpus.
 #
 # The percentile half fired on none of the nine. A corpus with enough components to rank
 # against has many small ones, and they tie at a low rank; the half earns its place on the
