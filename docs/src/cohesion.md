@@ -115,7 +115,7 @@ through a `.dendro.toml`:
 incoherent_package = true
 ```
 
-Measured over 35 corpora, 90% of directories score zero and half a percent reach the warn
+Measured over 37 corpora, 90% of directories score zero and half a percent reach the warn
 band, so a project that groups its code by what it couples to sees nothing here. A
 directory holding fewer than three units is not scored: over that few, the percentage
 says more about the directory's size than about its coupling. Reading the directory from

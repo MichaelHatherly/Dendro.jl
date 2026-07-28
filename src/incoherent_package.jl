@@ -23,10 +23,10 @@
 # point where its name has stopped describing its contents; above 75 nearly all of it
 # does, and the layout is telling the reader something false.
 #
-# Measured over 1646 scored directories in 35 corpora across nine languages (this package
-# and fourteen other Julia packages, flask, requests, fastmcp, cdisc-rules-engine,
-# python-docx, ripgrep, serde, guava, express, lodash, sigma.js, typescript-sdk, rails,
-# sinatra, laravel, curl, go-sdk): 90% of directories score zero, 2.2% reach 25, 0.5%
+# Measured over 1646 scored directories in 37 corpora across ten languages (this package
+# and seventeen other Julia packages, six Python corpora including flask and fastmcp,
+# ripgrep, serde, guava, four JavaScript corpora, typescript-sdk, rails, sinatra,
+# laravel, curl, go-sdk): 90% of directories score zero, 2.2% reach 25, 0.5%
 # reach 50, and one directory in the whole measurement passed 75, MixedModels.jl's
 # `src/profile` at 81, whose units all belong with the fitting code they extend. So warn
 # at 50 selects that half-percent tail, and high at 75 stays rare enough that a project

@@ -183,7 +183,7 @@ a shared helper collapses the corpus into one community. A percentage, not a cou
 large directory is comparable with a small one. It proposes a rearrangement rather than a
 bounded edit and restates per directory much of what `:scattered` says per file, so it
 ships off by default and never reaches the gate floor. The overlap was measured before
-shipping it, two of 24 findings across 35 corpora landing in directories `:scattered`
+shipping it, two of 24 findings across 37 corpora landing in directories `:scattered`
 already covered file by file, and that measurement is the standard any future
 directory-level rule answers to.
 
