@@ -105,7 +105,15 @@
 # already incurs. Basic mode stays at zero throughout, so none of this is a type-level
 # regression. Extracting `analyze`'s pass sequence into `clone_clusters` and
 # `relational_clusters` and moving the coordination into `analyze.jl` then brought sound to
-# 1312, ten fewer sites of the same kinds.
+# 1312, ten fewer sites of the same kinds. Resolving the corpus once per scan
+# (`resolve_linkage`, and the `linkage.jl`/`resolution.jl` split) brought it to 1308, opt
+# unchanged: five passes stopped re-resolving the corpus, so five `corpus_references` and
+# `corpus_visibility` call edges and `public_surface`'s second walk are gone, each of which
+# carried the keyword-argument lowering and `Any`-widening every corpus pass counts. Measured
+# in two steps, which is worth recording: the refactor alone read 1314, since `resolve_linkage`
+# and `DeclaredLinkage` add two sites of that same kind, and the location labels then took it
+# to 1308, moving `label_path` out to `placement.jl` and having `audience_reps` return
+# `Location`s rather than indices the caller re-wraps.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -113,7 +121,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1312  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1308  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 23      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
