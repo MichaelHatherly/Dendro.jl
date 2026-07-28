@@ -235,7 +235,11 @@ function analyze(
     append!(findings, scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope))
 
     table = corpus_symbols(files)
-    graph = build_corpus_graph(files, table)
+    # Resolved once here rather than inside each pass that reads it: cross-file visibility
+    # is one of the more expensive parallel passes, and every graph over the corpus wants
+    # the same map.
+    visible = corpus_visibility(files, table)
+    graph = build_corpus_graph(files, table; visible)
     append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = ecut, band = cfg.low_cohesion), scope))
     append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))

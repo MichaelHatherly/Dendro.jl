@@ -60,8 +60,15 @@ the units that can see it, are dropped so a shared helper does not pull a unit t
 its file. The within edges star-link each [`binding_groups`](@ref) group to its first
 member, dropping a binding referenced by more than `within_ubiquity` of a file's units;
 a language with no scopes query carries none.
+
+Pass a prebuilt `visible` from [`corpus_visibility`](@ref) to share one resolution with
+another pass over the corpus, rather than resolving it twice.
 """
-function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; within_ubiquity::Float64 = COHESION_UBIQUITY)
+function build_corpus_graph(
+        files::Vector{ParsedFile}, table::SymbolTable;
+        within_ubiquity::Float64 = COHESION_UBIQUITY,
+        visible::Dict{String, Dict{String, Vector{Int}}} = corpus_visibility(files, table)
+    )
     units = CorpusUnit[]
     unit_index = Dict{Tuple{String, Int}, Int}()
     for f in files
@@ -74,7 +81,6 @@ function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; withi
     # Resolve references first, counting the distinct units that reach each definition,
     # so cross-cutting names can be dropped before the weighted edges are built. A
     # reference in top-level code couples no unit, so it is skipped here.
-    visible = corpus_visibility(files, table)
     resolved = Tuple{Int, Vector{Int}}[]
     breadth = Dict{Int, Set{Int}}()
     for (f, ref, candidates) in corpus_references(files, visible)
