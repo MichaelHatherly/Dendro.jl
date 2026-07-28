@@ -18,16 +18,16 @@
 #
 # Measured over ten corpora with a resolvable file graph, Julia, Python and Rust, from 17
 # to 145 files. The crossing count has no corpus-independent scale: its p90 is 2 in
-# ripgrep's crates, 3 in Pkg.jl, 6 in Dendro's own src and in Flask, 10 in DataFrames.jl
-# and JuliaSyntax.jl, 12 in HTTP.jl and 25 in Makie, and the largest crossing anywhere runs
-# from 2 to 53. So the band can only mark the level at which a crossing reads as central
-# whatever the corpus, and the rank against the corpus's own crossings does the separating.
-# `warn` at 15 sits above the p90 of every corpus measured but Makie, firing on the files a
-# reader would name unprompted: HTTP.jl's client at 17, DataFrames' `AbstractDataFrame` at
-# 15. `high` at 30 enters the error floor every dogfooding package gates on, so it marks a
-# file that is central beyond argument: it fires on 5 of Makie's 145 files and on nothing
-# else measured. At (8, 15) that same corpus reports 33 files at `:high`, a gate nobody can
-# satisfy.
+# ripgrep's crates, 4 in Pkg.jl and in Documenter.jl, 5 in Dendro's own src, 6 in Flask, 10
+# in DataFrames.jl, JuliaSyntax.jl and HTTP.jl, and 24 in Makie, and the largest crossing
+# anywhere runs from 2 to 53. So the band can only mark the level at which a crossing reads
+# as central whatever the corpus, and the rank against the corpus's own crossings does the
+# separating. `warn` at 15 sits above the p90 of every corpus measured but Makie, firing on
+# the files a reader would name unprompted: HTTP.jl's client at 18, DataFrames'
+# `AbstractDataFrame` at 15. `high` at 30 enters the error floor every dogfooding package
+# gates on, so it marks a file that is central beyond argument: it fires on 4 of Makie's 145
+# files and on nothing else measured. At (8, 15) that same corpus reports 32 files at
+# `:high`, a gate nobody can satisfy.
 const HUB_BAND = (15, 30)
 
 # What a group of definitions has to hold to read as an audience worth splitting off: this
