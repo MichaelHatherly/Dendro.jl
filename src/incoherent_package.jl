@@ -155,9 +155,8 @@ function cluster_incoherent_packages(
     counts = sort([s[1] for s in scored])
     enough = length(scored) >= min_dirs
     for (score, locations) in scored
-        absolute = severity(score, band)
-        pct = enough ? searchsortedlast(counts, score) / length(counts) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
+        absolute, pct = two_scores(score, counts, band, enough)
+        fires(absolute, pct, cut) || continue
         home = first(locations)
         sup = is_suppressed(get(() -> Directive[], directives, home.file), home.line, RELATIONAL.incoherent_package)
         push!(findings, Finding(RELATIONAL.incoherent_package, locations, score, absolute, pct, :scalar, sup))
