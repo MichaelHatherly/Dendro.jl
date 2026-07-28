@@ -17,8 +17,9 @@
 const DEFAULT_CUT = 0.95
 
 # The relational metrics whose band a `[bands]` key may set. The rest of a `[bands]`
-# table names scalar rules.
-const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced, :back_edge)
+# table names scalar rules. Ordered as the `Config` fields are, since the constructor is
+# positional and every band shares a type.
+const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced, :back_edge, :dependency_cycle)
 
 # A malformed `.dendro.toml` value: a band that is not two integers, a `cut` that is
 # not a number, a rule toggle that is not a boolean. Carried as one exception type so
@@ -55,6 +56,7 @@ struct Config
     scattered::Tuple{Int, Int}
     misplaced::Tuple{Int, Int}
     back_edge::Tuple{Int, Int}
+    dependency_cycle::Tuple{Int, Int}
     rules::Dict{Symbol, Bool}
     min_size::Int
     threshold::Float64
@@ -353,6 +355,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         get(acc.relational, :scattered, SCATTERED_BAND),
         get(acc.relational, :misplaced, MISPLACED_BAND),
         get(acc.relational, :back_edge, BACK_EDGE_BAND),
+        get(acc.relational, :dependency_cycle, DEPENDENCY_CYCLE_BAND),
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
         scalars.reimpl_threshold, acc.languages,

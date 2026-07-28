@@ -50,8 +50,9 @@ corpus files
 ```
 
 `analyze` hoists `corpus_visibility` and hands it to both graphs. Cohesion, placement,
-scattering, and reachability run over the unit graph; `:back_edge` runs over the file
-graph, the substrate for the rules that read the corpus as files depending on files.
+scattering, and reachability run over the unit graph; `:back_edge` and `:dependency_cycle`
+run over the one file graph, the substrate for the rules that read the corpus as files
+depending on files.
 
 The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus at
 collection time, inside `source_files`, before any parsing. Excluded files leave
@@ -103,7 +104,8 @@ both rely on it, and the benchmark suite pins itself to one thread.
 
 The bands a finding is judged against are tunable, the cascade resolved in
 `config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
-one band field per relational metric, a rule on/off override dict, and the three
+one band field per relational metric, in `RELATIONAL_BANDS` order since the constructor is
+positional and every band shares a type, a rule on/off override dict, and the three
 clone-detection thresholds. `discover_config(roots)` accumulates each layer's overrides
 starting from the built-in defaults (the relational band consts, `DEFAULT_CUT`, the
 clone consts, empty override dicts), overlaying a user-global
@@ -390,6 +392,16 @@ Reporting:
   behind them back to `Location`s. `cluster_back_edge` emits a `:back_edge` finding per
   minority file edge, carrying the absolute `BACK_EDGE_BAND` and the percentile over the
   bidirectional pairs. Included after `file_graph.jl`, before `corpus.jl` calls it.
+- `dependency_cycle.jl` defines the cycle rule over the same graph. `successors` reads the
+  graph's sorted edge keys into adjacency lists, `strong_components` runs Tarjan over them
+  (`TarjanState` carries the recursion's index, low-link, and stack), and per component
+  `induced_subgraph` and `feedback_arcs` run the Eades-Lin-Smyth heuristic
+  (`linear_arrangement` over `next_vertex`/`max_delta`) weighted by reference count, so the
+  edges left pointing backwards are the light ones. `cluster_dependency_cycles` emits a
+  `:dependency_cycle` finding per component of two or more files, scored on the component
+  size against `DEPENDENCY_CYCLE_BAND` and the corpus percentile. Its locations are the cuts
+  (`cut_location`) when the feedback set fits `CYCLE_LOCATIONS_MAX`, else the tangle's
+  highest-degree members (`tangle_locations`). Included after `back_edge.jl`.
 - `placement.jl` defines cross-file placement, the fourth corpus-relational pass.
   `own_affinity` reads each unit's same-file coupling from `index.bindings`;
   `community_plurality` finds the file each community is anchored in; `cluster_misplaced`
@@ -715,6 +727,34 @@ references accumulate across it, and adding one to an established back edge re-r
 violation the base already carried. That is the reading the rule wants rather than a defect,
 since the ratchet exists to catch worsening. `back_edge.jl` documents it and `test/back_edge.jl`
 pins it, so a later change that "fixes" the re-report argues with a failing test.
+
+## Dependency cycles
+
+`cluster_dependency_cycles` (`dependency_cycle.jl`) reads the same graph for cycles, and the
+shape of the finding is the whole design. Cycle membership describes most of a real
+codebase: measured over nine corpora it covered 35% to 77% of the files in the ones that had
+a cycle at all, and a rule firing that broadly names no edit and takes the `errors` floor
+with it. So the finding is the **feedback arc set**, the edges whose removal would make the
+component acyclic.
+
+Tarjan finds the components, over adjacency lists built from the graph's sorted edge keys.
+Each component of two or more files goes to the Eades-Lin-Smyth heuristic, weighted by
+reference count: peel sinks to the right of a linear arrangement and sources to the left,
+and absent either take the vertex whose weighted out-degree most exceeds its in-degree. That
+sends the heavy dependencies forward, so what points backwards afterwards is the light
+traffic, which is the cheaper edit. Eades-Lin-Smyth bounds the size of the set it returns
+and runs in linear time; it does not return a minimum feedback arc set, and nothing in the
+report claims it does.
+
+The score is the component size, against `DEPENDENCY_CYCLE_BAND` and the corpus percentile
+over every cyclic component's size, with `MIN_CYCLE_COMPONENTS` withholding the percentile
+on a corpus too thin to rank against. Locations are where the two kinds of finding part.
+Under `CYCLE_LOCATIONS_MAX` cuts, each location is one edge to remove, at the import
+statement admitting it where the language declares one, labelled `cut -> <target>`. Above
+it, the component has no bounded edit: the locations become its highest-degree members and
+every label reads `tangled: <n> cuts`. Reporting the tangle rather than dropping it is the
+honest-over-silent call, and the label is what tells the two apart without inferring
+anything from the location count.
 
 ## Suppression
 

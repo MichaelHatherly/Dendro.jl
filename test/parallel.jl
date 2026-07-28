@@ -151,3 +151,55 @@ end
         @test parse(Int, split(runs[1], '|')[end]) > 0
     end
 end
+
+@testitem "the dependency cycle pass is deterministic across thread counts" tags = [:parallel] begin
+    mktempdir() do dir
+        # A fourteen-file ring plus a disjoint pair, more than PARALLEL_MIN files in total.
+        # The reference counts vary around the ring, so the weighted arrangement has a real
+        # choice to make about which edge it proposes cutting.
+        for i in 1:14
+            nxt = i == 14 ? 1 : i + 1
+            refs = join(("g$nxt(x + $k)" for k in 1:(1 + i % 3)), " + ")
+            write(joinpath(dir, "r$i.jl"), "include(\"r$nxt.jl\")\nf$i(x) = $refs\ng$i(y) = y\n")
+        end
+        write(joinpath(dir, "p1.jl"), "include(\"p2.jl\")\nfp1(x) = gp2(x)\ngp1(y) = y\n")
+        write(joinpath(dir, "p2.jl"), "include(\"p1.jl\")\nfp2(x) = gp1(x)\ngp2(y) = y\n")
+
+        # A byte-identical serialisation is the guarantee: neither the components Tarjan
+        # closes, the arrangement the heuristic builds, nor the locations it reports may
+        # follow a Dict's iteration order.
+        script = raw"""
+        import Dendro
+        function digest(fs)
+            io = IOBuffer()
+            for f in fs
+                print(io, f.metric, '|', f.value, '|', f.absolute, '|', f.percentile, '|')
+                for l in f.locations
+                    print(io, basename(l.file), ':', l.line, ':', l.unit, ';')
+                end
+                print(io, '\n')
+            end
+            return String(take!(io))
+        end
+        files = Dendro.parse_corpus(Dendro.source_files(ARGS[1]))
+        table = Dendro.corpus_symbols(files)
+        corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+        fg = Dendro.build_file_graph(files, table, corpus)
+        fs = Dendro.cluster_dependency_cycles(files, fg; band = (2, 4))
+        print(digest(fs), '|', length(fs))
+        """
+
+        # `--startup-file=no` pins the captured stdout, as the analyze determinism item does.
+        proj = Base.active_project()
+        runs = [
+            read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -t$t -e $script $dir`, String)
+                for t in (1, 2, 4, 8)
+        ]
+
+        @test runs[1] == runs[2]
+        @test runs[1] == runs[3]
+        @test runs[1] == runs[4]
+        # Two components are planted, so a match on an empty result is no proof.
+        @test parse(Int, split(runs[1], '|')[end]) == 2
+    end
+end
