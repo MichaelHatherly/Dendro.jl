@@ -183,7 +183,7 @@ For each definition something outside the file references, Dendro collects the c
 files, links two definitions whose consumer sets meet, and takes the connected components
 of that graph as the file's audiences. The score is the number of audiences holding at
 least two definitions, so a helper with a single caller is not one. The band is `[3, 5]`:
-across ten measured corpora 85% of scored files serve a single audience and 4% serve
+across ten measured corpora 85% of scored files serve a single audience and 5% serve
 three, so three separated interfaces is the tail and five is rare enough to gate on. Two
 audiences is common enough that the corpus percentile carries it. The locations are one
 representative definition per audience, the split the finding proposes. A file serving a

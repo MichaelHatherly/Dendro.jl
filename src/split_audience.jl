@@ -18,14 +18,15 @@
 
 # Absolute band on the number of audience groups a file serves. One group is a file with
 # a single audience, the ordinary case. No external standard sets this, so it sits above
-# the spread of an idiomatic corpus. Measured over 291 scored files across Dendro,
+# the spread of an idiomatic corpus. Measured over 294 scored files across Dendro,
 # DataFrames.jl, HTTP.jl, Makie, flask, requests, fastmcp, markitdown, ripgrep, and Guava,
-# 85% serve one audience, 10% serve two, 4% serve three, and two files in the whole
-# measurement served more. So 3 marks a file that has separated into distinct interfaces
-# and 5 one that has done it repeatedly, which leaves the `:high` floor satisfiable: no
-# corpus measured carried more than one such file, and most carried none. A value of 2 is
-# splittable but too common to flag on its own, so the percentile half carries it, firing
-# where two audiences are unusual for the corpus and staying quiet where they are not.
+# 85% serve one audience, 10% serve two, 5% serve three, and two files in the whole
+# measurement served more, the widest at five. So 3 marks a file that has separated into
+# distinct interfaces and 5 one that has done it repeatedly, which leaves the `:high` floor
+# satisfiable: one file in the measurement reaches it and nine of the ten corpora carry
+# none. A value of 2 is splittable but too common to flag on its own, so the percentile
+# half carries it, firing where two audiences are unusual for the corpus and staying quiet
+# where they are not.
 const SPLIT_AUDIENCE_BAND = (3, 5)
 
 # An audience group needs this many definitions before it reads as an interface rather
