@@ -299,11 +299,16 @@ in the unit counts as a use, including inside a nested callable, the conservativ
 reading. Underscore-prefixed names opt out. A bodyless declaration keeps its
 parameters (they are its signature), and an empty or stub body is already the
 `empty_body` finding, so its parameters are not additionally dead. Empty for a
-language whose parameters carry no names (bash).
+language whose parameters carry no names (bash), and for one that ships no scopes
+query, since uses are read from its references.
 """
 function unused_parameters(index::QueryIndex)
     out = TreeSitter.Node[]
     isempty(index.parameter_name.nodes) && return out
+    # Uses come from the scopes query's references. Without one there are no references,
+    # so every parameter would read as dead. Skip rather than score wrongly, as cohesion
+    # does for the same missing query.
+    isempty(index.scope_captures.refnodes) && return out
     units = functions(index)
     ranges = unit_ranges(index)
     uses = reference_positions(index)

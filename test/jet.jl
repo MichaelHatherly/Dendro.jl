@@ -80,7 +80,15 @@
 # to 1066, opt unchanged: `corpus_visibility` lifts the corpus-path generator out of
 # `corpus_references` so the graph builder can read the visibility it already resolves, and
 # that one closure is now analysed from two call sites rather than one. Everything else in
-# the diff is a rename.
+# the diff is a rename. Registering a language from the config (`profile.jl`, `resolve.jl`,
+# `config.jl`) raised sound from 1066 to 1118, opt unchanged: the `[languages]` applier adds
+# two more of the `for (key, value) in table` walks over the `Dict{String, Any}`
+# `TOML.parsefile` returns, the shape each existing applier already carries at fourteen
+# reports apiece, and threading a resolved `profiles` registry through `parse_corpus`,
+# `source_files`, `collect_corpus`, and `mermaid` widens those four keyword-argument
+# lowerings, both kinds already counted. It first measured 1170: narrowing `queries_dir` to
+# `String` and typing the per-language applier's `name` and `table` removed 52, so what is
+# left is the applier and kwarg shape rather than inference that could be recovered.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -88,7 +96,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1066  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1118  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 22      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

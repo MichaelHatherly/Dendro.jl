@@ -59,7 +59,7 @@ function cluster_low_cohesion(
     adj = adjacency(graph; within = true)
     scored = Tuple{ParsedFile, Int, Vector{Int}}[]
     for f in files
-        scopes_query_for(f.language) === nothing && continue
+        scopes_query_for(f) === nothing && continue
         n = length(functions(f.index))
         n < MIN_COHESION_UNITS && continue
         nodes = Int[graph.unit_index[(f.file, u)] for u in 1:n]

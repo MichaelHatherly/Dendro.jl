@@ -191,6 +191,20 @@ bash, c, cpp, go, java, javascript, julia, php, python, ruby, rust, typescript.
 JSON and HTML are out of scope: with no functions or control flow, these metrics
 do not apply.
 
+A project can register a language Dendro does not ship, or replace a shipped one's query,
+from its `.dendro.toml`:
+
+```toml
+[languages.zig]
+extensions = ["zig"]
+grammar = "/path/to/tree-sitter-zig"   # a local grammar repo, or a jll name
+queries = "/path/to/my-queries"        # holds zig.scm
+```
+
+Such a language gets the per-file metrics, the structural flags, and duplicate detection.
+The cross-file passes need a linkage entry in the package, so they skip it. See
+[`examples/languages`](examples/languages), which carries a worked Zig query.
+
 ## Documentation
 
 The [documentation](https://MichaelHatherly.github.io/Dendro.jl/stable) covers the

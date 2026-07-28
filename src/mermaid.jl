@@ -191,6 +191,10 @@ Unlike `github_annotations`, which renders `Findings`, this takes the corpus and
 the structure it draws, since a graph is not recoverable from findings. Redirect `io` to a
 `.mmd` file to save the diagram, as the CI workflow does for annotations. The keyword
 options match `analyze`'s clone and ignore tuning.
+
+`profiles` is the language registry the corpus resolves file extensions through. It
+defaults to the languages Dendro ships; pass `Dendro.resolve_profiles(config)` to draw a
+graph over a language a `.dendro.toml` registers, which `analyze` does from its own config.
 """
 function mermaid(
         io::IO, paths::Union{AbstractString, AbstractVector{<:AbstractString}};
@@ -198,7 +202,8 @@ function mermaid(
         focus::Symbol = :auto, context::Integer = 1,
         ignore = String[], language = nothing, rules = BUILTIN_RULES, cut::Real = 0.95,
         min_size::Integer = DEFAULT_MIN_SIZE, threshold::Real = DEFAULT_THRESHOLD,
-        radius_factor::Real = DEFAULT_RADIUS_FACTOR
+        radius_factor::Real = DEFAULT_RADIUS_FACTOR,
+        profiles::Dict{Symbol, LanguageProfile} = PROFILES
     )
     graph in (:coupling, :reachability, :clones) ||
         error("Dendro: graph must be :coupling, :reachability or :clones, got :$graph")
@@ -209,7 +214,7 @@ function mermaid(
     context >= 0 || error("Dendro: context must be >= 0, got $context")
     resolved = focus === :auto ? (granularity === :unit ? :findings : :all) : focus
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
-    files = parse_corpus(collect_corpus(roots, ignore, language); language, rules)
+    files = parse_corpus(collect_corpus(roots, ignore, language; profiles); language, rules, profiles)
     if graph === :coupling
         table = corpus_symbols(files)
         mermaid_coupling(io, files, build_corpus_graph(files, table), table, granularity, cut, resolved, context)

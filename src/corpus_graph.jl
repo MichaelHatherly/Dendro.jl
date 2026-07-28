@@ -115,7 +115,7 @@ end
 function within_binding_edges(files::Vector{ParsedFile}, unit_index::Dict{Tuple{String, Int}, Int}, ubiquity::Float64)
     within = Dict{Tuple{Int, Int}, Float64}()
     for f in files
-        scopes_query_for(f.language) === nothing && continue
+        scopes_query_for(f) === nothing && continue
         for members in binding_groups(f.index, ubiquity)
             base = get(unit_index, (f.file, members[1]), 0)
             base == 0 && continue
