@@ -28,20 +28,32 @@ function parse_corpus(
     parallel_chunks(() -> Dict{LanguageProfile, TreeSitter.Parser}(), n) do parsers, idxs
         parse_chunk!(files, parsers, entries, idxs, rules)
     end
-    return files
+    # A file the parse boundary turned away leaves its slot unassigned. Compacting in index
+    # order keeps the corpus order every later pass and the parallel determinism rely on.
+    return ParsedFile[files[i] for i in 1:n if isassigned(files, i)]
 end
 
 # Parse one chunk of files with the chunk's parser pool: a `TreeSitter.Parser` is stateful,
 # so each chunk keeps its own, reused across its files. Writes into the shared preallocated
-# `files` at each entry's index, so the corpus order matches the serial path.
+# `files` at each entry's index, so the corpus order matches the serial path. A file the
+# parser cannot take leaves its slot unassigned and `parse_corpus` drops it.
 function parse_chunk!(
         files::Vector{ParsedFile}, parsers::Dict{LanguageProfile, TreeSitter.Parser},
         entries::Vector{Tuple{String, LanguageProfile}}, idxs, rules
     )
     for i in idxs
         path, profile = entries[i]
-        parser = get!(() -> parser_for(profile), parsers, profile)
         source = read(path, String)
+        # Tree-sitter takes the source as a C string, so a byte no C string can carry is a
+        # file the parser will never accept. A corpus holds such a file now and then, a
+        # fuzzer test case checked in beside real source, and one of them must not take the
+        # whole scan down. Report it and carry on, the honest-over-silent reading: naming the
+        # file is what tells a skipped file from a clean one.
+        if occursin('\0', source)
+            @warn "Dendro: skipping a file with an embedded NUL byte, which cannot be parsed" path
+            continue
+        end
+        parser = get!(() -> parser_for(profile), parsers, profile)
         tree = parse(parser, source)
         index = build_index(tree, profile.name, source, query_for(profile), scopes_query_for(profile))
         directives = suppressions(index; file = path, rules)
