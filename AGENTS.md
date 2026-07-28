@@ -123,6 +123,23 @@ within one file for cohesion, keep the score the count of communities a file's u
 occupy that are anchored elsewhere, and keep it name-based and lexical like the rest of
 placement.
 
+The file graph is that resolution read one level up. Placement asks where a unit belongs;
+the file graph asks which file depends on which. Nodes are corpus files, an edge counts the
+references crossing from one to another, and it carries the definition names behind it and
+the import statement that admits it, so a finding built on it names an edit rather than a
+score. It reads unfiltered references where placement drops the cross-cutting ones. That
+cut is right for placement, since without it a unit is judged to belong wherever a shared
+helper lives, and wrong here, since a file everything reaches for is the observation an
+architecture question is after. So it is a separate constructor over the same primitives,
+not a mode flag on `build_corpus_graph`: one function serving both notions of an edge
+leaves every reader working out which one a call site meant. Everything else holds.
+Name-based and lexical, gated by declared visibility, a name matching several definitions
+splits its weight, no types and no dispatch. Contract it by directory (`module_graph`) for
+a question about packages, not by a declared module, which some languages have and some do
+not, so the same rule would fire differently across a polyglot corpus for reasons unrelated
+to the code. An import statement is evidence on an edge, never an edge on its own: the
+dependency is the reference that crossed, and that is where the bargain's line sits here.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment
@@ -135,8 +152,10 @@ metrics, so it auto-adopts any future high-band metric. Two `parameter_count` si
 trip it, the `Finding` constructor and `mermaid_coupling`, where the parameter count
 tracks a struct's fields or a genuine set of rendering inputs. Both carry inline
 `dendro-ignore: parameter_count`, suppressed not omitted, so the count stays honest
-and the floor reports them as suppressed. If a change makes Dendro trip its own
-metrics, fix the code, not the test.
+and the floor reports them as suppressed. `file_graph.jl` carries a file-scoped
+`unreferenced` directive on the same terms: the layer has no caller inside the package,
+so reachability from the public surface reaches nothing in it. If a change makes Dendro
+trip its own metrics, fix the code, not the test.
 
 ## Where the details live
 

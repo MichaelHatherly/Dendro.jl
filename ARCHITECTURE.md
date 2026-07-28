@@ -36,6 +36,24 @@ extends the checks without touching the pipeline. The baseline-from-the-corpus s
 relative scoring work with no setup, for a single file as much as a folder: a
 file's own functions are the distribution it is scored against.
 
+Above that per-file path sits the corpus resolution the relational passes share.
+`corpus_symbols` indexes every top-level definition, `corpus_visibility` works out
+what each file can see across the boundary, and each graph over the corpus reads
+that one map.
+
+```
+corpus files
+  -> corpus_symbols          top-level definitions across the corpus
+  -> corpus_visibility       each file's cross-file candidates, by name
+       -> build_corpus_graph   units, cross-cutting references dropped
+       -> build_file_graph     files, every resolved reference kept
+```
+
+`analyze` hoists `corpus_visibility` and hands it to the unit graph, then runs
+cohesion, placement, scattering, and reachability over that. The file graph is the
+substrate for the rules that read the corpus as files depending on files; nothing in
+`analyze` builds it.
+
 The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus at
 collection time, inside `source_files`, before any parsing. Excluded files leave
 both the findings and the baseline, so vendored source neither flags nor skews the
@@ -355,6 +373,17 @@ Reporting:
   Both denominators are local by design: a unit's placement verdict follows from the code
   that can couple to it, never from how much unrelated source shares the corpus.
   Included after `linkage.jl`.
+- `file_graph.jl` defines the corpus file graph, the same resolution read one level up.
+  `build_file_graph` walks `corpus_references` and records a weighted `FileEdge` per
+  ordered file pair, carrying the definition names behind it (`top_names`, capped at
+  `EDGE_NAMES_MAX` and paired with the true count) and the import statements admitting it
+  (`declared_edges` over `declared_targets`, each target mapped to corpus paths through the
+  language's `Linkage` resolver). It drops no cross-cutting definition and skips self-edges,
+  and `edge_weight` floors a split reference at one so rounding never erases an edge.
+  `module_graph` contracts the graph by a grouping function, `dirname` by default, summing
+  weights and dropping within-group edges. It reads a prebuilt `visible` from
+  `corpus_visibility`, the same map `build_corpus_graph` accepts. Included after
+  `corpus_graph.jl`.
 - `placement.jl` defines cross-file placement, the fourth corpus-relational pass.
   `own_affinity` reads each unit's same-file coupling from `index.bindings`;
   `community_plurality` finds the file each community is anchored in; `cluster_misplaced`
@@ -609,6 +638,47 @@ method." With no field resolution, the edge is call linkage, not shared-field
 cohesion, so a file that is one class reads only its method-to-method calls. Java is
 the extreme, every file a single class. Most cohesion signal lives below that line.
 
+## The file graph
+
+`build_corpus_graph` answers where a unit belongs. `build_file_graph` (`file_graph.jl`)
+answers which file depends on which. Nodes are every corpus file, sorted, and a directed
+edge records that one file's code references definitions in another.
+
+Both walk `corpus_references` against one `corpus_visibility` map, and both split a
+reference matching `k` visible definitions `1/k` across them. What differs is the filter and
+the level. The unit graph drops a reference to a definition more than `CORPUS_UBIQUITY` of
+the units that can see it reach, so a shared helper does not pull a unit toward its file;
+the file graph keeps every resolved reference, since a file every other file reaches for is
+the observation an architecture question is after. A reference in top-level code counts here
+where the unit graph skips it: the file depends on the target whether or not a function
+encloses the reference. Self-edges are dropped, since a file's coupling to itself is what
+`:low_cohesion` reads and here it would only swamp every node's degree.
+
+The edge carries its own evidence. "File A depends on file B" is not something to edit, so a
+`FileEdge` holds the distinct definition names crossing it, the heaviest `EDGE_NAMES_MAX` of
+them with the true count beside them, and the `Location` of every import or include
+statement admitting it, resolved through the language's `Linkage`. A statement attaches to
+an edge references already built; an import nothing uses draws no edge. `first_line` gives
+every file a real line so a file-level finding never invents one, and every corpus file is a
+node, one with no units and one with no edges included: an isolated file is an observation,
+and dropping it would move the denominator of every corpus-relative score.
+
+Weights accumulate as `Float64` and round once, when the edge is finalised, so a reference
+split three ways does not round away on the way in. `edge_weight` floors the result at one:
+an edge exists because a reference built it, and reporting that as weight zero would deny a
+dependency the code has.
+
+`edges` is a `Dict`, so its iteration order is not the corpus order. Every consumer sorts its
+working set before reading it, the discipline `cluster_scattered` and `cluster_low_cohesion`
+already follow, which is what keeps output byte-identical at any thread count.
+
+`module_graph` contracts the graph by a grouping function, for the rules that read
+directories rather than files. The default is `dirname`: no query work, available in every
+language, and what a repo usually means by a module. A declared-module grouping is available
+in some languages and not others, which would make one rule fire differently across a
+polyglot corpus for reasons unrelated to the code. Weights sum across the file edges between
+two groups; an edge inside one group is dropped.
+
 ## Suppression
 
 `suppressions` walks the same comment nodes as `stub_markers` and matches
@@ -669,7 +739,9 @@ floor is percentile-free, so the result does not depend on the corpus distributi
 change that makes Dendro trip its own metrics is a signal to fix the code. The two
 `parameter_count` sites the floor surfaces (the `Finding` constructor, `mermaid_coupling`)
 carry inline `dendro-ignore: parameter_count` with a reason, suppressed rather than
-omitted from the gate, so the count stays honest.
+omitted from the gate, so the count stays honest. `file_graph.jl` carries a file-scoped
+`unreferenced` directive on the same terms: no pass inside the package calls the layer,
+so reachability from the public surface reaches nothing in it.
 
 `test/jet.jl` is the `:jet` item: basic-mode JET is a zero-tolerance gate on every
 Julia version, sound mode and the optimization analyzer are ratcheted at
