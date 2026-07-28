@@ -13,3 +13,8 @@
 - Drop `dendro-ignore-file: unreferenced` from `file_graph.jl` once a Part II rule calls
   the layer. The directive covers definitions nothing in the package reaches; a caller
   makes it inert, and an inert directive is noise.
+- `@run_package_tests` discovers test files in nested git worktrees. Running `Pkg.test()`
+  in a checkout holding worktrees under `.claude/worktrees/` runs every copy of the
+  suite, one per tree, and multiplies the reported pass count. Either exclude nested
+  worktrees in the `@run_package_tests` filter or document that the suite must run from
+  a clean export.
