@@ -92,8 +92,22 @@ communities the file's units occupy whose plurality anchor is another file: a fi
 stays home scores zero. A bag of unrelated functions is low-cohesion but not scattered,
 each its own self-anchored community; what scatters is a file each of whose units belongs
 with a different other file. Two scores, like cohesion: the absolute band and the corpus
-percentile. The finding's locations are one representative unit per elsewhere-anchored
-community.
+percentile.
+
+The finding's locations are one representative unit per elsewhere-anchored community, each
+labelled with the file that community is anchored in. The count is the score; the labels are
+the edit:
+
+```
+src/resolution.jl:25  corpus_symbols  [belongs with mermaid.jl]  scattered 4 (warn; p96)
+    also at src/resolution.jl:66  unbound_references  [belongs with bindings.jl]
+    also at src/resolution.jl:166  DeclaredLinkage  [belongs with linkage.jl]
+    also at src/resolution.jl:179  visible_defs  [belongs with linkage.jl]
+```
+
+Two units pulled toward the same file is the useful reading there: it says where the seam
+between the two files is currently drawn wrongly. Recovering that without the labels means
+rebuilding the corpus graph by hand, which is work the pass has already done.
 
 ## Layout against coupling
 
@@ -173,6 +187,50 @@ coupling gets worse. The finding count does.
 Deliberate callbacks and plugin registration point backwards by design. Accept one with
 `dendro-ignore: back_edge`.
 
+## Dependency cycles
+
+Reported as `:dependency_cycle`: a group of files that depend on one another in a loop,
+read off the same file dependency graph as `:back_edge`. The shape of the finding is the
+whole design here, because cycle membership on its own describes most of a real codebase.
+Measured over nine corpora it covered 319 of 4528 files, and 84% of the files in the worst
+of them. A rule that fires that broadly names no edit and takes the error floor with it.
+
+So the finding is the **feedback arc set**, the edges whose removal would make the group
+acyclic. The same nine corpora put seven findings in the floor. Tarjan finds the groups; each
+group of two or more files then goes to the Eades-Lin-Smyth heuristic, weighted by reference
+count, which sends the heavy dependencies forward so that what points backwards afterwards is
+the light traffic, the cheaper edit. That heuristic bounds the size of the set it returns and
+runs in linear time. It does not return a *minimum* feedback arc set, and nothing in the
+report claims it does.
+
+The score is the number of files in the group, against the absolute band and the corpus
+percentile over every cyclic group's size. The percentile fired on none of the nine
+calibration corpora: a corpus large enough to rank against carries enough small cycles that
+they tie low, so in practice the band carries this metric.
+
+The locations are where the two kinds of finding part. Under a handful of cuts, each location
+is one edge to remove, at the import statement admitting it where the language declares one,
+labelled `cut -> <target>` with the target named relative to the source file's directory:
+
+```
+src/session.jl:4  dependency_cycle 3 (warn; p80)
+    cut -> render.jl
+    also at src/render.jl:2  cut -> ../lib/token.jl
+```
+
+Above that many cuts the group has no bounded edit, so the locations become its
+highest-degree members and every label reads `tangled: <n> cuts` instead. Reporting the
+tangle rather than dropping it is the honest-over-silent call, and the label is what tells
+the two kinds apart without inferring anything from how many locations there are.
+
+The cut label is part of the key the gate ratchet matches on, which is why the target is
+named relative to the source file rather than absolutely: `errors(; since)` scores the base
+revision in a temporary directory, and an absolute target would re-report every cut as new.
+
+A cycle that a language's build tolerates by design, a pair of mutually recursive modules,
+is accepted with `dendro-ignore: dependency_cycle`. Like every rule over the file graph, this
+one needs a linkage query for the language, and stays silent where there is none.
+
 ## Hub files
 
 Reported as `:hub`: a file that both depends on much of the corpus and is depended on by
@@ -185,14 +243,18 @@ is the one that propagates every change in either direction.
 
 The finding's first location is the file, at its first unit. When the hub's
 externally-referenced definitions fall into two or more audiences, groups of definitions
-linked by sharing a consumer file, one representative definition per audience follows, and
-that split is the proposed edit:
+linked by sharing a consumer file, one representative definition per audience follows, each
+labelled with the files that consume it. That split is the proposed edit, and the labels are
+what say who each half is for:
 
 ```
 src/session.jl:1  hub 18 (warn; p97)
-    also at src/session.jl:12  open_session
-    also at src/session.jl:96  render_token
+    also at src/session.jl:12  open_session  [used by api.jl, router.jl]
+    also at src/session.jl:96  render_token  [used by view.jl, +3 more]
 ```
+
+A label naming more than a few consumers stands for the rest with a count, so a definition
+half the corpus reaches for does not turn the report into a list of paths.
 
 A group counts as an audience only with at least two definitions and two consumer files: a
 definition one file happens to use is ordinary, and a proposal built from singletons would
@@ -227,9 +289,10 @@ least two definitions, so a helper with a single caller is not one. The band is 
 across ten measured corpora 85% of scored files serve a single audience and 5% serve
 three, so three separated interfaces is the tail and five is rare enough to gate on. Two
 audiences is common enough that the corpus percentile carries it. The locations are one
-representative definition per audience, the split the finding proposes. A file serving a
-single audience names no split, so it is never reported however unusual it is for the
-corpus, and it still counts toward the distribution the percentile reads.
+representative definition per audience, each labelled with the files consuming that
+audience, which is the split the finding proposes. A file serving a single audience names no
+split, so it is never reported however unusual it is for the corpus, and it still counts
+toward the distribution the percentile reads.
 
 The audience comes from resolved references, not from declared exports. A language with
 no export marker (Python, Go, C) exposes every top-level name, so an export-counting

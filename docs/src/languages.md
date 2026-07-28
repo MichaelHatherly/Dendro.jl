@@ -43,11 +43,45 @@ passes skip a language that ships no scopes query rather than scoring it wrongly
 
 Cross-file resolution needs more than a query: a linkage entry is Julia code in the
 package, so a registered language reaches the per-file metrics, the flags, and clone
-detection, but not `:misplaced`, `:scattered`, `:unreferenced`, `:back_edge`,
-`:dependency_cycle`, or `:incoherent_package`.
+detection, but none of the passes built on cross-file references: `:misplaced`,
+`:scattered`, `:unreferenced`, `:split_audience`, `:back_edge`, `:dependency_cycle`,
+`:hub`, or `:incoherent_package`.
 
 `examples/languages/` in the repository carries a worked Zig query, both files, along with
 the reasoning behind the choices a query has to make.
+
+## What cross-file resolution reaches per language
+
+Every rule past a single file rests on matching a reference to the definition it names
+along declared linkage. How far that reaches differs by language, and where it reaches
+nothing the rules go quiet rather than reporting a problem. A quiet report is not the same
+as a clean one, so it is worth knowing which case you are in.
+
+Julia, Python, C, Go and Rust resolve normally: a reference names a top-level function, so
+both the unit graph and the file graph fill in and every rule applies.
+
+**Java and PHP resolve types, not methods.** A method is reached through a receiver whose
+type the resolver never works out, so what one Java or PHP file sees of another is the class
+name. The file graph is unaffected and well populated, 1220 edges across Guava's `collect`
+package and 304 across Laravel's `Database`, so `:back_edge`, `:dependency_cycle`, `:hub` and
+`:split_audience` all work. The *unit* graph carries no cross-file edge at all, because a
+class definition is not a function unit, which leaves `:misplaced`, `:scattered` and
+`:incoherent_package` silent on a Java or PHP corpus. That is the type-and-dispatch line
+holding, not a gap to close: following a method call to its definition is exactly the
+resolution Dendro does not do.
+
+**JavaScript resolves ES modules only.** The linkage query reads `import ... from` and
+`export`. A corpus written in CommonJS, `require()` and `module.exports`, resolves nothing
+across the boundary, so every cross-file rule is silent on it. Express and Lodash are both
+in this position.
+
+**Ruby resolves `require_relative` only.** A plain `require` names a file through a load
+path the source does not carry, and a method inside a `module` or `class` body is not
+spliced into the requiring file's namespace in any case, so a conventionally-written Ruby
+library resolves nothing. Sinatra is in this position.
+
+**TypeScript** resolves its ESM output convention, where a specifier names the emitted
+`./a.js` and the source on disk is `a.ts`.
 
 ## Limitations
 
