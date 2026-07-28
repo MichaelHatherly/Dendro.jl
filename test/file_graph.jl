@@ -242,11 +242,12 @@ end
         proj = Base.active_project()
         runs = [
             read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -t$t -e $script $dir`, String)
-                for t in (1, 2, 4)
+                for t in (1, 2, 4, 8)
         ]
 
         @test runs[1] == runs[2]
         @test runs[1] == runs[3]
+        @test runs[1] == runs[4]
         # The corpus is built to produce edges, so a match on an empty graph is no proof.
         @test parse(Int, split(runs[1], '|')[end]) > 0
     end
