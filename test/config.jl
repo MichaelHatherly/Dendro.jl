@@ -75,6 +75,7 @@ end
             unnatural = [11, 12]
             low_cohesion = [21, 22]
             scattered = [31, 32]
+            split_audience = [36, 37]
             misplaced = [41, 42]
             back_edge = [51, 52]
             dependency_cycle = [61, 62]
@@ -89,6 +90,7 @@ end
         @test cfg.unnatural == (11, 12)
         @test cfg.low_cohesion == (21, 22)
         @test cfg.scattered == (31, 32)
+        @test cfg.split_audience == (36, 37)
         @test cfg.misplaced == (41, 42)
         @test cfg.back_edge == (51, 52)
         @test cfg.dependency_cycle == (61, 62)
@@ -97,7 +99,12 @@ end
         # field unpinned, which is how this test came to miss one when two rules landed
         # in parallel. Pin the set so the omission fails here rather than going unnoticed.
         @test Set(RELATIONAL_BANDS) ==
-            Set([:unnatural, :low_cohesion, :scattered, :misplaced, :back_edge, :dependency_cycle, :hub])
+            Set(
+            [
+                :unnatural, :low_cohesion, :scattered, :split_audience, :misplaced,
+                :back_edge, :dependency_cycle, :hub,
+            ]
+        )
     end
 end
 

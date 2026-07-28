@@ -126,13 +126,14 @@ end
         toml = joinpath(dir, "c.toml")
         write(toml, "[bands]\nsplit_audience = [2, 3]\n")
 
-        # Isolate the user-global layer so a developer's own config cannot leak in.
+        # Isolate the user-global layer so a developer's own config cannot leak in. The
+        # band reaching its `Config` field is pinned in test/config.jl; what this item
+        # adds is that the band reaches the pass through `analyze`.
         cfg = mktempdir() do xdg
             withenv("XDG_CONFIG_HOME" => xdg) do
                 Dendro.discover_config([dir]; explicit = toml)
             end
         end
-        @test cfg.split_audience == (2, 3)
         hit = only(filter(f -> f.metric == :split_audience, Dendro.analyze(dir; config = cfg)))
         @test hit.value == 2
         @test basename(first(hit.locations).file) == "f.jl"
