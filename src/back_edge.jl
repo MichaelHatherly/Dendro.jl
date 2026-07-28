@@ -1,10 +1,10 @@
 # Dependencies running against the grain the code itself established. Contract the file
 # graph by directory and read the traffic between two directories in each direction. When
-# one direction carries almost all of it, the code has settled on a layering, and the few
-# references going the other way are anomalies with an obvious edit: drop the import and
-# move whatever needed it. The grain comes from the corpus, so no declared layer order and
-# no configuration is involved, which is the reason to prefer this over a layer-violation
-# check nobody keeps up to date.
+# one direction carries almost all of it, the code has settled on a layering, and each
+# reference going the other way runs against it: an import to drop and a definition to
+# move. The grain comes from the corpus, so no declared layer order and no configuration is
+# involved, which is the reason to prefer this over a layer-violation check nobody keeps up
+# to date.
 #
 # Higher dominance is worse, which is the direction the band model expects. A pair at 60/40
 # is a genuinely mutual dependency, a cycle rather than a violated grain; a pair at 98/2 is
@@ -18,15 +18,19 @@
 # languages: Documenter.jl, Pkg.jl, Pluto.jl, DataFrames.jl and Julia's Base, Flask,
 # ripgrep, Laravel, and the julia-vscode extension.
 #
-# The distribution runs continuously from 51 to 99 with no gap to sit in, so the thresholds
-# follow the size of the edit instead. Every measured pair at 95 and above had a minority
-# side of one to ten references over one to five file edges, which is the bounded edit the
-# rule promises. Just below, at 92, sits Base's `strings` against the root: 296 references
-# over 137 file edges, a tangle no single edit resolves, and 137 findings that would flood
-# the gate. That is where the actionable cases stop, so the high threshold sits at 95 and
-# not lower. The warn threshold sits on the shoulder above a cluster of pairs at 83 and
-# below, which couple both ways in earnest: mutual dependency is a cycle rather than a
-# violated grain, and `:dependency_cycle` is the rule that reads it.
+# What the measurement fixes is where a settled direction begins. The distribution runs
+# continuously from 51 to 99 with no gap to sit in. Pairs at 83 and below couple both ways
+# in earnest, and mutual dependency is a cycle rather than a violated grain, which is
+# `:dependency_cycle`'s question and not this one; the warn threshold sits above that
+# cluster. The high threshold sits where the majority direction is one-way enough that
+# going against it reads as an anomaly rather than as a design.
+#
+# What the measurement does not fix is the size of the resulting edit, and the band must
+# not be read as bounding it. Dominance is a ratio, so a pair with a large majority side
+# clears 95 while carrying a large minority side: CommonMark.jl's root against `writers`
+# scores 96 on 15 references spread over 14 file edges, which is 14 findings and 14 gate
+# errors from one observation. A high score says the direction is one-way. It never says
+# one import removal restores it. The location count is what says that.
 const BACK_EDGE_BAND = (85, 95)
 
 # The majority direction needs at least this much traffic before the pair has a grain to
@@ -36,6 +40,10 @@ const BACK_EDGE_MIN_MAJOR = 10
 
 # The corpus needs this many bidirectional directory pairs before the dominance percentile
 # means anything; under it only the absolute band fires, as cohesion does on a thin corpus.
+# `cluster_low_cohesion`, `cluster_misplaced` and `cluster_scattered` each expose the
+# equivalent floor as a keyword. This one is fixed because `cluster_back_edge` already takes
+# seven parameters and an eighth would trip `parameter_count` at its `:high` band, putting
+# the rule into Dendro's own error floor. Retune it here rather than per call.
 const MIN_BACK_EDGE_PAIRS = 5
 
 """

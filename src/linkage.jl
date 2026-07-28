@@ -423,6 +423,13 @@ function Corpus(paths::Set{String})
     end
     return Corpus(paths, by_basename)
 end
+
+# The corpus a parsed file set forms, the shape every pass that resolves linkage needs.
+# Paths are normalised to POSIX separators here, since the resolvers build their targets
+# that way whatever the host uses, and a caller that spells this out is one `to_posix` away
+# from a set that matches nothing on Windows.
+Corpus(files::Vector{ParsedFile}) = Corpus(Set{String}(to_posix(f.file) for f in files))
+
 Base.in(path::AbstractString, corpus::Corpus) = path in corpus.paths
 
 # Resolve a splice target (`include("path")`) to a corpus file: the path is relative to
@@ -917,7 +924,7 @@ behind them builds this once and passes it to [`corpus_references`](@ref), rathe
 resolving the corpus twice.
 """
 corpus_visibility(files::Vector{ParsedFile}, table::SymbolTable) =
-    visible_defs(files, table, Corpus(Set{String}(to_posix(f.file) for f in files)))
+    visible_defs(files, table, Corpus(files))
 
 """
     corpus_references(files, table) -> Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}
@@ -988,7 +995,7 @@ public for the spliced file that defines it. A language with no linkage maps to 
 set; its convention or modifier predicate decides publicness without consulting it.
 """
 function public_surface(files::Vector{ParsedFile})
-    corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
+    corpus = Corpus(files)
     exps = corpus_exports(files)
     own = Dict{String, Set{String}}(files[i].file => exps[i] for i in eachindex(files))
     components = splice_graph(files, corpus).components

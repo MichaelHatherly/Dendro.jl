@@ -97,26 +97,32 @@ community.
 
 ## Dependencies against the grain
 
-Reported as `:back_edge`: a reference running against the direction two directories have
-settled on. Placement and scattering read the corpus as units coupling to units. This reads
-it one level up, as files depending on files, contracted by directory. Between any two
-directories, count the reference weight each way. When `A -> B` carries forty references and
-`B -> A` carries two, the code has established a direction, and each of those two is an
-anomaly with an obvious edit: drop the import and move whatever needed it.
+Reported as `:back_edge`: a reference running against the direction two directories
+have settled on. Placement and scattering read the corpus as units coupling to units.
+This reads it one level up, as files depending on files, contracted by directory.
+Between any two directories, count the reference weight each way. When `A -> B` carries
+forty references and `B -> A` carries two, the code has established a direction, and
+each of those two runs against it: an import to drop and a definition to move.
 
-The score is the dominance percent, `100 * major / (major + minor)`, and higher is worse. A
-pair at 60/40 is a genuinely mutual dependency, a cycle rather than a violated grain. A pair
-at 98/2 is an established layering with a handful of references running backwards. The
-layering is inferred from the corpus, so no declared layer order and no configuration is
-involved. Two scores as usual, the absolute band on the dominance percent and the percentile
-over the pairs that couple both ways at all, which is the meaningful comparison. A pair whose
-majority direction carries too few references has settled on no direction and is not scored,
-and a project whose files all sit in one directory yields no pairs at all.
+The score is the dominance percent, `100 * major / (major + minor)`, and higher is
+worse. A pair at 60/40 is a genuinely mutual dependency, a cycle rather than a violated
+grain. A pair at 98/2 is an established layering with a few references running
+backwards. The layering is inferred from the corpus, so no declared layer order and no
+configuration is involved. Two scores as usual, the absolute band on the dominance
+percent and the percentile over the pairs that couple both ways at all, which is the
+meaningful comparison. A pair whose majority direction carries too few references has
+settled on no direction and is not scored, and a project whose files all sit in one
+directory yields no pairs at all.
+
+The score is a ratio, so it says the direction is one-way, never that the way back is
+small. A pair with a large majority side clears a high band while still carrying dozens
+of references home, and each of those is its own finding. Read how many findings a pair
+produced, not the score, to judge how large the edit is.
 
 One finding is emitted per file edge in the minority direction rather than one per pair,
 since the edit is to an edge. Its locations are the import statement admitting the edge,
-where the language declares one, then every reference site across it. That is wider than a
-per-file metric's locations and it is deliberate: a change that adds a use of an
+where the language declares one, then every reference site across it. That is wider than
+a per-file metric's locations and it is deliberate: a change that adds a use of an
 already-imported name introduces a back edge without touching the import's line, and a
 finding located only at the import would drop out under `base` scoping. One consequence
 follows in the gate. `errors(; since)` keys a finding by its location set, so adding a

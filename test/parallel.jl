@@ -75,7 +75,7 @@ end
             return join(lines, '\n')
         end
         fs = Dendro.analyze(ARGS[1])
-        print(hash(digest(fs)), '|', length(fs))
+        print(hash(digest(fs)), '|', length(fs), '|', count(f -> f.metric === :back_edge, fs))
         """
 
         # `--startup-file=no` pins the captured stdout: `julia_cmd` propagates the flag only
@@ -87,6 +87,10 @@ end
         @test serial == parallel
         # The corpus is built to produce findings, so a match on an empty result is no proof.
         @test parse(Int, split(serial, '|')[2]) > 0
+        # The layered directories are here to put the file-graph pass in the digest. The
+        # count above is satisfied by the clone files alone, so without this the coverage
+        # could vanish and the item would stay green.
+        @test parse(Int, split(serial, '|')[3]) > 0
     end
 end
 

@@ -43,7 +43,7 @@ passes skip a language that ships no scopes query rather than scoring it wrongly
 
 Cross-file resolution needs more than a query: a linkage entry is Julia code in the
 package, so a registered language reaches the per-file metrics, the flags, and clone
-detection, but not `:misplaced`, `:scattered`, or `:unreferenced`.
+detection, but not `:misplaced`, `:scattered`, `:unreferenced`, or `:back_edge`.
 
 `examples/languages/` in the repository carries a worked Zig query, both files, along with
 the reasoning behind the choices a query has to make.

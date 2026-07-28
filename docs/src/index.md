@@ -94,7 +94,7 @@ for a working setup.
 
 - [Scoring and metrics](@ref) explains the two-score model and what each metric measures.
 - [Duplicate detection](@ref) covers exact clones and near-misses across the corpus.
-- [Cohesion and placement](@ref) walks through within-file cohesion, cross-file placement, and scattering.
+- [Cohesion and placement](@ref) covers cohesion, placement, scattering, and back edges.
 - [Suppressing findings](@ref) is about the inline directives and path ignores.
 - [Custom rules](@ref) shows how to extend or replace the rule set.
 - [Languages and limitations](@ref) lists what is supported and where the bargain shows.

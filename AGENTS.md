@@ -142,10 +142,13 @@ dependency is the reference that crossed, and that is where the bargain's line s
 
 Grain is the first question asked of that graph. Between two directories, count the
 reference weight each way: when one direction carries nearly all of it, the code has
-established a direction and the few references going back are anomalies, each one an import
+established a direction and the references going back run against it, each one an import
 to drop and a definition to move. `:back_edge` reads that, inferring the layering from the
 corpus rather than from a declared layer map nobody maintains. Higher dominance is worse,
 because a pair that couples both ways in earnest is a cycle rather than a violated grain.
+The score is a ratio, so it never bounds the size of the resulting edit: a pair with a
+large majority side clears the band while still carrying dozens of references home, one
+finding each. The location count says how big the edit is; the score does not.
 Its locations are the import statement and then every reference across the edge, which is
 wider than any per-file metric's and is what lets a diff that adds a use of an
 already-imported name still scope the finding in. The consequence, that the gate ratchet
@@ -166,8 +169,8 @@ metrics, so it auto-adopts any future high-band metric. Two `parameter_count` si
 trip it, the `Finding` constructor and `mermaid_coupling`, where the parameter count
 tracks a struct's fields or a genuine set of rendering inputs. Both carry inline
 `dendro-ignore: parameter_count`, suppressed not omitted, so the count stays honest
-and the floor reports them as suppressed. If a change makes Dendro
-trip its own metrics, fix the code, not the test.
+and the floor reports them as suppressed. If a change makes Dendro trip its own
+metrics, fix the code, not the test.
 
 ## Where the details live
 

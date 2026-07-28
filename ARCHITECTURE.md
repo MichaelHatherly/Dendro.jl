@@ -23,19 +23,18 @@ source text
   -> show / active / gate
 ```
 
-`analyze` (corpus.jl) is the one entrypoint. It resolves one or more paths to a
-corpus (every profile-resolvable file under each folder, or a named file), parses
-each once, builds a baseline from that corpus, runs the per-file path above
-against it for each file,
-and appends the corpus-relational findings: cross-file duplicates, naturalness
-outliers, low-cohesion files, misplaced units, scattered files, unreferenced
-private definitions, and dependencies running against a directory pair's grain. The
-active rule set is a value it carries, resolved from a
-`Config` (see Configuration) unless the `rules` keyword overrides it, and it threads
-through baseline sampling, per-file scoring, and suppression validation, so a caller
-extends the checks without touching the pipeline. The baseline-from-the-corpus step is what makes
-relative scoring work with no setup, for a single file as much as a folder: a
-file's own functions are the distribution it is scored against.
+`analyze` (corpus.jl) is the one entrypoint. It resolves one or more paths to a corpus
+(every profile-resolvable file under each folder, or a named file), parses each once,
+builds a baseline from that corpus, runs the per-file path above against it for each
+file, and appends the corpus-relational findings: cross-file duplicates, naturalness
+outliers, low-cohesion files, misplaced units, scattered files, unreferenced private
+definitions, and dependencies running against a directory pair's grain. The active rule
+set is a value it carries, resolved from a `Config` (see Configuration) unless the
+`rules` keyword overrides it, and it threads through baseline sampling, per-file
+scoring, and suppression validation, so a caller extends the checks without touching the
+pipeline. The baseline-from-the-corpus step is what makes relative scoring work with no
+setup, for a single file as much as a folder: a file's own functions are the
+distribution it is scored against.
 
 Above that per-file path sits the corpus resolution the relational passes share.
 `corpus_symbols` indexes every top-level definition, `corpus_visibility` works out
@@ -104,10 +103,10 @@ both rely on it, and the benchmark suite pins itself to one thread.
 
 The bands a finding is judged against are tunable, the cascade resolved in
 `config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
-one band field per relational metric, a rule on/off override dict, and the three clone-detection
-thresholds. `discover_config(roots)` accumulates each layer's overrides starting from
-the built-in defaults (the relational band consts, `DEFAULT_CUT`, the clone consts,
-empty override dicts), overlaying a user-global
+one band field per relational metric, a rule on/off override dict, and the three
+clone-detection thresholds. `discover_config(roots)` accumulates each layer's overrides
+starting from the built-in defaults (the relational band consts, `DEFAULT_CUT`, the
+clone consts, empty override dicts), overlaying a user-global
 `~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`,
 then builds one `Config`. Each layer is `apply_toml!`, which touches only the keys
 present and warns on an unknown one. `analyze` then resolves without mutating: `cfg =
@@ -690,11 +689,16 @@ two groups; an edge inside one group is dropped.
 
 `cluster_back_edge` (`back_edge.jl`) is the first rule over the file graph. Contract by
 directory and read the traffic between two directories both ways: when one direction carries
-almost all of it, the code has settled on a layering, and the few references going the other
-way each have an obvious edit. The grain comes from the corpus, so no declared layer order
-and no configuration is involved. A pair whose majority direction carries fewer than
+almost all of it, the code has settled on a layering, and each reference going the other way
+runs against it. The grain comes from the corpus, so no declared layer order and no
+configuration is involved. A pair whose majority direction carries fewer than
 `BACK_EDGE_MIN_MAJOR` references has settled on no direction and is not scored, and a corpus
 whose files sit in one directory contracts to one group and yields no pairs at all.
+
+Dominance is a ratio, so a high score says the direction is one-way and never that the way
+back is short. A pair with a large majority side clears the band while carrying dozens of
+minority references, one finding each: CommonMark.jl's root against `writers` scores 96 on
+15 references over 14 file edges. The location count is what bounds the edit.
 
 Higher dominance is worse, the direction the band model expects: a pair at 60/40 is a
 genuinely mutual dependency, which is a cycle rather than a violated grain. Scored like the
