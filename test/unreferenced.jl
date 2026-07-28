@@ -85,6 +85,31 @@ end
     @test isempty(Fixtures.unref_sites([mod, a]))
 end
 
+@testitem ":unreferenced follows a reference qualified by the module a file splices into" setup = [Fixtures] tags = [:unreferenced] begin
+    # `helper` sits at file scope in a file `module M` includes, so it joins M's namespace
+    # and `M.helper` reaches it. That is the form a submodule writes to call back out.
+    mod = Fixtures.parsedfile(
+        :julia,
+        "module M\npublic entry\ninclude(\"a.jl\")\ninclude(\"b.jl\")\nentry() = B.wrapper()\nend\n";
+        file = "mod.jl",
+    )
+    a = Fixtures.parsedfile(:julia, "helper() = 1\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "module B\nwrapper() = M.helper()\nend\n"; file = "b.jl")
+    @test isempty(Fixtures.unref_sites([mod, a, b]))
+end
+
+@testitem ":unreferenced reads a nested splice as the innermost module" setup = [Fixtures] tags = [:unreferenced] begin
+    # `y.jl` is spliced into `X`, itself spliced into `M`, so `deep` answers to `X.deep`.
+    mod = Fixtures.parsedfile(
+        :julia,
+        "module M\npublic entry\ninclude(\"x.jl\")\nentry() = X.deep()\nend\n";
+        file = "mod.jl",
+    )
+    x = Fixtures.parsedfile(:julia, "module X\ninclude(\"y.jl\")\nend\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "deep() = 1\n"; file = "y.jl")
+    @test isempty(Fixtures.unref_sites([mod, x, y]))
+end
+
 @testitem ":unreferenced does not read a field access as a bare reference" setup = [Fixtures] tags = [:unreferenced] begin
     # `row.total` reads a field of a value. Its name happens to match a definition in
     # another file, which it has nothing to do with, so that definition stays dead.

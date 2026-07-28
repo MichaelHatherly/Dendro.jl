@@ -675,64 +675,133 @@ function file_imports(file::ParsedFile)
     return imports
 end
 
-# The splice target strings an imports query tags in one file (`@include.path`), quotes
-# and all, for the linkage resolver to map to corpus paths.
+# The splice targets an imports query tags in one file (`@include.path`), each as the
+# path string with quotes and all, for the linkage resolver to map to a corpus path, and
+# the byte range of the capture, which locates the namespace the splice lands in.
 function include_targets(tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString)
-    targets = String[]
+    targets = Tuple{String, Int, Int}[]
     for cap in TreeSitter.each_capture(tree, query, source)
         TreeSitter.capture_name(query, cap) == "include.path" || continue
-        push!(targets, String(TreeSitter.slice(source, cap.node)))
+        from, to = TreeSitter.byte_range(cap.node)
+        push!(targets, (String(TreeSitter.slice(source, cap.node)), from, to))
     end
     return targets
 end
 
-# Group files into shared namespaces by following splice edges: an `include` joins two
-# files into one module, so a reference in either resolves to the other's names. Returns
-# a file path to component-root map (union-find over the file index).
-function inclusion_components(files::Vector{ParsedFile}, corpus::Corpus)
+# Both readings of the corpus splice graph a resolver needs: the component root each file
+# belongs to, the files an `include` chain joins into one namespace, and the module path
+# each file is spliced into.
+struct SpliceGraph
+    components::Dict{String, Int}
+    namespaces::Dict{String, Vector{String}}
+end
+
+# Follow every splice edge in the corpus. An `include` joins two files into one module, so
+# a reference in either resolves to the other's names, and the file it pulls in lands in
+# the namespace enclosing that `include`. Components come from a union-find over the file
+# index; the namespace paths are walked down from the splice roots.
+function splice_graph(files::Vector{ParsedFile}, corpus::Corpus)
     index = Dict{String, Int}(to_posix(f.file) => i for (i, f) in enumerate(files))
+    edges = [Tuple{Int, Vector{String}}[] for _ in files]
+    included = falses(length(files))
     parent = collect(1:length(files))
     for (i, f) in enumerate(files)
         link = get(LINKAGES, f.language, nothing)
         (link === nothing || link.model !== :splice) && continue
         query = imports_query_for(f)
         query === nothing && continue
-        for target in include_targets(f.tree, query, f.source)
+        regions = module_regions(f.tree, query, f.source)
+        for (target, from, to) in include_targets(f.tree, query, f.source)
             for path in link.resolve_target(target, f.file, corpus)::Vector{String}
                 j = get(index, path, 0)
                 j == 0 && continue
+                push!(edges[i], (j, module_path_of(regions, from, to)))
+                included[j] = true
                 parent[uf_find(parent, j)] = uf_find(parent, i)
             end
         end
     end
-    roots = Dict{String, Int}()
-    for (i, f) in enumerate(files)
-        roots[f.file] = uf_find(parent, i)
-    end
-    return roots
+    components = Dict{String, Int}(f.file => uf_find(parent, i) for (i, f) in enumerate(files))
+    return SpliceGraph(components, splice_namespaces(files, edges, included))
 end
 
-# The name a namespaced definition is visible under: its own, qualified by the namespace
-# that encloses it directly, the form a reference writes to reach past a module boundary.
-# Nothing for a definition at file scope, which is visible by bare name, and for a
-# language that reaches no namespace by qualifying it.
-function qualified_name(d::CorpusDef, access::Union{ModuleAccess, Nothing})
-    (access === nothing || isempty(d.module_path)) && return nothing
-    return string(last(d.module_path), access.separator, d.name)
+# The module path each file is spliced into, outermost first: the namespace enclosing the
+# `include` that pulled it in, accumulated down the chain from each splice root, a file
+# `included` marks as reached by no other. This is the namespace a file-scope definition
+# belongs to and its own per-file module path cannot record, since the `module` is
+# declared in the includer, not in the file itself. A file in an include cycle with no
+# root above it belongs to no namespace the corpus can name and gets no entry.
+function splice_namespaces(
+        files::Vector{ParsedFile}, edges::Vector{Vector{Tuple{Int, Vector{String}}}},
+        included::BitVector
+    )
+    paths = Dict{String, Vector{String}}()
+    queue = Int[]
+    for i in eachindex(files)
+        included[i] && continue
+        paths[files[i].file] = String[]
+        push!(queue, i)
+    end
+    head = 1
+    while head <= length(queue)
+        i = queue[head]
+        head += 1
+        for (j, site) in edges[i]
+            haskey(paths, files[j].file) && continue
+            paths[files[j].file] = vcat(paths[files[i].file], site)
+            push!(queue, j)
+        end
+    end
+    return paths
+end
+
+# The splice path of a file the graph never reaches: a file in an include cycle with no
+# root above it, which belongs to no namespace the corpus can name.
+const NO_NAMESPACE = String[]
+
+# The corpus-wide indexes `visible_defs` shares across files when resolving each file's
+# cross-file candidates: the symbol table and corpus path set, the inclusion roots with
+# their per-component definition lists and per-file splice paths (splice), and the
+# per-file, per-directory definition and export lookups (import, directory, package).
+# Grouped so the per-file resolver takes one context, not a long parameter list. Concrete
+# fields, so `file_visible` dispatches statically.
+struct VisibilityIndex
+    table::SymbolTable
+    corpus::Corpus
+    roots::Dict{String, Int}
+    bycomp::Dict{Int, Vector{Int}}
+    splices::Dict{String, Vector{String}}
+    defs_by_dir::Dict{String, Vector{Int}}
+    defs_by_file::Dict{String, Vector{Int}}
+    exports_by_file::Dict{String, Set{String}}
+end
+
+# The name a definition is visible under from another file that shares its namespace,
+# qualified by the module enclosing it directly: the innermost name of its own module
+# path, or, at file scope, of the path its file was spliced into. Nothing where neither
+# names a module, and for a language that reaches no namespace by qualifying it.
+function qualified_name(d::CorpusDef, access::Union{ModuleAccess, Nothing}, splice::Vector{String})
+    access === nothing && return nothing
+    isempty(d.module_path) || return string(last(d.module_path), access.separator, d.name)
+    isempty(splice) && return nothing
+    return string(last(splice), access.separator, d.name)
 end
 
 # The cross-file names a file sees from a set of candidate definitions: every member's
 # name, its own file's excluded. Shared by the splice model, whose members are an
 # inclusion component, and the directory model, whose members are a package directory.
-# A member the language does not export across the boundary is still reachable when the
-# language qualifies its namespace, under the qualified name rather than the bare one.
-function member_visible(f::ParsedFile, table::SymbolTable, link::Linkage, members::Vector{Int})
+# Where the language reaches a namespace by qualifying it, a member also answers to its
+# qualified name: that is the only form for a member the language does not export across
+# the boundary, and a second form for one spliced into a module, which a caller in
+# another namespace writes rather than the bare name.
+function member_visible(f::ParsedFile, vi::VisibilityIndex, link::Linkage, members::Vector{Int})
     names = Dict{String, Vector{Int}}()
     access = get(MODULE_ACCESS, f.language, nothing)
     for di in members
-        d = table.defs[di]
+        d = vi.table.defs[di]
         d.file == f.file && continue
-        key = link.is_exported(d, Set{String}())::Bool ? d.name : qualified_name(d, access)
+        link.is_exported(d, Set{String}())::Bool && push!(get!(() -> String[], names, d.name), di)
+        key = qualified_name(d, access, get(vi.splices, d.file, NO_NAMESPACE))
         key === nothing && continue
         push!(get!(() -> String[], names, key), di)
     end
@@ -789,21 +858,6 @@ function merge_visible(a::Dict{String, Vector{Int}}, b::Dict{String, Vector{Int}
     return out
 end
 
-# The corpus-wide indexes `visible_defs` shares across files when resolving each file's
-# cross-file candidates: the symbol table and corpus path set, the inclusion roots with their
-# per-component definition lists (splice), and the per-file, per-directory definition and
-# export lookups (import, directory, package). Grouped so the per-file resolver takes one
-# context, not a long parameter list. Concrete fields, so `file_visible` dispatches statically.
-struct VisibilityIndex
-    table::SymbolTable
-    corpus::Corpus
-    roots::Dict{String, Int}
-    bycomp::Dict{Int, Vector{Int}}
-    defs_by_dir::Dict{String, Vector{Int}}
-    defs_by_file::Dict{String, Vector{Int}}
-    exports_by_file::Dict{String, Set{String}}
-end
-
 """
     visible_defs(files, table, corpus) -> Dict{String, Dict{String, Vector{Int}}}
 
@@ -815,7 +869,8 @@ file's own definitions are excluded, and a file whose language has no linkage se
 nothing across the boundary.
 """
 function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Corpus)
-    roots = inclusion_components(files, corpus)
+    graph = splice_graph(files, corpus)
+    roots = graph.components
     bycomp = Dict{Int, Vector{Int}}()
     defs_by_file = Dict{String, Vector{Int}}()
     defs_by_dir = Dict{String, Vector{Int}}()
@@ -828,7 +883,7 @@ function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Cor
     n = length(files)
     exps = corpus_exports(files)
     exports_by_file = Dict{String, Set{String}}(to_posix(files[i].file) => exps[i] for i in 1:n)
-    vi = VisibilityIndex(table, corpus, roots, bycomp, defs_by_dir, defs_by_file, exports_by_file)
+    vi = VisibilityIndex(table, corpus, roots, bycomp, graph.namespaces, defs_by_dir, defs_by_file, exports_by_file)
     entries = Vector{Dict{String, Vector{Int}}}(undef, n)
     parallel_map!(i -> file_visible(files[i], vi), entries)
     visible = Dict{String, Dict{String, Vector{Int}}}()
@@ -844,8 +899,8 @@ end
 function file_visible(f::ParsedFile, vi::VisibilityIndex)
     link = get(LINKAGES, f.language, nothing)
     link === nothing && return Dict{String, Vector{Int}}()
-    link.model === :splice && return member_visible(f, vi.table, link, get(vi.bycomp, vi.roots[f.file], Int[]))
-    link.model === :directory && return member_visible(f, vi.table, link, get(vi.defs_by_dir, dirname(f.file), Int[]))
+    link.model === :splice && return member_visible(f, vi, link, get(vi.bycomp, vi.roots[f.file], Int[]))
+    link.model === :directory && return member_visible(f, vi, link, get(vi.defs_by_dir, dirname(f.file), Int[]))
     link.model === :package && return merge_visible(
         import_visible(f, vi.table, link, vi.corpus, vi.defs_by_file, vi.exports_by_file),
         package_visible(f, vi.table, get(vi.defs_by_dir, dirname(f.file), Int[])),
@@ -936,7 +991,7 @@ function public_surface(files::Vector{ParsedFile})
     corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
     exps = corpus_exports(files)
     own = Dict{String, Set{String}}(files[i].file => exps[i] for i in eachindex(files))
-    components = inclusion_components(files, corpus)
+    components = splice_graph(files, corpus).components
     by_component = Dict{Int, Set{String}}()
     for f in files
         link = get(LINKAGES, f.language, nothing)
