@@ -167,18 +167,25 @@ end
 Compile one `<lang>.patterns.scm`, reporting a malformed query as a [`ConfigError`](@ref)
 naming the file and the line rather than a `QueryException` carrying a byte offset.
 
-Predicates are checked against [`PATTERN_PREDICATES`](@ref) first: an unimplemented one
-compiles cleanly and then rejects every match, so a rule using one would report nothing
-and read as clean code.
+Fragments are expanded first, and an error inside one names the fragment, where it was
+defined, and where it was used, rather than an offset into text the author never wrote.
+
+Predicates are checked against [`PATTERN_PREDICATES`](@ref): an unimplemented one compiles
+cleanly and then rejects every match, so a rule using one would report nothing and read as
+clean code.
 """
-function compile_pattern_query(grammar, source::AbstractString, path::AbstractString)
-    check_predicates(source, path)
+function compile_pattern_query(grammar, source::AbstractString, path::AbstractString; specs = PatternSpec[])
+    fragments = collect_fragments(source, path)
+    check_fragment_names(fragments, specs, path)
+    expanded = expand_fragments(source, path)
+    check_predicates(expanded.text, path)
     try
-        return TreeSitter.Query(grammar, source)
+        return TreeSitter.Query(grammar, expanded.text)
     catch e
         e isa TreeSitter.QueryException || rethrow()
-        line = line_at_offset(source, query_error_offset(e))
-        config_error("$(query_error_kind(e)) error at line $line of $path")
+        # Resolved through the expansion map, so an error inside a spliced fragment names
+        # the fragment rather than an offset into text the author never wrote.
+        config_error("$(query_error_kind(e)) error at $(error_site(expanded, query_error_offset(e), path))")
     end
 end
 
@@ -361,7 +368,7 @@ function build_pattern_queries(profile::LanguageProfile, dirs::Vector{String}, s
         source = pattern_query_source(dir, profile.name)
         source === nothing && continue
         path = joinpath(dir, "$(profile.name).patterns.scm")
-        query = compile_pattern_query(grammar, source, path)
+        query = compile_pattern_query(grammar, source, path; specs)
         check_declared_rules(query, specs, path)
         push!(found, (query, rules_declared_by(query)))
     end

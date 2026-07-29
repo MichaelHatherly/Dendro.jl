@@ -268,7 +268,10 @@ function apply_language!(acc, name::String, table::Dict{String, Any}, source)
         if key == "grammar"
             grammar = config_string(value, "languages.$name.$key", source)
         elseif key == "queries"
-            queries = config_string(value, "languages.$name.$key", source)
+            # Resolved against the config that declared it, as `patterns_dir` is: a
+            # relative path stored verbatim resolves against whichever directory `dendro`
+            # happened to be run from.
+            queries = config_path(value, "languages.$name.$key", source)
         elseif key == "extensions"
             extensions = extension_list(value, "languages.$name.$key", source)
         else

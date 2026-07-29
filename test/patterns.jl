@@ -441,3 +441,15 @@ end
         end
     end
 end
+
+@testitem "a language queries path resolves against its config" setup = [Fixtures] tags = [:patterns] begin
+    root, srcdir = Fixtures.gitrepo()
+    qdir = joinpath(root, "vendor", "zig-queries")
+    mkpath(qdir)
+    write(joinpath(root, ".dendro.toml"), "[languages.zig]\ngrammar = \"python\"\nqueries = \"vendor/zig-queries\"\nextensions = [\"zig\"]\n")
+
+    cfg = Fixtures.isolated_config([srcdir])
+    # Relative to the declaring config, never the process working directory, so a scan
+    # started from a subdirectory still finds the queries.
+    @test realpath(cfg.languages[:zig].queries) == realpath(qdir)
+end
