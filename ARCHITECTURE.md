@@ -1006,6 +1006,27 @@ unsuppressed findings for gating.
 - Metrics are syntactic, with no symbol resolution. Per-file metrics are scoped to
   one file's tree; duplicate detection, exact and near, is what spans files, and it
   still compares only structure.
+- A scalar's corpus percentile is read only where the distribution supports a rank.
+  `percentile_informs` asks what rank a single occurrence gets: when that already breaches
+  the cut, every unit in the corpus sits above it and the rule reports each function for
+  containing nothing. Resolved once per `(language, metric)` per scan and carried on the
+  `Scan`. The absolute band is untouched, so this decides whether the rank is read and
+  never what the fixed band says. Measured across eight corpora: `cyclomatic` and
+  `function_length` do not move, `cognitive_complexity` moves by four findings in 450, and
+  `boolean_complexity` falls 97.8%, having reported every unit in one corpus.
+- There are two query families and they never merge. `<lang>.scm` captures name
+  concepts: the set is closed (`CONCEPT_NAMES`), `dispatch!` throws on anything outside
+  it, and the suite guards every query against it. That closure is what keeps metric code
+  free of grammar node types. A user's `<lang>.patterns.scm` capture names a *rule*: the
+  set is open and the queries are written against concrete node types on purpose, since
+  being language-specific is the point of the family. They are separate `TreeSitter.Query`
+  objects from separate files, walked in separate passes, bucketed into
+  `QueryIndex.patterns` rather than routed through `dispatch!`. Merging them takes
+  `dispatch!`'s closure with it and metric code starts special-casing languages.
+- A pattern rule resolves to an ordinary `Rule`, which is what makes suppression, diff
+  scoping, the report, the gate, and the ratchet work for it with no further code.
+  Negation is a `.not` capture subtracting by node identity; a `_`-prefixed capture is a
+  predicate helper and never a rule; a capture naming no declared rule is a load error.
 - Adding a language is data only: a query in `src/queries/<lang>.scm`, a
   `LanguageProfile` entry in `profiles.jl`, and an extension entry in `resolve.jl`.
   No metric code changes. If a metric needs a language special case, the query is

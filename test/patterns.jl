@@ -162,7 +162,8 @@ end
 @testitem "pattern negation excludes the more specific match" setup = [Fixtures] tags = [:patterns] begin
     # Three catch clauses: bare, bare with a trailing comment, and one binding `e`.
     # The comment parses as a sibling between `catch` and the block, which is what
-    # breaks the tree-sitter anchor `(catch_clause . (block))` that ADR-0001 proposed.
+    # breaks the tree-sitter anchor `(catch_clause . (block))`, which is why negation
+    # subtracts by node identity instead.
     src = """
     try r() catch; h() end
     try r() catch # a note

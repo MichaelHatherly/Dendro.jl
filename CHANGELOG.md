@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- User-authored lint rules, a second tree-sitter query family. A `[patterns.<name>]` table
+  in `.dendro.toml` declares a rule, language-independently, and a
+  `.dendro/patterns/<lang>.patterns.scm` capture realises it for one grammar. A flag rule
+  reports each match; a scalar rule counts its matches per unit and is scored against a
+  band and the corpus percentile like any built-in. A rule resolves to an ordinary `Rule`,
+  so suppression, diff scoping, the report, the gate, and the ratchet all work for it with
+  no further code. Rules compose across a repo directory and a user-global one, the repo's
+  winning where both define the same rule for a language.
+- Negation in a rule query. A `@rule.not` capture subtracts from `@rule` by node identity,
+  which is how a rule says "without": a `catch` binding no exception, a `switch` with no
+  default, a function with no return type. Tree-sitter anchors were the alternative and
+  break on a comment between the keyword and the block.
+- Query fragments. A `; fragment: <name> = ...` comment defines a named piece of query text
+  and a reference splices it, so several rules about one construct stop repeating its
+  shape. Expansion is line-preserving and carries a source map, so an error inside a
+  fragment names the fragment, where it was defined, and where it was used.
+- `check_patterns` and a `--check-patterns` flag, testing a rule against fixtures. A
+  fixture marks the lines a rule must match; a marked line it missed and an unmarked line
+  it matched both fail, so a rule matching everything cannot pass.
+- Every way of getting a rule wrong is now loud: a bad node type, field, capture reference,
+  or syntax error fails when the query compiles and names the file and line; a predicate
+  TreeSitter.jl does not implement is rejected at load rather than silently rejecting every
+  match; a capture naming no declared rule is a load error, catching a typo and a predicate
+  helper that lost its `_` prefix; and a rule that compiled cleanly but matched nothing
+  anywhere in the corpus is reported after the scan.
+
+### Changed
+
+- A scalar's corpus percentile is read only where the distribution supports a rank. A
+  metric that is zero across most of a corpus has a rank that stops ranking: once the share
+  of units holding nothing passes the cut, every unit sits above it and the rule reports
+  each function for containing nothing. Measured on one corpus, `boolean_complexity`
+  reported 2756 findings across 2756 units. Across eight corpora `cyclomatic` and
+  `function_length` do not move at all and `cognitive_complexity` moves by four findings in
+  450, while `boolean_complexity` falls 97.8%. The absolute bands are untouched.
+
+### Fixed
+
+- A `[languages.<name>] queries` path now resolves against the config file that declared
+  it rather than the process working directory, so a scan started from a subdirectory finds
+  the queries. `patterns_dir` behaves the same way.
+- A `[bands]` override for a rule declared in the same file is no longer dropped depending
+  on TOML dictionary iteration order. Top-level config keys apply in a fixed order.
+
 ### Fixed
 
 - A source file holding an embedded NUL byte is reported and skipped instead of taking the

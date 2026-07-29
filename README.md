@@ -188,6 +188,99 @@ unknown key warns and is ignored, so a typo is visible rather than silent. The b
 the `cut`, the clone thresholds, and rule on/off are configurable; the corpus floors
 and model internals stay fixed.
 
+## Pattern rules
+
+The built-in rules measure a fixed vocabulary of concepts. A project that wants to ban
+something Dendro has no concept for writes a pattern rule: a tree-sitter query naming the
+shape, and a `.dendro.toml` table saying what it means.
+
+Declare the rule once, language-independently:
+
+```toml
+[patterns.empty_catch_binding]
+message  = "`catch` with no exception binding discards the error"
+severity = "high"
+
+[patterns.magic_number]
+message = "unnamed numeric literals in one function"
+kind    = "scalar"
+band    = [5, 10]
+```
+
+Then realise it per grammar in `.dendro/patterns/<lang>.patterns.scm`:
+
+```scheme
+; A capture names a rule. The `.not` pattern is the same pattern made more
+; specific, and subtracts by node identity, which is how a rule says "without".
+(catch_clause) @empty_catch_binding
+(catch_clause (identifier)) @empty_catch_binding.not
+
+; A `_` prefix marks a capture a predicate needed, never a rule of its own.
+(integer_literal) @magic_number
+((integer_literal) @magic_number.not (#any-of? @magic_number.not "0" "1" "2"))
+```
+
+A flag rule reports each match; a scalar rule counts its matches per unit and is scored
+against its band and the corpus percentile, exactly as `cyclomatic` is. `severity`
+defaults to `warn`, which keeps a new rule out of `errors`; promoting one to `high` puts
+it in the gate. Findings carry the same `dendro-ignore` suppression, diff scoping, and
+ratchet as every built-in.
+
+Rules are read from `.dendro/patterns/` beside the config and from
+`~/.config/dendro/patterns/` for rules shared across repositories. Both are read and
+compose; where both define the same rule for the same language, the repo's wins.
+
+A repeated shape factors out into a fragment:
+
+```scheme
+; fragment: loops = [(while_statement) (for_statement)]
+@loops @any_loop
+```
+
+### When a rule is wrong, it says so
+
+A rule that reports nothing reads as clean code, so every way of getting one wrong is
+loud. A node type the grammar does not have, a bad field, a bad capture reference, or a
+syntax error fails when the query compiles, naming the file and line. A predicate
+TreeSitter.jl does not implement is rejected at load, since it would otherwise compile
+and then silently reject every match. A capture naming no declared rule is a load error,
+which catches both a typo and a helper capture that lost its `_`. An error inside a
+fragment names the fragment, where it was defined, and where it was used. And a rule that
+compiles cleanly but matched nothing anywhere in the corpus is reported after the scan.
+
+### Testing a rule
+
+Those catch a malformed rule, not one that fires on the wrong thing. Fixtures in
+`.dendro/patterns/tests/<lang>.<ext>` pin both directions:
+
+```julia
+try r() catch    # dendro-expect: empty_catch_binding
+end
+try r() catch e  # unmarked, so the rule must not fire here
+end
+```
+
+```
+$ dendro --check-patterns src/
+```
+
+A marked line the rule missed fails, and so does an unmarked line it matched: checking
+for false positives is the point, since a rule matching everything would pass a check
+that only asked whether it matched at all.
+
+### What a pattern rule cannot do
+
+A query reads shape, text, and ancestry. It cannot see bindings or resolve a type, so a
+rule needing either stays a Julia `Rule` passed to `analyze(path; rules = ...)`, which is
+reachable from Julia but never from a config file: loading code from a repo config would
+run it during a scan.
+
+Measured against the default rule sets of Clippy, Ruff, and ESLint, 51% of a sampled 150
+rules are expressible this way, with the residue split between rules needing types (17%),
+formatting and ordering (23%), bindings (5%), and checks Dendro already makes (3%). The
+fit is best for Python at around 70% and weakest for Rust at 44%, where linting resolves
+traits.
+
 ## Languages
 
 bash, c, cpp, go, java, javascript, julia, php, python, ruby, rust, typescript.
