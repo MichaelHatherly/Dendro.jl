@@ -158,3 +158,92 @@ end
     ok = "((identifier) @a (#any-of? @a \"x\" \"y\"))\n((identifier) @c (#match? @c \"^z\"))\n"
     @test compile_pattern_query(g, ok, "julia.patterns.scm") isa Dendro.TreeSitter.Query
 end
+
+@testitem "pattern negation excludes the more specific match" setup = [Fixtures] tags = [:patterns] begin
+    # Three catch clauses: bare, bare with a trailing comment, and one binding `e`.
+    # The comment parses as a sibling between `catch` and the block, which is what
+    # breaks the tree-sitter anchor `(catch_clause . (block))` that ADR-0001 proposed.
+    src = """
+    try r() catch; h() end
+    try r() catch # a note
+        h() end
+    try r() catch e; h(e) end
+    """
+    lines = Fixtures.pattern_lines(
+        :julia, src, :empty_catch_binding, """
+        (catch_clause) @empty_catch_binding
+        (catch_clause (identifier)) @empty_catch_binding.not
+        """
+    )
+    @test lines == [1, 2]
+end
+
+@testitem "a helper capture never becomes a rule" setup = [Fixtures] tags = [:patterns] begin
+    src = """
+    a() = print("x")
+    b() = log("y")
+    """
+    # `@_n` exists only so `#eq?` has something to reference. Were it treated as a rule
+    # it would fire on every identifier the predicate examined.
+    query = """
+    ((call_expression (identifier) @_n) @print_call (#eq? @_n "print"))
+    """
+    @test Fixtures.pattern_lines(:julia, src, :print_call, query) == [1]
+    @test Fixtures.pattern_lines(:julia, src, :_n, query) == Int[]
+    @test Dendro.is_helper_capture("_n")
+    @test !Dendro.is_helper_capture("print_call")
+end
+
+@testitem "two patterns share one capture name" setup = [Fixtures] tags = [:patterns] begin
+    src = """
+    console.log("a");
+    logger.log("b");
+    debugger;
+    """
+    # One rule, two shapes: they accumulate into one bucket rather than the second
+    # replacing the first.
+    query = """
+    ((call_expression function: (member_expression object: (identifier) @_o))
+     @debug_output (#eq? @_o "console"))
+    (debugger_statement) @debug_output
+    """
+    @test Fixtures.pattern_lines(:javascript, src, :debug_output, query) == [1, 3]
+end
+
+@testitem "a capture naming no declared rule is rejected" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: ConfigError, PatternSpec, check_declared_rules, compile_pattern_query,
+        language_grammar, profile_for
+
+    g = language_grammar(profile_for(:julia))
+    specs = [PatternSpec(:no_any, "m", :warn, :flag, nothing)]
+
+    # A typo'd capture would otherwise report under a name nobody wrote.
+    q = compile_pattern_query(g, "(identifier) @no_anyy\n", "julia.patterns.scm")
+    err = try
+        check_declared_rules(q, specs, "julia.patterns.scm")
+        nothing
+    catch e
+        e
+    end
+    @test err isa ConfigError
+    @test occursin("no_anyy", err.msg)
+    @test occursin("[patterns.no_anyy]", err.msg)
+    @test occursin("_", err.msg)   # points at the helper convention too
+
+    # The declared rule, its `.not` companion, and a helper all pass.
+    ok = compile_pattern_query(
+        g, "(identifier) @no_any\n(identifier) @no_any.not\n((identifier) @_h (#eq? @_h \"x\"))\n",
+        "julia.patterns.scm"
+    )
+    @test check_declared_rules(ok, specs, "julia.patterns.scm") === nothing
+end
+
+@testitem "declared captures are read off the query, not a walk" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: compile_pattern_query, declared_captures, language_grammar, profile_for
+
+    g = language_grammar(profile_for(:julia))
+    # `no_such_shape` matches nothing anywhere, but is still declared: that is what lets
+    # a repo rule shadow a user-global one even in a file where it does not fire.
+    q = compile_pattern_query(g, "(identifier) @a\n(while_statement) @b\n", "p.scm")
+    @test sort(declared_captures(q)) == ["a", "b"]
+end

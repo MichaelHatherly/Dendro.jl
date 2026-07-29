@@ -196,3 +196,111 @@ function check_predicates(source::AbstractString, path::AbstractString)
     end
     return nothing
 end
+
+# --- Bucketing a rule's matches -----------------------------------------------------
+#
+# A pattern query's captures name rules, so the walk buckets by name rather than routing
+# through `dispatch!`. Three conventions the capture name carries:
+#
+#   @rule       a match to report
+#   @rule.not   a match to subtract from `@rule`, by node identity
+#   @_anything  a helper the query needed so a predicate had something to reference
+#
+# The helper convention is not cosmetic. A predicate must name a capture, so `#eq? @_n
+# "print"` forces capturing the identifier it tests; without the `_` prefix that capture
+# would become a rule of its own and fire on every node the predicate examined. Measured
+# across 44 rules in 12 languages, 23 carried at least one helper.
+
+# The suffix marking a capture as subtracting from the rule of the same name.
+const PATTERN_NOT_SUFFIX = ".not"
+
+# The prefix marking a capture as a predicate helper rather than a rule.
+const PATTERN_HELPER_PREFIX = '_'
+
+# True when a capture name is a helper for a predicate rather than a rule to report.
+is_helper_capture(name::AbstractString) =
+    !isempty(name) && first(name) == PATTERN_HELPER_PREFIX
+
+# The rule a capture name belongs to, and whether it subtracts. A `.not` suffix is
+# stripped; anything else is the rule name itself.
+function capture_rule(name::AbstractString)
+    endswith(name, PATTERN_NOT_SUFFIX) &&
+        return Symbol(SubString(name, 1, lastindex(name) - length(PATTERN_NOT_SUFFIX))), true
+    return Symbol(name), false
+end
+
+"""
+    declared_captures(query) -> Vector{String}
+
+Every capture name `query` declares, whether or not it matched anything. Read off the
+compiled query rather than off a walk, so a rule that matches nothing in a given file is
+still known to have been declared: that is what lets a repo rule shadow a user-global one
+of the same name even where it happens not to fire.
+"""
+function declared_captures(query::TreeSitter.Query)
+    n = TreeSitter.capture_count(query)
+    len = Ref{UInt32}()
+    return String[
+        unsafe_string(TreeSitter.API.ts_query_capture_name_for_id(query.ptr, UInt32(i), len))
+            for i in 0:(n - 1)
+    ]
+end
+
+"""
+    check_declared_rules(query, specs, path)
+
+Reject a capture naming a rule no `[patterns.<name>]` table declares.
+
+Declaration is required rather than inferred, because inferring it turns two ordinary
+mistakes into silent misbehaviour: a typo'd `@no_anyy` becomes a rule reporting under a
+name nobody wrote, and a helper capture that lost its `_` becomes a rule firing on every
+node its predicate examined. Checked once per compiled query at load, never per file.
+"""
+function check_declared_rules(query::TreeSitter.Query, specs, path::AbstractString)
+    known = Set(s.name for s in specs)
+    for name in declared_captures(query)
+        is_helper_capture(name) && continue
+        rule, _ = capture_rule(name)
+        rule in known && continue
+        config_error(
+            "capture `@$name` in $path names no declared rule. Add a `[patterns.$rule]` " *
+                "table, or prefix the capture with `_` if it is a predicate helper"
+        )
+    end
+    return nothing
+end
+
+"""
+    index_patterns!(index, tree, query, source)
+
+Walk `query` over `tree` and bucket every capture into `index.patterns` by rule name.
+
+Several patterns may share one capture name and accumulate into one bucket, which is what
+lets a rule carry more than one shape: a `console.*` call and a `debugger` statement both
+capturing `@debug_output` are one rule with two spellings.
+"""
+function index_patterns!(
+        index::QueryIndex, tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString
+    )
+    for cap in TreeSitter.each_capture(tree, query, source)
+        name = TreeSitter.capture_name(query, cap)
+        is_helper_capture(name) && continue
+        rule, negated = capture_rule(name)
+        bucket = get!(PatternBucket, index.patterns, rule)
+        record!(negated ? bucket.excluded : bucket.hits, cap.node)
+    end
+    return index
+end
+
+"""
+    pattern_hits(index, name) -> Vector{TreeSitter.Node}
+
+The nodes rule `name` reports in this tree: what its query captured, less what its `.not`
+patterns cancelled. Empty when the rule has no query for this language, which is ordinary
+rather than an error.
+"""
+function pattern_hits(index::QueryIndex, name::Symbol)::Vector{TreeSitter.Node}
+    bucket = get(index.patterns, name, nothing)
+    bucket === nothing && return TreeSitter.Node[]
+    return TreeSitter.Node[n for n in bucket.hits.nodes if !(n in bucket.excluded)]
+end
