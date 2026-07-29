@@ -39,3 +39,22 @@ end
 function tame(x)
     return x + 0 + 1 + 2
 end
+
+# A literal bound to a name is not magic. None of these lines is marked, so the rule
+# firing on any of them is a false positive the check reports.
+function named(x)
+    threshold = 7
+    const LIMIT = 13
+    scaled = 0.5
+    return x * threshold + LIMIT + scaled
+end
+
+# A keyword default names its number too.
+padded(x, width = 80) = x * width
+
+# But a literal inside a larger expression is still unnamed: the assignment names the
+# result, not the parts.
+function compound(x)
+    span = 7 + 13    # dendro-expect: magic_number
+    return x + span
+end
