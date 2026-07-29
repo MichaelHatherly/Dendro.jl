@@ -60,6 +60,9 @@ jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
+    # The suite runs in 25 minutes on the slowest cell. A cell that stops making progress
+    # is stuck, and the default six-hour limit turns that into an hour of a dead runner.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +90,14 @@ jobs:
 
       - uses: julia-actions/julia-runtest@6e050c8013b833b1195105ff2fce9cd802f53271 # v1.12.0
         continue-on-error: ${{ matrix.version == 'nightly' }}
+        env:
+          # JET's sound analysis churns tens of gigabytes through the collector. Julia
+          # sizes its heap from physical memory, so the 16 GB Linux runner lets that heap
+          # grow until the runner process itself is starved and the job dies mid-test with
+          # no logs. The 7 GB macOS runner collects harder and survives, which is the
+          # behaviour to ask for everywhere. `Pkg.test` spawns the test process without
+          # forwarding `--heap-size-hint`, so the cap travels as an environment variable.
+          JULIA_HEAP_SIZE_HINT: 6G
 
       - uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38 # v1.2.2
 
