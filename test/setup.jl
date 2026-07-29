@@ -71,7 +71,8 @@
     # Every target is chosen by index rather than at random, so one scenario reads the same
     # way on every run.
     function layout_corpus(
-            dir; sizes, cross = 0, isolated = 0, loose = 0, hub = false, nest = false
+            dir; sizes, cross = 0, isolated = 0, loose = 0, hub = false, nest = false,
+            mod = "mod.jl"
         )
         names = [["g$(g)u$(u)" for u in 1:sizes[g]] for g in eachindex(sizes)]
         flat = reduce(vcat, names; init = String[])
@@ -100,8 +101,8 @@
             push!(sources, place("misc$i") => body("misc$i", filter(!=("misc$i"), calls)))
         end
         hub && push!(sources, place("util") => body("util", String[]))
-        mod = "mod.jl" => join("include(\"$p\")\n" for (p, _) in sources)
-        return [parsedfile(:julia, src; file = path) for (path, src) in [mod; sources]]
+        entry = mod => join("include(\"$p\")\n" for (p, _) in sources)
+        return [parsedfile(:julia, src; file = path) for (path, src) in [entry; sources]]
     end
 
     # The file graph over a corpus, the substrate every architecture rule reads.

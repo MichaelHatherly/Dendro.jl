@@ -144,6 +144,15 @@
 # TOML value that `apply_language!`'s three already carry; `@inline`, which folded the
 # `config_*` helpers off this count, moves nothing there, since the dispatch is on the value
 # rather than on the conversion.
+# `:divisible_package` (`divisible_package.jl`, plus `directory_findings` in `report.jl` and
+# `append_gated!` in `analyze.jl`) raised sound from 1428 to 1473, opt unchanged at 27: one
+# more corpus pass carrying the keyword-argument lowering and `Any`-node walk every existing
+# cluster pass already counts, re-counted through `analyze`'s new call edge, and a gated call
+# reached through a thunk of the kind `rank_clones!`'s function-valued comparison already
+# incurs. One measured non-cost: narrowing `read_divisible` from an anonymous NamedTuple
+# union to `Union{DirectoryReading, Nothing}` moved nothing at all, so the union return was
+# never what the count was reading. The struct stays because it names the thing, not because
+# it bought anything here.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -151,7 +160,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1428  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1473  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 27      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

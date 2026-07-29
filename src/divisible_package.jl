@@ -129,6 +129,18 @@ struct ChildGraph
     adj::Vector{Dict{Int, Float64}}
 end
 
+"""
+    DirectoryReading
+
+One directory the question applies to: its `graph` of children and the `candidates` a
+proposal can be built from, best ratio first. A directory the question does not apply to
+reads `nothing` instead, so the gates answer before anything is scored.
+"""
+struct DirectoryReading
+    graph::ChildGraph
+    candidates::Vector{FolderCandidate}
+end
+
 # The child of `dir` that `file` belongs to, as a path: the file itself when it sits
 # directly in `dir`, otherwise the ancestor directory that does. `nothing` when the file
 # sits outside `dir` entirely.
@@ -225,7 +237,7 @@ end
 # decide whether there is a proposal to make at all, and the score answers how good the best
 # one is, the same division `MIN_COHESION_UNITS` and `MIN_HUB_CORPUS_FILES` make for their
 # own rules.
-function read_divisible(fg::FileGraph, dir::AbstractString)
+function read_divisible(fg::FileGraph, dir::AbstractString)::Union{DirectoryReading, Nothing}
     cg = child_graph(fg, dir)
     length(cg.names) >= MIN_DIVISIBLE_NODES || return nothing
     # Coverage is a property of the directory's children, read before any child is dropped:
@@ -241,7 +253,7 @@ function read_divisible(fg::FileGraph, dir::AbstractString)
     placed >= MIN_DIVISIBLE_PLACED * length(cg.names) || return nothing
     only_one = length(candidates) == 1 && length(candidates[1].members) > MAX_SOLE_FOLDER * length(cg.names)
     only_one && return nothing
-    return (graph = cg, candidates = candidates)
+    return DirectoryReading(cg, candidates)
 end
 
 # Every directory the corpus declares, from each file's own directory up through its

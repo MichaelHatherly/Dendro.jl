@@ -151,6 +151,28 @@ end
     @test sub == [Dict(2 => 1.0), Dict(1 => 1.0), Dict(4 => 1.0), Dict(3 => 1.0), Dict()]
 end
 
+@testitem ":divisible_package fires on the corpus rank alone, with no proposal" setup = [Fixtures] tags = [:divisible_package] begin
+    # Six directories, five of them entangled and one clean. The band is put out of reach so
+    # only the second score can fire, which is the half a uniformly-weak corpus needs: the
+    # clean directory stands out against its own corpus even where no absolute edge trips.
+    files = Dendro.ParsedFile[]
+    for i in 1:5
+        append!(files, Fixtures.layout_corpus("pkg$i"; sizes = [8, 8, 8], cross = 4, mod = "mod$i.jl"))
+    end
+    append!(files, Fixtures.layout_corpus("clean"; sizes = [8, 8, 8], mod = "mod6.jl"))
+    fg = Fixtures.filegraph(files)
+
+    findings = Dendro.cluster_divisible_packages(files, fg; band = (101, 102), min_dirs = 6)
+    f = only(findings)
+    @test f.absolute == :ok
+    @test f.percentile == 1.0
+    @test f.value == 100
+    # No group reaches the band's warn edge, so the finding carries the directory alone
+    # rather than dressing a group up as a folder it does not qualify as.
+    @test length(f.locations) == 1
+    @test only(f.locations).label == "clean, 0 of 24 children placed"
+end
+
 @testitem ":divisible_package marks a suppressed directory rather than dropping it" setup = [Fixtures] tags = [:divisible_package] begin
     # The directive sits on the anchor file, the site the finding reports the directory at.
     files = Fixtures.layout_corpus("pkg"; sizes = [8, 8, 8])

@@ -173,7 +173,8 @@ function pattern_config(dir, specs)
     return Dendro.Config(
         base.cut, base.bands, base.unnatural, base.low_cohesion, base.scattered,
         base.split_audience, base.misplaced, base.back_edge, base.dependency_cycle,
-        base.hub, base.incoherent_package, base.rules, base.min_size, base.threshold,
+        base.hub, base.incoherent_package, base.divisible_package,
+        base.rules, base.min_size, base.threshold,
         base.radius_factor, base.reimpl_threshold, base.languages, specs,
         joinpath(dir, ".dendro", "patterns"),
     )
