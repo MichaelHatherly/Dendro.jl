@@ -18,6 +18,7 @@ struct CLIOptions
     cut::Union{Nothing, Float64}
     format::Symbol
     check::Bool
+    check_patterns::Bool
 end
 
 # A flag's value: from `--flag=value` when given inline, else the next token.
@@ -51,6 +52,7 @@ function parse_args(argv)
     cut = nothing
     format = :text
     check = false
+    check_patterns = false
     while !isempty(argv)
         x = popfirst!(argv)
         inline = nothing
@@ -62,6 +64,8 @@ function parse_args(argv)
             use_config = false
         elseif x == "--check"
             check = true
+        elseif x == "--check-patterns"
+            check_patterns = true
         elseif x == "--base"
             base = take_value!(argv, x, inline)
         elseif x == "--config"
@@ -79,7 +83,22 @@ function parse_args(argv)
     isempty(paths) && throw(CLIError("no paths given"))
     !use_config && config_file !== nothing &&
         throw(CLIError("--no-config and --config are contradictory"))
-    return CLIOptions(paths, base, config_file, use_config, cut, format, check)
+    return CLIOptions(paths, base, config_file, use_config, cut, format, check, check_patterns)
+end
+
+# Check every declared rule against its fixtures and print the disagreements. Exits
+# non-zero on any, so a project gates its own rules in CI the way it gates its code.
+function report_pattern_tests(config, paths)
+    failures = check_patterns(paths; config)
+    if isempty(failures)
+        println(stdout, isempty(config.patterns) ? "No pattern rules declared." : "Pattern rules match their fixtures.")
+        return 0
+    end
+    for f in failures
+        println(stdout, f)
+    end
+    println(stdout, length(failures), " pattern fixture failure(s)")
+    return 1
 end
 
 # Write the findings in the requested format: the REPL table or GitHub annotations.
@@ -103,6 +122,7 @@ function run_cli(options::CLIOptions)
         ispath(path) || throw(CLIError("no such path: $path"))
     end
     config = discover_config(options.paths; explicit = options.config_file, use_files = options.use_config)
+    options.check_patterns && return report_pattern_tests(config, options.paths)
     findings = active(analyze(options.paths; base = options.base, config = config, cut = options.cut))
     if options.check
         gated = high_floor(findings)
@@ -128,6 +148,7 @@ function print_help()
           --cut=<float>    percentile cutoff for corpus-relative flags (default 0.95)
           --format=<fmt>   output format: text (default) or github
           --check          exit 1 when any finding is reported
+          --check-patterns check pattern rules against their fixtures and exit
           --version        print version and exit
           --help, -h       print this message and exit
         """,
