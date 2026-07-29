@@ -89,25 +89,37 @@ leak a registration into the next.
 resolve_profiles(config::Config) = merge(PROFILES, config.languages)
 
 # The scalar metric names a `[bands]` key may set: every scalar rule, built-in or
-# optional. Flag rules carry no band, so naming one under `[bands]` is an error.
-scalar_metric_names() = Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES] if r.kind === :scalar)
+# optional, plus the scalar pattern rules the same config declares. Flag rules carry no
+# band, so naming one under `[bands]` is an error. Pattern names come from the
+# accumulator rather than a constant, since a project's own rules are only known once its
+# config has been read.
+scalar_metric_names(acc) = union(
+    Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES] if r.kind === :scalar),
+    Set(s.name for s in values(acc.patterns) if s.kind === :scalar),
+)
 
 # Corpus passes a `[rules]` key may toggle alongside the per-unit rules. They are
 # gated in `analyze` rather than resolved into the rule set, so `resolve_rules`
 # ignores these names.
 const TOGGLEABLE_RELATIONAL = (:reimplementation, :incoherent_package)
 
-# Every rule name a `[rules]` key may toggle: built-in or optional, of either kind,
-# plus the toggleable corpus passes.
-rule_names() = union(Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES]), TOGGLEABLE_RELATIONAL)
+# Every rule name a `[rules]` key may toggle: built-in or optional, of either kind, the
+# toggleable corpus passes, and the pattern rules the same config declares, so a project
+# turns its own rule off the way it turns `cyclomatic` off.
+rule_names(acc) = union(
+    Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES]),
+    TOGGLEABLE_RELATIONAL, keys(acc.patterns),
+)
 
 """
     resolve_rules(config) -> Vector{Rule}
 
 The active rule set the config selects: [`BUILTIN_RULES`](@ref) minus the names
-`config` disables, plus the [`OPTIONAL_RULES`](@ref) it enables, each scalar rule's
-band replaced by a `config` override when one is set. The default carries the same
-rules `analyze` used before configuration.
+`config` disables, plus the [`OPTIONAL_RULES`](@ref) it enables, then one rule per
+user-authored `[patterns.<name>]` declaration, each scalar rule's band replaced by a
+`config` override when one is set. A pattern rule toggles off through `[rules]` by the
+same name a built-in does. The default carries the same rules `analyze` used before
+configuration.
 """
 function resolve_rules(config::Config)
     out = Rule[]
@@ -116,12 +128,15 @@ function resolve_rules(config::Config)
             get(config.rules, r.name, default_on) && push!(out, reband(r, config))
         end
     end
+    for spec in config.patterns
+        get(config.rules, spec.name, true) && push!(out, reband(pattern_rule(spec), config))
+    end
     return out
 end
 
 # A rule with its band replaced by the config override, when the metric carries one.
 reband(r::Rule, config::Config) =
-    haskey(config.bands, r.name) ? Rule(r.name, r.kind, config.bands[r.name], r.fn) : r
+    haskey(config.bands, r.name) ? Rule(r.name, r.kind, config.bands[r.name], r.fn, r.severity) : r
 
 # Coerce a TOML value to the type a config field reads, erroring on a malformed one so a
 # typo fails loud rather than scoring against garbage. The `isa` guard narrows the `Any` a
@@ -180,7 +195,7 @@ overrides() = (
 # `relational`, a scalar name in `bands`, anything else warns and is dropped, as a
 # typo'd directive does.
 function apply_bands!(acc, table, source)
-    scalars = scalar_metric_names()
+    scalars = scalar_metric_names(acc)
     for (name, value) in table
         sym = Symbol(name)
         if sym in RELATIONAL_BANDS
@@ -196,7 +211,7 @@ end
 
 # Apply a `[rules]` table: each known rule name toggles on or off, anything else warns.
 function apply_rules!(acc, table, source)
-    known = rule_names()
+    known = rule_names(acc)
     for (name, on) in table
         sym = Symbol(name)
         if sym in known

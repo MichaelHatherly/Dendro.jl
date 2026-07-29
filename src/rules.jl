@@ -12,15 +12,26 @@ scalar rule carries its `(warn, high)` `band`; a flag rule carries `nothing`.
 
 - scalar `fn(unit, index) -> Int`, scored against the band and the corpus
   percentile.
-- flag `fn(index) -> Vector{TreeSitter.Node}`, one `:high` finding per returned
-  node.
+- flag `fn(index) -> Vector{TreeSitter.Node}`, one finding per returned node.
+
+`severity` is the absolute band a flag rule's findings carry, and is meaningful
+only for a flag: a scalar reads its band instead. Every built-in flag is `:high`,
+which is what puts it in the [`errors`](@ref) floor. A user-authored pattern rule
+defaults to `:warn`, since a rule firing across a corpus would otherwise make the
+gate unsatisfiable. The two kind-specific fields mirror each other: `band` is
+scalar-only, `severity` flag-only.
 """
 struct Rule
     name::Symbol
     kind::Symbol
     band::Union{Tuple{Int, Int}, Nothing}
     fn::Function
+    severity::Symbol
 end
+
+# The built-in rules predate the severity field and every one of them is `:high`, so it
+# defaults rather than being repeated fifteen times.
+Rule(name::Symbol, kind::Symbol, band, fn) = Rule(name, kind, band, fn, :high)
 
 """
     PatternSpec

@@ -8,7 +8,8 @@
 # every path, as `analyze` does.
 function parse_corpus(
         paths::AbstractVector{<:AbstractString}; language = nothing,
-        rules = BUILTIN_RULES, profiles::Dict{Symbol, LanguageProfile} = PROFILES
+        rules = BUILTIN_RULES, profiles::Dict{Symbol, LanguageProfile} = PROFILES,
+        patterns = PatternSpec[], pattern_dirs = String[]
     )
     forced = language === nothing ? nothing : Symbol(lowercase(String(language)))
     extensions = extension_map(profiles)
@@ -24,9 +25,13 @@ function parse_corpus(
     # Warm every language's caches up front, so no parse task pays a grammar load or a
     # query compile mid fan-out; this also leaves the imports query warm for the linkage
     # passes.
-    warm_languages(unique(last(e) for e in entries))
+    langs = unique(last(e) for e in entries)
+    warm_languages(langs)
+    # Compile every pattern query before the fan-out too. A malformed one is a ConfigError
+    # the caller should see once, not once per parse task racing to report it.
+    isempty(patterns) || foreach(p -> pattern_queries(p, pattern_dirs, patterns), langs)
     parallel_chunks(() -> Dict{LanguageProfile, TreeSitter.Parser}(), n) do parsers, idxs
-        parse_chunk!(files, parsers, entries, idxs, rules)
+        parse_chunk!(files, parsers, entries, idxs, rules, patterns, pattern_dirs)
     end
     # A file the parse boundary turned away leaves its slot unassigned. Compacting in index
     # order keeps the corpus order every later pass and the parallel determinism rely on.
@@ -39,7 +44,7 @@ end
 # parser cannot take leaves its slot unassigned and `parse_corpus` drops it.
 function parse_chunk!(
         files::Vector{ParsedFile}, parsers::Dict{LanguageProfile, TreeSitter.Parser},
-        entries::Vector{Tuple{String, LanguageProfile}}, idxs, rules
+        entries::Vector{Tuple{String, LanguageProfile}}, idxs, rules, patterns, pattern_dirs
     )
     for i in idxs
         path, profile = entries[i]
@@ -56,6 +61,10 @@ function parse_chunk!(
         parser = get!(() -> parser_for(profile), parsers, profile)
         tree = parse(parser, source)
         index = build_index(tree, profile.name, source, query_for(profile), scopes_query_for(profile))
+        # Skipped entirely for a project that declares no rules, so the second query family
+        # costs an unconfigured scan nothing at all.
+        isempty(patterns) ||
+            index_all_patterns!(index, tree, pattern_queries(profile, pattern_dirs, patterns), source)
         directives = suppressions(index; file = path, rules)
         files[i] = ParsedFile(profile, source, path, tree, index, directives)
     end

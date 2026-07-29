@@ -5,8 +5,8 @@
         f = joinpath(dir, "c.toml")
         write(
             f, """
-            [patterns.no_any]
-            message = "`::Any` defeats dispatch"
+            [patterns.abstract_field]
+            message = "field typed Any forces a boxed load"
 
             [patterns.empty_catch_binding]
             message  = "catch with no binding"
@@ -23,12 +23,12 @@
 
         @test length(cfg.patterns) == 3
         # Sorted by name, so a report reads in a stable order.
-        @test [s.name for s in cfg.patterns] == [:empty_catch_binding, :magic_number, :no_any]
+        @test [s.name for s in cfg.patterns] == [:abstract_field, :empty_catch_binding, :magic_number]
 
-        @test specs[:no_any].message == "`::Any` defeats dispatch"
-        @test specs[:no_any].severity === :warn   # the default keeps a new rule out of the gate
-        @test specs[:no_any].kind === :flag
-        @test specs[:no_any].band === nothing
+        @test specs[:abstract_field].message == "field typed Any forces a boxed load"
+        @test specs[:abstract_field].severity === :warn   # the default keeps a new rule out of the gate
+        @test specs[:abstract_field].kind === :flag
+        @test specs[:abstract_field].band === nothing
 
         @test specs[:empty_catch_binding].severity === :high
         @test specs[:magic_number].kind === :scalar
@@ -215,10 +215,10 @@ end
         language_grammar, profile_for
 
     g = language_grammar(profile_for(:julia))
-    specs = [PatternSpec(:no_any, "m", :warn, :flag, nothing)]
+    specs = [PatternSpec(:abstract_field, "m", :warn, :flag, nothing)]
 
     # A typo'd capture would otherwise report under a name nobody wrote.
-    q = compile_pattern_query(g, "(identifier) @no_anyy\n", "julia.patterns.scm")
+    q = compile_pattern_query(g, "(identifier) @abstract_fieldy\n", "julia.patterns.scm")
     err = try
         check_declared_rules(q, specs, "julia.patterns.scm")
         nothing
@@ -226,13 +226,13 @@ end
         e
     end
     @test err isa ConfigError
-    @test occursin("no_anyy", err.msg)
-    @test occursin("[patterns.no_anyy]", err.msg)
+    @test occursin("abstract_fieldy", err.msg)
+    @test occursin("[patterns.abstract_fieldy]", err.msg)
     @test occursin("_", err.msg)   # points at the helper convention too
 
     # The declared rule, its `.not` companion, and a helper all pass.
     ok = compile_pattern_query(
-        g, "(identifier) @no_any\n(identifier) @no_any.not\n((identifier) @_h (#eq? @_h \"x\"))\n",
+        g, "(identifier) @abstract_field\n(identifier) @abstract_field.not\n((identifier) @_h (#eq? @_h \"x\"))\n",
         "julia.patterns.scm"
     )
     @test check_declared_rules(ok, specs, "julia.patterns.scm") === nothing
@@ -246,4 +246,154 @@ end
     # a repo rule shadow a user-global one even in a file where it does not fire.
     q = compile_pattern_query(g, "(identifier) @a\n(while_statement) @b\n", "p.scm")
     @test sort(declared_captures(q)) == ["a", "b"]
+end
+
+@testitem "the repo file shadows the global one per rule" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: PatternSpec, pattern_queries, index_all_patterns!, pattern_hits, PROFILES
+
+    mktempdir() do dir
+        global_dir = joinpath(dir, "global")
+        repo_dir = joinpath(dir, "repo")
+        mkpath(global_dir)
+        mkpath(repo_dir)
+        # Both define `shared`; only the global defines `only_global`.
+        write(
+            joinpath(global_dir, "julia.patterns.scm"),
+            "(while_statement) @shared\n(for_statement) @only_global\n"
+        )
+        write(joinpath(repo_dir, "julia.patterns.scm"), "(if_statement) @shared\n")
+
+        src = "function f(x)\n    while x\n    end\n    for i in x\n    end\n    if x\n    end\nend\n"
+        specs = [
+            PatternSpec(:shared, "m", :warn, :flag, nothing),
+            PatternSpec(:only_global, "m", :warn, :flag, nothing),
+        ]
+        queries = pattern_queries(PROFILES[:julia], [global_dir, repo_dir], specs)
+        index = Fixtures.idx(:julia, src)
+        tree = Dendro.TreeSitter.parse(Dendro.parser_for(:julia), src)
+        index_all_patterns!(index, tree, queries, src)
+
+        line(name) = sort!([Int(Dendro.TreeSitter.start_point(n).row) + 1 for n in pattern_hits(index, name)])
+        # The repo's `shared` wins outright: the global's `while` match is dropped.
+        @test line(:shared) == [6]
+        # A rule only the global defines still applies, so the locations compose.
+        @test line(:only_global) == [4]
+    end
+end
+
+@testitem "a repo rule shadows even where it matches nothing" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: PatternSpec, pattern_queries, index_all_patterns!, pattern_hits, PROFILES
+
+    mktempdir() do dir
+        global_dir = joinpath(dir, "global")
+        repo_dir = joinpath(dir, "repo")
+        mkpath(global_dir)
+        mkpath(repo_dir)
+        write(joinpath(global_dir, "julia.patterns.scm"), "(while_statement) @shared\n")
+        # Declared but matches nothing in this file. Shadowing reads declared captures,
+        # not matched ones, so the global must not leak back in here.
+        write(joinpath(repo_dir, "julia.patterns.scm"), "(for_statement) @shared\n")
+
+        src = "function f(x)\n    while x\n    end\nend\n"
+        specs = [PatternSpec(:shared, "m", :warn, :flag, nothing)]
+        index = Fixtures.idx(:julia, src)
+        tree = Dendro.TreeSitter.parse(Dendro.parser_for(:julia), src)
+        index_all_patterns!(index, tree, pattern_queries(PROFILES[:julia], [global_dir, repo_dir], specs), src)
+        @test isempty(pattern_hits(index, :shared))
+    end
+end
+
+@testitem "a warn pattern rule reports but does not gate" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: analyze, errors
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(root, ".dendro", "patterns"))
+    write(
+        joinpath(root, ".dendro", "patterns", "julia.patterns.scm"),
+        "((struct_definition (block (typed_expression (identifier) (identifier) @_t) @abstract_field)) (#eq? @_t \"Any\"))\n"
+    )
+    write(joinpath(root, ".dendro.toml"), "[patterns.abstract_field]\nmessage = \"field typed Any forces a boxed load\"\n")
+    write(joinpath(srcdir, "f.jl"), "struct S\n    a::Any\n    b::Int\nend\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            hit = only(filter(f -> f.metric === :abstract_field, analyze(srcdir)))
+            @test hit.absolute === :warn
+            @test hit.kind === :flag
+            @test only(hit.locations).line == 2   # the field, not the struct
+            # The load-bearing one: a warn rule cannot reach the gate floor, so declaring
+            # a rule can never make `errors` unsatisfiable. Asserted on the rule rather
+            # than on an empty gate, since the fixture trips `:unreferenced` too.
+            @test isempty(filter(f -> f.metric === :abstract_field, errors(srcdir)))
+        end
+    end
+end
+
+@testitem "a high pattern rule reaches the gate" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: errors
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(root, ".dendro", "patterns"))
+    write(
+        joinpath(root, ".dendro", "patterns", "julia.patterns.scm"),
+        "(catch_clause) @empty_catch_binding\n(catch_clause (identifier)) @empty_catch_binding.not\n"
+    )
+    write(
+        joinpath(root, ".dendro.toml"),
+        "[patterns.empty_catch_binding]\nmessage = \"catch with no binding\"\nseverity = \"high\"\n"
+    )
+    write(joinpath(srcdir, "f.jl"), "function f(x)\n    try\n        g(x)\n    catch\n    end\nend\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            errs = errors(srcdir)
+            @test any(f -> f.metric === :empty_catch_binding && f.absolute === :high, errs)
+        end
+    end
+end
+
+@testitem "a pattern rule suppresses by name" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: analyze, active
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(root, ".dendro", "patterns"))
+    write(
+        joinpath(root, ".dendro", "patterns", "julia.patterns.scm"),
+        "((struct_definition (block (typed_expression (identifier) (identifier) @_t) @abstract_field)) (#eq? @_t \"Any\"))\n"
+    )
+    write(joinpath(root, ".dendro.toml"), "[patterns.abstract_field]\nmessage = \"m\"\n")
+    # The directive names the rule; validation reads the active rule set, which a
+    # pattern rule joins, so no separate registration is needed.
+    write(joinpath(srcdir, "f.jl"), "struct S\n    # dendro-ignore: abstract_field -- heterogeneous by design\n    a::Any\nend\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            hits = filter(f -> f.metric === :abstract_field, analyze(srcdir))
+            # Marked, not dropped: the count stays honest.
+            @test only(hits).suppressed
+            @test isempty(filter(f -> f.metric === :abstract_field, active(analyze(srcdir))))
+        end
+    end
+end
+
+@testitem "a pattern rule toggles off through [rules]" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: analyze
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(root, ".dendro", "patterns"))
+    write(
+        joinpath(root, ".dendro", "patterns", "julia.patterns.scm"),
+        "((struct_definition (block (typed_expression (identifier) (identifier) @_t) @abstract_field)) (#eq? @_t \"Any\"))\n"
+    )
+    write(
+        joinpath(root, ".dendro.toml"),
+        "[patterns.abstract_field]\nmessage = \"m\"\n\n[rules]\nabstract_field = false\n"
+    )
+    write(joinpath(srcdir, "f.jl"), "struct S\n    a::Any\nend\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            @test isempty(filter(f -> f.metric === :abstract_field, analyze(srcdir)))
+        end
+    end
 end

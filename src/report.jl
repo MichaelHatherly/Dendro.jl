@@ -134,16 +134,21 @@ function unit_findings!(out, scan::Scan, unit::FunctionUnit)
     return out
 end
 
-# Flag findings for a set of nodes, all reported with the same metric. A node
-# that is itself a function unit is labelled with its name; other nodes are not.
-function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
+# Flag findings for a set of nodes, all reported with the same metric, each carrying
+# `severity` as its absolute band. A node that is itself a function unit is labelled with
+# its name; other nodes are not.
+#
+# Every built-in flag takes the `:high` default, which is what puts it in the `errors`
+# floor. A user-authored pattern rule may be `:warn` instead, so declaring one cannot make
+# the gate unsatisfiable on a codebase where it fires.
+function flag_findings!(out, scan::Scan, nodes, metric::Symbol, severity::Symbol = :high)
     for node in nodes
         line = line_of(node)
         in_scope(scan, line) || continue
         name = is_function(node, scan.index) ?
             unit_name(node, scan.index) : ""
         sup = is_suppressed(scan.directives, line, metric)
-        push!(out, Finding(scan.file, line, name, metric, nothing, :high, nothing, :flag, sup))
+        push!(out, Finding(scan.file, line, name, metric, nothing, severity, nothing, :flag, sup))
     end
     return out
 end
@@ -163,7 +168,7 @@ function findings_for(scan::Scan)
         unit_findings!(out, scan, unit)
     end
     for r in rules_of_kind(scan.rules, :flag)
-        flag_findings!(out, scan, r.fn(scan.index)::Vector{TreeSitter.Node}, r.name)
+        flag_findings!(out, scan, r.fn(scan.index)::Vector{TreeSitter.Node}, r.name, r.severity)
     end
     return out
 end

@@ -278,14 +278,19 @@ Walk `query` over `tree` and bucket every capture into `index.patterns` by rule 
 Several patterns may share one capture name and accumulate into one bucket, which is what
 lets a rule carry more than one shape: a `console.*` call and a `debugger` statement both
 capturing `@debug_output` are one rule with two spellings.
+
+`skip` names rules a higher-priority location already declares, whose captures here are
+dropped rather than merged.
 """
 function index_patterns!(
-        index::QueryIndex, tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString
+        index::QueryIndex, tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString;
+        skip::Set{Symbol} = Set{Symbol}()
     )
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)
         is_helper_capture(name) && continue
         rule, negated = capture_rule(name)
+        rule in skip && continue
         bucket = get!(PatternBucket, index.patterns, rule)
         record!(negated ? bucket.excluded : bucket.hits, cap.node)
     end
@@ -303,4 +308,138 @@ function pattern_hits(index::QueryIndex, name::Symbol)::Vector{TreeSitter.Node}
     bucket = get(index.patterns, name, nothing)
     bucket === nothing && return TreeSitter.Node[]
     return TreeSitter.Node[n for n in bucket.hits.nodes if !(n in bucket.excluded)]
+end
+
+# --- Resolving a language's rules across both locations -------------------------------
+#
+# Both pattern directories are read and composed, so house rules kept in
+# `~/.config/dendro/patterns/` survive a repo adding its own. When both define the same
+# rule for the same language, the repo's wins for that pair.
+#
+# Shadowing is by *declared* capture, not by matched one. A repo rule that happens to
+# match nothing in a given file must still shadow the user-global rule of the same name
+# there, or the global one would leak back in exactly where the repo's found nothing.
+
+"""
+    PatternQuery
+
+One compiled `<lang>.patterns.scm` and the rules a higher-priority location already
+declares, which this query's captures are skipped for.
+"""
+struct PatternQuery
+    query::TreeSitter.Query
+    shadowed::Set{Symbol}
+end
+
+# Compiled pattern queries per language, keyed so two scans of the same project share the
+# work. A `Query` wraps a C pointer that cannot survive precompilation, so this fills
+# lazily at runtime like `QUERY_CACHE` does.
+const PATTERN_QUERY_CACHE = Dict{Tuple{Symbol, Vector{String}, Vector{Symbol}}, Vector{PatternQuery}}()
+
+"""
+    pattern_queries(profile, dirs, specs) -> Vector{PatternQuery}
+
+Every compiled pattern query for one language, lowest priority first, each carrying the
+rules a later location shadows. Empty when no location holds a file for the language.
+
+Each query is validated as it compiles: node types by tree-sitter, predicates by
+[`PATTERN_PREDICATES`](@ref), and capture names against `specs`.
+"""
+function pattern_queries(profile::LanguageProfile, dirs::Vector{String}, specs)
+    key = (profile.name, dirs, Symbol[s.name for s in specs])
+    return lock(CACHE_LOCK) do
+        get!(PATTERN_QUERY_CACHE, key) do
+            build_pattern_queries(profile, dirs, specs)
+        end
+    end
+end
+
+function build_pattern_queries(profile::LanguageProfile, dirs::Vector{String}, specs)
+    grammar = language_grammar(profile)
+    found = Tuple{TreeSitter.Query, Set{Symbol}}[]
+    for dir in dirs
+        source = pattern_query_source(dir, profile.name)
+        source === nothing && continue
+        path = joinpath(dir, "$(profile.name).patterns.scm")
+        query = compile_pattern_query(grammar, source, path)
+        check_declared_rules(query, specs, path)
+        push!(found, (query, rules_declared_by(query)))
+    end
+    # Walk backwards accumulating what the higher-priority locations claim, so each entry
+    # learns which of its own rules a later one has already answered for.
+    out = Vector{PatternQuery}(undef, length(found))
+    claimed = Set{Symbol}()
+    for i in reverse(eachindex(found))
+        query, declares = found[i]
+        out[i] = PatternQuery(query, copy(claimed))
+        union!(claimed, declares)
+    end
+    return out
+end
+
+# The rule names a compiled query declares, helpers and `.not` suffixes folded away.
+function rules_declared_by(query::TreeSitter.Query)
+    out = Set{Symbol}()
+    for name in declared_captures(query)
+        is_helper_capture(name) && continue
+        push!(out, first(capture_rule(name)))
+    end
+    return out
+end
+
+"""
+    index_all_patterns!(index, tree, queries, source)
+
+Bucket every location's pattern query into `index`, skipping the rules a
+higher-priority location has already declared.
+"""
+function index_all_patterns!(
+        index::QueryIndex, tree::TreeSitter.Tree, queries::Vector{PatternQuery}, source::AbstractString
+    )
+    for pq in queries
+        index_patterns!(index, tree, pq.query, source; skip = pq.shadowed)
+    end
+    return index
+end
+
+# --- From a declaration to a rule -----------------------------------------------------
+#
+# Once a spec and its query exist, a pattern rule is an ordinary `Rule`. That is the whole
+# point: suppression, diff scoping, the report, the gate, and the ratchet then work with
+# no further code, and a house rule sits beside `cyclomatic` under one vocabulary.
+
+# Count a rule's hits within one unit, stopping at nested callables so a closure's matches
+# do not land on the enclosing function. Every built-in scalar stops there, and a pattern
+# scalar that did not would read as a Dendro bug.
+#
+# The bucket travels as `fold_unit`'s context rather than being captured, so the step stays
+# a plain function and the accumulator stays concretely typed for inference and JET. See
+# the note on `fold_unit` in `metrics.jl`. The index goes unread here, unlike every
+# concept-reading step, since the rule's matches are already bucketed by name.
+pattern_step(node::TreeSitter.Node, _index::QueryIndex, bucket::PatternBucket) =
+    count_if(node in bucket.hits && !(node in bucket.excluded), bucket)
+
+"""
+    pattern_count(unit, index, name) -> Int
+
+How many times rule `name` matched inside `unit`, excluding nested callables. Zero when
+the rule has no query for this language.
+"""
+function pattern_count(unit::FunctionUnit, index::QueryIndex, name::Symbol)
+    bucket = get(index.patterns, name, nothing)
+    bucket === nothing && return 0
+    return fold_unit(pattern_step, +, unit.node, index, bucket)
+end
+
+"""
+    pattern_rule(spec) -> Rule
+
+The [`Rule`](@ref) one [`PatternSpec`](@ref) declares. A flag reports each matched node at
+the spec's severity; a scalar counts its matches per unit and is scored against the spec's
+band and the corpus percentile, exactly as a built-in scalar is.
+"""
+function pattern_rule(spec::PatternSpec)
+    spec.kind === :scalar &&
+        return Rule(spec.name, :scalar, spec.band, (u, i) -> pattern_count(u, i, spec.name), spec.severity)
+    return Rule(spec.name, :flag, nothing, i -> pattern_hits(i, spec.name), spec.severity)
 end

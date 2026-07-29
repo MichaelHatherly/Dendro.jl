@@ -190,7 +190,10 @@ function analyze(
 
     profiles = resolve_profiles(cfg)
     corpus = collect_corpus(roots, ignore, language; profiles)
-    files = parse_corpus(corpus; language, rules = active_rules, profiles)
+    files = parse_corpus(
+        corpus; language, rules = active_rules, profiles,
+        patterns = cfg.patterns, pattern_dirs = pattern_dirs(cfg, roots)
+    )
     bl = baseline_from(files, active_rules)
 
     # Assigned once, so the scoring closure captures it concretely, never as a `Core.Box`.
