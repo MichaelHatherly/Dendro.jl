@@ -16,7 +16,7 @@
         ),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
     findings = Dendro.cluster_back_edge(files, fg, table; band = (85, 95))
 
@@ -44,7 +44,7 @@ end
         ),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
     finding = only(Dendro.cluster_back_edge(files, fg, table; band = (85, 95)))
 
@@ -70,7 +70,7 @@ end
             ),
         ]
         table = Dendro.corpus_symbols(files)
-        corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+        corpus = Dendro.Corpus(files)
         fg = Dendro.build_file_graph(files, table, corpus)
         return Dendro.cluster_back_edge(files, fg, table; band = (85, 95))
     end
@@ -94,14 +94,38 @@ end
         ),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # Five references one way and one the other is not a direction the code has settled
     # on, so there is no grain for the minority to run against. The pair is dropped before
     # it is scored at all, not merely scored low: lowering the floor brings it back.
     @test isempty(Dendro.cluster_back_edge(files, fg, table; band = (80, 95)))
-    @test only(Dendro.cluster_back_edge(files, fg, table; band = (80, 95), min_major = 5)).value == 83
+    @test only(Dendro.cluster_back_edge(files, fg, table; band = (80, 95), floors = (major = 5,))).value == 83
+end
+
+@testitem "back edge takes its pair floor from the caller" setup = [Fixtures] tags = [:back_edge] begin
+    # Four directories chained, so three pairs couple both ways: under the default floor of
+    # five, the corpus is too thin to rank against and the percentile is withheld. The floor
+    # is the caller's to set, as it is for cohesion, placement and scattering, so lowering it
+    # is what lets the corpus-relative half read a corpus this size.
+    files = Dendro.ParsedFile[]
+    for i in 1:4
+        src = "t$i(x) = x\n"
+        i > 1 && (src *= "heavy$i(x) = " * join(("t$(i - 1)(x)" for _ in 1:20), " + ") * "\n")
+        i < 4 && (src *= "back$i(x) = " * join(("t$(i + 1)(x)" for _ in 1:i), " + ") * "\n")
+        push!(files, Fixtures.parsedfile(:julia, src; file = "m$i/f$i.jl"))
+    end
+    push!(files, Fixtures.parsedfile(:julia, join("include(\"m$i/f$i.jl\")\n" for i in 1:4); file = "all.jl"))
+    table = Dendro.corpus_symbols(files)
+    corpus = Dendro.Corpus(files)
+    fg = Dendro.build_file_graph(files, table, corpus)
+
+    # An unreachable band isolates the corpus-relative half, so only the floor decides.
+    @test isempty(Dendro.cluster_back_edge(files, fg, table; band = (200, 300)))
+    lowered = Dendro.cluster_back_edge(files, fg, table; band = (200, 300), floors = (pairs = 3,))
+    @test only(lowered).value == 95
+    @test only(lowered).percentile == 1.0
 end
 
 @testitem "back edge fires on the corpus percentile alone" setup = [Fixtures] tags = [:back_edge] begin
@@ -116,7 +140,7 @@ end
     end
     push!(files, Fixtures.parsedfile(:julia, join("include(\"m$i/f$i.jl\")\n" for i in 1:6); file = "all.jl"))
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # An unreachable band isolates the corpus-relative half. The worst pair in a corpus of
@@ -227,7 +251,7 @@ end
         Fixtures.parsedfile(:julia, "include(\"core.jl\")\nrender(y) = y\nusec(x) = $heavy\n"; file = "render.jl"),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # Everything in one directory contracts to one node, and a group depending on itself

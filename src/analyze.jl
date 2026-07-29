@@ -11,23 +11,35 @@ function git_toplevel(paths::Union{AbstractString, AbstractVector{<:AbstractStri
     return String(strip(read(pipeline(`git -C $dir rev-parse --show-toplevel`; stderr = devnull), String)))
 end
 
-# A diff scope: the git toplevel and the changed line ranges per file, relative to
-# that root. Mirrors the per-file shape `changed_ranges` returns.
+# A diff scope: the git toplevel, the changed line ranges per file relative to that root,
+# and each corpus file's path already resolved against it. Mirrors the per-file shape
+# `changed_ranges` returns.
+#
+# `rels` is resolved up front over the whole corpus rather than per location. Every scoping
+# test needs a location's repo-relative path, `realpath` is a syscall, and a dozen passes
+# scope their findings against one `Scope`, so the same file would otherwise be resolved
+# once per location per pass. Building it before the per-file scan also keeps it read-only,
+# which is what lets the parallel pass share it without a lock.
 struct Scope
     root::String
     ranges::Dict{String, Vector{UnitRange{Int}}}
+    rels::Dict{String, String}
 end
+
+Scope(root::String, ranges::Dict{String, Vector{UnitRange{Int}}}, files::Vector{ParsedFile}) =
+    Scope(root, ranges, Dict{String, String}(f.file => relpath(realpath(f.file), root) for f in files))
+
+# Whether one location sits on a changed line. Every path a finding names is a corpus file,
+# so a miss here is a finding built from a path the scan never parsed, which is a bug to
+# surface rather than to read as out of scope.
+in_scope(scope::Scope, loc::Location) =
+    (rel = scope.rels[loc.file]; haskey(scope.ranges, rel) && inrange(scope.ranges[rel], loc.line))
 
 # Keep only cluster findings touching a changed line, the diff-scoped view shared
 # by exact and near-miss duplicates. Without a scope every cluster passes through.
 function scope_clusters(clusters::Vector{Finding}, scope::Union{Scope, Nothing})
     scope === nothing && return clusters
-    return filter(clusters) do c
-        any(c.locations) do loc
-            rel = relpath(realpath(loc.file), scope.root)
-            haskey(scope.ranges, rel) && inrange(scope.ranges[rel], loc.line)
-        end
-    end
+    return filter(c -> any(loc -> in_scope(scope, loc), c.locations), clusters)
 end
 
 """
@@ -60,7 +72,7 @@ function resolve_corpus(files::Vector{ParsedFile})
     return CorpusResolution(
         table, linkage,
         build_corpus_graph(files, table; linkage),
-        build_file_graph(files, table, Corpus(files); linkage),
+        build_file_graph(files, table, linkage.corpus; linkage),
     )
 end
 
@@ -186,14 +198,14 @@ function analyze(
         nothing
     else
         root = git_toplevel(roots)
-        Scope(root, changed_ranges(read(`git -C $root diff $base`, String)))
+        Scope(root, changed_ranges(read(`git -C $root diff $base`, String)), files)
     end
 
     findings = parallel_flatmap(length(files), Finding) do i
         f = files[i]
         within = nothing
         if scope !== nothing
-            rel = relpath(realpath(f.file), scope.root)
+            rel = scope.rels[f.file]
             haskey(scope.ranges, rel) || return Finding[]
             within = scope.ranges[rel]
         end
@@ -202,7 +214,7 @@ function analyze(
     end
 
     res = resolve_corpus(files)
-    append!(findings, clone_clusters(files, cfg, scope, ModulePlacement(res.file_graph, module_graph(res.file_graph))))
+    append!(findings, clone_clusters(files, cfg, scope, ModulePlacement(res.file_graph)))
     append!(findings, relational_clusters(files, cfg, scope, res))
     return Findings(findings)
 end

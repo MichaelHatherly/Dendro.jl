@@ -55,6 +55,47 @@ end
     @test isempty(Dendro.cluster_split_audience(files, table; cut = 0.0))
 end
 
+@testitem ":split_audience counts a file that names no audience into the population" setup = [Fixtures] tags = [:split_audience] begin
+    # A file whose consumed definitions each have a consumer of their own forms no group
+    # above the definition floor, so it scores zero audiences. It was still examined and
+    # still scored, so it belongs in the distribution the percentile reads: dropping it
+    # would make the corpus look thinner than it is, and the percentile floor is counted
+    # against exactly that thinness. Four files score above zero here and two score zero,
+    # which is the corpus reaching the floor of five only if the zeros are counted.
+    files = Dendro.ParsedFile[]
+    includes = String[]
+    add!(name, src) = (push!(files, Fixtures.parsedfile(:julia, src; file = name)); push!(includes, "include(\"$name\")"))
+
+    # Two audiences: `sa`/`sb` for one consumer, `sc`/`sd` for another.
+    add!("split.jl", "sa() = 1\nsb() = 2\nsc() = 3\nsd() = 4\n")
+    add!("sx.jl", "sx1() = sa() + sb()\n")
+    add!("sy.jl", "sy1() = sc() + sd()\n")
+    # Three files with one audience apiece: two consumers that meet on `ob`, so the two
+    # groups merge into one and the file clears the consumer floor without naming a split.
+    for i in 1:3
+        add!("one$i.jl", "oa$i() = 1\nob$i() = 2\noc$i() = 3\n")
+        add!("ox$i.jl", "ox$i() = oa$i() + ob$i()\n")
+        add!("oy$i.jl", "oy$i() = ob$i() + oc$i()\n")
+    end
+    # Two files with two consumers but no group of two definitions between them.
+    for i in 1:2
+        add!("zero$i.jl", "za$i() = 1\nzb$i() = 2\nzc$i() = 3\n")
+        add!("zx$i.jl", "zx$i() = za$i()\n")
+        add!("zy$i.jl", "zy$i() = zb$i()\n")
+    end
+    pushfirst!(files, Fixtures.parsedfile(:julia, join(includes, "\n") * "\n"; file = "mod.jl"))
+    table = Dendro.corpus_symbols(files)
+
+    # Neither zero-audience file names a split, so neither is ever reported.
+    @test Dendro.audience_components(Dendro.resolve_linkage(files, table).consumers["zero1.jl"], table) == Vector{Int}[]
+
+    # An unreachable band isolates the corpus-relative half, so the percentile alone
+    # decides, and it is read only once the population reaches the file floor.
+    hit = only(Dendro.cluster_split_audience(files, table; band = (99, 100)))
+    @test (hit.locations[1].file, hit.value) == ("split.jl", 2)
+    @test hit.percentile == 1.0
+end
+
 @testitem ":split_audience reads a language with no export marker the same way" setup = [Fixtures] tags = [:split_audience] begin
     # Python declares no exports, so the audience is resolved from references alone,
     # exactly as it is for Julia's splice linkage. Same shape, same verdict.

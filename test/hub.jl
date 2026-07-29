@@ -19,7 +19,7 @@
     files = [Fixtures.parsedfile(:julia, s; file = p) for (p, s) in [mod; sources]]
 
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     linkage = Dendro.resolve_linkage(files, table)
     fg = Dendro.build_file_graph(files, table, corpus; linkage)
     findings = Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5)
@@ -58,7 +58,7 @@ end
     files = [Fixtures.parsedfile(:julia, s; file = p) for (p, s) in [mod; sources]]
 
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     linkage = Dendro.resolve_linkage(files, table)
     fg = Dendro.build_file_graph(files, table, corpus; linkage)
     f = only(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
@@ -85,7 +85,7 @@ end
     files = [Fixtures.parsedfile(:julia, s; file = p) for (p, s) in [mod; sources]]
 
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     linkage = Dendro.resolve_linkage(files, table)
     fg = Dendro.build_file_graph(files, table, corpus; linkage)
     f = only(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
@@ -110,7 +110,7 @@ end
     files = [Fixtures.parsedfile(:julia, s; file = p) for (p, s) in [mod; sources]]
 
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     linkage = Dendro.resolve_linkage(files, table)
     fg = Dendro.build_file_graph(files, table, corpus; linkage)
 
@@ -180,7 +180,7 @@ end
     ]
 
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     linkage = Dendro.resolve_linkage(files, table)
     fg = Dendro.build_file_graph(files, table, corpus; linkage)
     hit = only(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
@@ -208,7 +208,7 @@ end
     files = [Fixtures.parsedfile(:julia, s; file = p) for (p, s) in [mod; sources]]
 
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     linkage = Dendro.resolve_linkage(files, table)
     fg = Dendro.build_file_graph(files, table, corpus; linkage)
     f = only(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))

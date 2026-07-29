@@ -56,21 +56,33 @@ const BACK_EDGE_EDGE_CAP = 5
 # The corpus needs this many bidirectional directory pairs before the dominance percentile
 # means anything; under it only the absolute band fires, as cohesion does on a thin corpus.
 # `cluster_low_cohesion`, `cluster_misplaced` and `cluster_scattered` each expose the
-# equivalent floor as a keyword. This one is fixed because `cluster_back_edge` already takes
-# seven parameters and an eighth would trip `parameter_count` at its `:high` band, putting
-# the rule into Dendro's own error floor. Retune it here rather than per call.
+# equivalent floor as a keyword, and so does this one.
 const MIN_BACK_EDGE_PAIRS = 5
 
+# The two floors a caller may retune, carried as one keyword. They travel together because
+# they answer the same question at two scales, how much traffic a reading needs before it
+# says anything, and because one keyword apiece would take `cluster_back_edge` to eight
+# parameters and trip `parameter_count` at its `:high` band, putting the rule into Dendro's
+# own error floor. A caller names only the floor it is moving; `cluster_back_edge` merges
+# the rest from here.
+const BACK_EDGE_FLOORS = (major = BACK_EDGE_MIN_MAJOR, pairs = MIN_BACK_EDGE_PAIRS)
+
 """
-    cluster_back_edge(files, fg, table; band=$BACK_EDGE_BAND, cut=0.95, min_major=$BACK_EDGE_MIN_MAJOR, linkage=resolve_linkage(files, table)) -> Vector{Finding}
+    cluster_back_edge(files, fg, table; band=$BACK_EDGE_BAND, cut=0.95, floors=$BACK_EDGE_FLOORS, linkage=resolve_linkage(files, table)) -> Vector{Finding}
 
 References running against a directory pair's established direction, reported as
 `:back_edge`. The file graph contracted by directory gives the reference weight between
 each pair of directories in both directions; a pair coupled both ways, whose majority
-direction clears `min_major`, scores the dominance percent, `100 * major / (major + minor)`.
+direction clears `floors.major`, scores the dominance percent,
+`100 * major / (major + minor)`.
 Each finding carries the absolute `band` on that percent and the corpus percentile over
-the bidirectional pairs, fired when either trips. One finding is emitted per file edge in
-the minority direction, since the edit is to an edge rather than to a pair.
+the bidirectional pairs, fired when either trips, the percentile withheld until the corpus
+holds `floors.pairs` of them. One finding is emitted per file edge in the minority
+direction, since the edit is to an edge rather than to a pair.
+
+`floors` carries both, and a caller names only the one it is moving: the rest is merged
+from [`BACK_EDGE_FLOORS`](@ref), so `floors = (pairs = 3,)` retunes the percentile floor
+and leaves the traffic floor alone.
 
 A pair whose minority direction spans more than `BACK_EDGE_EDGE_CAP` file edges reports
 below `:high` whatever its dominance. Dominance fixes where a settled direction begins and
@@ -113,16 +125,21 @@ referencing source, and source referencing test fixtures, are usually answered b
 function cluster_back_edge(
         files::Vector{ParsedFile}, fg::FileGraph, table::SymbolTable;
         band::Tuple{Int, Int} = BACK_EDGE_BAND, cut::Real = 0.95,
-        min_major::Integer = BACK_EDGE_MIN_MAJOR,
+        floors::NamedTuple = BACK_EDGE_FLOORS,
         linkage::ResolvedLinkage = resolve_linkage(files, table)
     )
     findings = Finding[]
-    mg = module_graph(fg)
-    scored = dominated_pairs(mg, min_major)
+    # `floors` is whatever NamedTuple the caller named a floor in, so its type is not known
+    # here and every read off it widens. The merge fills the defaults and the assertion pins
+    # the result, which keeps the widening from travelling into the rest of the pass. A
+    # `floors` naming something that is not a floor fails here, where the name is visible.
+    tuned = merge(BACK_EDGE_FLOORS, floors)::@NamedTuple{major::Int, pairs::Int}
+    mg = fg.modules
+    scored = dominated_pairs(mg, tuned.major)
     isempty(scored) && return findings
 
     dominances = sort([p[3] for p in scored])
-    enough = length(scored) >= MIN_BACK_EDGE_PAIRS
+    enough = length(scored) >= tuned.pairs
     flagged = Tuple{Tuple{Int, Int}, Int, Symbol, Union{Float64, Nothing}}[]
     for (minority, majority, dominance) in scored
         absolute, pct = two_scores(dominance, dominances, band, enough)

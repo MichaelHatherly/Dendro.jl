@@ -29,7 +29,8 @@ builds a baseline from that corpus, runs the per-file path above against it for 
 file, and appends the corpus-relational findings: cross-file duplicates, naturalness
 outliers, low-cohesion files, misplaced units, scattered files, unreferenced private
 definitions, files serving disjoint audiences, dependencies running against a directory
-pair's grain, and hub files. The active rule set is a value it carries, resolved from a
+pair's grain, dependency cycles, hub files, and, when the config enables it, incoherent
+packages. The active rule set is a value it carries, resolved from a
 `Config` (see Configuration)
 unless the `rules` keyword overrides it, and it threads through baseline sampling, per-file
 scoring, and suppression validation, so a caller extends the checks without touching the
@@ -385,10 +386,10 @@ Reporting:
   `splice_graph` groups files into shared namespaces by an inclusion union-find,
   `DeclaredLinkage` holds it beside each file's export set so one walk serves both readings,
   `visible_defs` returns each file's cross-file candidates over a shared `VisibilityIndex`,
-  and `corpus_references` yields every resolved cross-file reference. Three per-definition
-  summaries sit on top: `consumer_sets` (who references each consumed definition, read by
-  `:split_audience` and `:hub`) and `public_surface` (each file's export gate, the file's own
-  for an import model, the inclusion component's for a splice). `ResolvedLinkage` and
+  and `corpus_references` yields every resolved cross-file reference. Two summaries sit on
+  top: `consumer_sets`, per definition, who references each consumed one, read by
+  `:split_audience` and `:hub`, and `public_surface`, per file, the export gate, the file's
+  own for an import model and the inclusion component's for a splice. `ResolvedLinkage` and
   `resolve_linkage` bundle the visibility, the references, the consumers and the surface into
   the one value a scan resolves once and every pass takes. Reuses the `bindings.jl` capture
   walk and the `clones.jl` union-find. Included after `linkage.jl`.
@@ -412,12 +413,14 @@ Reporting:
   `build_file_graph` walks `corpus_references` and records a weighted `FileEdge` per
   ordered file pair, carrying the definition names behind it (`top_names`, capped at
   `EDGE_NAMES_MAX` and paired with the true count) and the import statements admitting it
-  (`declared_edges` over `declared_targets`, each target mapped to corpus paths through the
-  language's `Linkage` resolver). It drops no cross-cutting definition and skips self-edges,
-  and `edge_weight` floors a split reference at one so rounding never erases an edge.
-  `module_graph` contracts the graph by a grouping function, `dirname` by default, summing
-  weights and dropping within-group edges, and `module_communities` runs `corpus_graph.jl`'s
-  modularity optimisation over the undirected reading of that contraction. It reads a
+  (`declared_edges` over `linkage.jl`'s `resolved_targets`, which maps each declared target
+  to corpus paths through the language's `Linkage` resolver; the walk fans out per file and
+  only the fold into the shared edge map is serial). It drops no cross-cutting definition and
+  skips self-edges, and `edge_weight` floors a split reference at one so rounding never
+  erases an edge. `module_graph` contracts by a grouping function, summing weights and
+  dropping within-group edges; `build_file_graph` runs it by `dirname` and keeps the result
+  as the graph's `modules`, and `module_communities` runs `corpus_graph.jl`'s modularity
+  optimisation over the undirected reading of that contraction. It reads a
   prebuilt `ResolvedLinkage` from `resolve_linkage`, the same value `build_corpus_graph`
   accepts, and returns its nodes without walking anything when the corpus holds one file,
   since an edge joins two. Included after `corpus_graph.jl`, before `clones.jl` ranks
@@ -636,12 +639,20 @@ file-to-module-node map and the community label per module node. `analyze` resol
 hands it to every clone pass, so a corpus with three of them pays for one community
 optimisation. `clone_distance` is the only reader.
 
-`Scope` (`analyze.jl`). The diff-scoped view's data: the git toplevel `root` and the
-changed line ranges per file relative to it (`Dict{String, Vector{UnitRange{Int}}}`).
-`analyze` builds one from `base`'s diff, and `scope_clusters` filters cluster findings
-to it. Several scanned roots still resolve to one toplevel and one repo-wide diff,
-since findings carry absolute paths that `relpath` against `root` regardless of root. A concrete record, so the diff-scoping passes dispatch statically rather than
-over an ad-hoc NamedTuple.
+`Scope` (`analyze.jl`). The diff-scoped view's data: the git toplevel `root`, the changed
+line ranges per file relative to it (`Dict{String, Vector{UnitRange{Int}}}`), and `rels`,
+every corpus file's path already resolved against that root. `analyze` builds one from
+`base`'s diff, and `scope_clusters` filters cluster findings to it through `in_scope`.
+Several scanned roots still resolve to one toplevel and one repo-wide diff, since findings
+carry absolute paths that `relpath` against `root` regardless of root. A concrete record, so
+the diff-scoping passes dispatch statically rather than over an ad-hoc NamedTuple.
+
+`rels` is resolved once over the corpus rather than per location. `realpath` is a syscall,
+a dozen passes scope their findings against one `Scope`, and the architecture rules carry
+many locations apiece, so resolving per location would repeat the same file's syscall
+through a whole run. Building it before the per-file scan is also what keeps it read-only,
+so the parallel pass shares it with no lock. The gate's `fkey` memoizes the same resolution
+per keying pass, through `relative_to` (`gate.jl`), where the corpus is not to hand.
 
 `Location` (`report.jl`). A code site: file, 1-based line, enclosing unit name, and an
 optional label. A `Finding` carries one or more. A finding about something larger than a unit
@@ -844,11 +855,18 @@ working set before reading it, the discipline `cluster_scattered` and `cluster_l
 already follow, which is what keeps output byte-identical at any thread count.
 
 `module_graph` contracts the graph by a grouping function, for the rules that read
-directories rather than files. The default is `dirname`: no query work, available in every
-language, and what a repo usually means by a module. A declared-module grouping is available
-in some languages and not others, which would make one rule fire differently across a
-polyglot corpus for reasons unrelated to the code. Weights sum across the file edges between
-two groups; an edge inside one group is dropped.
+directories rather than files. `build_file_graph` runs it by `dirname` and keeps the result
+as the graph's `modules` field: no query work, available in every language, and what a repo
+usually means by a module. A declared-module grouping is available in some languages and not
+others, which would make one rule fire differently across a polyglot corpus for reasons
+unrelated to the code. Weights sum across the file edges between two groups; an edge inside
+one group is dropped.
+
+The contraction is a field because its readers have to agree. The clone ranking measures a
+cluster's spread across these groups and `:back_edge` reads the grain between them, and two
+rules disagreeing about what a module is would be a bug no test would name. It also takes
+the graph's pieces rather than the graph, since it runs while `build_file_graph` is still
+assembling the `FileGraph` that will hold it.
 
 ## Dependencies against the grain
 

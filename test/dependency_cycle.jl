@@ -7,7 +7,7 @@
         Fixtures.parsedfile(:julia, "include(\"a.jl\")\nfc(x) = ga(x)\ngc(y) = y\n"; file = "c.jl"),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     findings = Dendro.cluster_dependency_cycles(files, fg; band = (2, 4))
@@ -31,7 +31,7 @@ end
         Fixtures.parsedfile(:julia, "include(\"a.jl\")\nfe(x) = ga(x)\nge(y) = y\n"; file = "e.jl"),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     findings = Dendro.cluster_dependency_cycles(files, fg; band = (2, 6))
@@ -47,7 +47,7 @@ end
         Fixtures.parsedfile(:julia, "gc(y) = y\n"; file = "c.jl"),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # Dependencies run one way down the layers. Nothing to break, so nothing to report.
@@ -64,7 +64,7 @@ end
         Fixtures.parsedfile(:julia, ring("r", "p"); file = "r.jl"),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     findings = Dendro.cluster_dependency_cycles(files, fg; band = (2, 4))
@@ -86,7 +86,7 @@ end
     )
     files = [Fixtures.parsedfile(:julia, body(n); file = "$n.jl") for n in names]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     findings = Dendro.cluster_dependency_cycles(files, fg; band = (2, 4))
@@ -112,7 +112,7 @@ end
         ),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     findings = Dendro.cluster_dependency_cycles(files, fg; band = (2, 4))
@@ -130,7 +130,7 @@ end
         Fixtures.parsedfile(:julia, "include(\"a.jl\")\nfb(x) = ga(x)\ngb(y) = y\n"; file = "b.jl"),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     findings = Dendro.cluster_dependency_cycles(files, fg; band = (2, 4))
@@ -181,7 +181,7 @@ end
         Fixtures.parsedfile(:julia, "include(\"a.jl\")\nfc(x) = ga(x) + ga(x + 1) + ga(x + 2)\ngc(y) = y\n"; file = "c.jl"),
     ]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
     @test fg.edges[(fg.index["a.jl"], fg.index["b.jl"])].weight == 1
     @test fg.edges[(fg.index["b.jl"], fg.index["c.jl"])].weight == 5
@@ -235,7 +235,7 @@ end
         push!(files, Fixtures.parsedfile(:julia, pair("q$i", "q$nxt"); file = "q$i.jl"))
     end
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     findings = Dendro.cluster_dependency_cycles(files, fg)
@@ -243,4 +243,24 @@ end
     @test findings[1].value == 4
     @test findings[1].absolute == :ok
     @test findings[1].percentile == 1.0
+end
+
+@testitem "the component walk is bounded by the graph, not by the stack" tags = [:dependency_cycle] begin
+    # A chain far longer than a recursive walk's stack allows, ending in a two-node cycle.
+    # Depth here is the corpus file count, and a corpus large enough to exhaust the stack
+    # must still report rather than throw: the pass reads a whole repo, and the one graph
+    # shape it cannot survive is the one a monorepo produces. Driven through the adjacency
+    # list rather than through files, since the point is the walk's depth and parsing a
+    # quarter of a million fixtures to reach it would prove the same thing far slower.
+    n = 250_000
+    adj = [Int[] for _ in 1:n]
+    for v in 1:(n - 1)
+        push!(adj[v], v + 1)
+    end
+    push!(adj[n], n - 1)
+
+    comps = Dendro.strong_components(adj)
+    # One component per chain node, plus the pair at the end closing into one.
+    @test length(comps) == n - 1
+    @test only(filter(c -> length(c) > 1, comps)) == [n - 1, n]
 end

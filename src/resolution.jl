@@ -310,9 +310,15 @@ end
     ResolvedLinkage
 
 The corpus resolved against itself, the substrate every pass past a single file reads.
-`visible` holds each file's cross-file candidates by name, `references` every cross-file
-reference those candidates admit, `consumers` the files referencing each consumed
-definition, and `surface` the export names gating each file's public definitions.
+`corpus` is the path set it resolved against, `visible` holds each file's cross-file
+candidates by name, `references` every cross-file reference those candidates admit,
+`consumers` the files referencing each consumed definition, and `surface` the export names
+gating each file's public definitions.
+
+`corpus` is carried rather than rebuilt by the file graph, which needs the same path set to
+map an import target to the file it names. It rides on the record instead of arriving as a
+keyword because a keyword's lowering is what the sound ratchet counts, and sharing an O(n)
+set build is not worth paying for in inference.
 
 Resolving a corpus is among the most expensive steps in a scan, and six passes want the same
 answer: both graphs, reachability, the audience pass, the hub proposal, and the back-edge
@@ -321,6 +327,7 @@ rather than resolving again. It travels through the same keyword slot the `visib
 to, which is why widening it costs no pass a parameter.
 """
 struct ResolvedLinkage
+    corpus::Corpus
     visible::Dict{String, Dict{String, Vector{Int}}}
     references::Vector{CorpusReference}
     consumers::Dict{String, Dict{Int, Set{String}}}
@@ -330,15 +337,17 @@ end
 """
     resolve_linkage(files, table) -> ResolvedLinkage
 
-Resolve `files` against `table` once: the visibility map, the cross-file references it
-admits, the per-definition consumer index, and the public surface. Every reading comes out
-of one [`DeclaredLinkage`](@ref) walk and one [`visible_defs`](@ref) pass, so a scan pays
-for the corpus resolution once however many passes read it.
+Resolve `files` against `table` once: the corpus path set, the visibility map, the
+cross-file references it admits, the per-definition consumer index, and the public surface.
+Every reading comes out of one [`DeclaredLinkage`](@ref) walk and one [`visible_defs`](@ref)
+pass, so a scan pays for the corpus resolution once however many passes read it.
 """
 function resolve_linkage(files::Vector{ParsedFile}, table::SymbolTable)
     corpus = Corpus(files)
     declared = DeclaredLinkage(files, corpus)
     visible = visible_defs(files, table, corpus, declared)
     references = corpus_references(files, visible)
-    return ResolvedLinkage(visible, references, consumer_sets(references, table), public_surface(files, declared))
+    return ResolvedLinkage(
+        corpus, visible, references, consumer_sets(references, table), public_surface(files, declared)
+    )
 end

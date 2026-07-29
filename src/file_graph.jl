@@ -41,26 +41,6 @@ struct FileEdge
 end
 
 """
-    FileGraph
-
-The corpus as files depending on files. `files` holds every corpus file, sorted, including
-one with no units and one with no edges: a file nothing references and that references
-nothing is a real architectural observation, and dropping it would move the denominator of
-every corpus-relative score. `index` maps a path to its node, `edges` maps a
-`(source, target)` node pair to its [`FileEdge`](@ref), and `first_line` gives each file a
-representative line so a file-level finding never has to invent one.
-
-`edges` is a `Dict`, so its iteration order is not the corpus order. Sort the keys before
-reading it into anything a report shows.
-"""
-struct FileGraph
-    files::Vector{String}
-    index::Dict{String, Int}
-    edges::Dict{Tuple{Int, Int}, FileEdge}
-    first_line::Vector{Int}
-end
-
-"""
     ModuleGraph
 
 A [`FileGraph`](@ref) contracted by a grouping function, the level the rules that read
@@ -74,6 +54,34 @@ struct ModuleGraph
     index::Dict{String, Int}
     members::Vector{Vector{Int}}
     edges::Dict{Tuple{Int, Int}, Int}
+end
+
+"""
+    FileGraph
+
+The corpus as files depending on files. `files` holds every corpus file, sorted, including
+one with no units and one with no edges: a file nothing references and that references
+nothing is a real architectural observation, and dropping it would move the denominator of
+every corpus-relative score. `index` maps a path to its node, `edges` maps a
+`(source, target)` node pair to its [`FileEdge`](@ref), and `first_line` gives each file a
+representative line so a file-level finding never has to invent one.
+
+`modules` is the graph contracted by directory, the reading every rule that works at
+directory level takes. It is a field rather than a call each reader makes because the
+readers have to agree: the clone ranking measures a cluster's spread across these groups
+and `:back_edge` reads the grain between them, and two rules disagreeing about what a
+module is would be a bug no test would name. [`module_graph`](@ref) contracts by another
+key for a caller that wants one.
+
+`edges` is a `Dict`, so its iteration order is not the corpus order. Sort the keys before
+reading it into anything a report shows.
+"""
+struct FileGraph
+    files::Vector{String}
+    index::Dict{String, Int}
+    edges::Dict{Tuple{Int, Int}, FileEdge}
+    first_line::Vector{Int}
+    modules::ModuleGraph
 end
 
 """
@@ -112,7 +120,10 @@ function build_file_graph(
         units = f.index.functions
         isempty(units) || (first_line[index[f.file]] = units[1].firstline)
     end
-    length(files) < 2 && return FileGraph(paths, index, Dict{Tuple{Int, Int}, FileEdge}(), first_line)
+    if length(files) < 2
+        empty_edges = Dict{Tuple{Int, Int}, FileEdge}()
+        return FileGraph(paths, index, empty_edges, first_line, module_graph(paths, empty_edges, dirname))
+    end
 
     # A reference in top-level code counts here where the unit graph skips it: the file
     # depends on the target whether or not a function encloses the reference.
@@ -141,7 +152,7 @@ function build_file_graph(
         sites = sort!(copy(get(declared, key, empty_locations)); by = loc -> (loc.file, loc.line, loc.unit))
         edges[key] = FileEdge(edge_weight(mass[key]), top_names(byname), length(byname), sites)
     end
-    return FileGraph(paths, index, edges, first_line)
+    return FileGraph(paths, index, edges, first_line, module_graph(paths, edges, dirname))
 end
 
 # The reference count of an edge whose split references sum to `mass`. An edge exists only
@@ -164,37 +175,56 @@ end
 # are POSIX-separated whatever the host uses. A statement resolving to no corpus file, a
 # stdlib or a generated module, records nothing, and a statement admitting an edge no
 # reference crosses attaches to nothing: an edge is a reference, never a declaration.
+#
+# The query walk and the target resolution are per file and read only, so they fan out; only
+# the fold into the shared edge map is serial. Folding in corpus order keeps the location
+# lists identical at any thread count, which the file graph's determinism item asserts.
 function declared_edges(files::Vector{ParsedFile}, corpus::Corpus, nodes::Dict{String, Int})
+    per_file = Vector{Vector{Tuple{Int, Int, Location}}}(undef, length(files))
+    parallel_map!(i -> file_declared_edges(files[i], corpus, nodes), per_file)
     out = Dict{Tuple{Int, Int}, Vector{Location}}()
-    for f in files
-        link = get(LINKAGES, f.language, nothing)
-        link === nothing && continue
-        src = nodes[to_posix(f.file)]
-        for (target, line) in declared_targets(f)
-            for path in link.resolve_target(target, f.file, corpus)::Vector{String}
-                dst = get(nodes, path, 0)
-                (dst == 0 || dst == src) && continue
-                push!(get!(() -> Location[], out, (src, dst)), Location(f.file, line, ""))
-            end
+    for entries in per_file
+        for (src, dst, loc) in entries
+            push!(get!(() -> Location[], out, (src, dst)), loc)
         end
     end
     return out
 end
 
-"""
-    module_graph(fg, key=dirname) -> ModuleGraph
+# One file's share of the declared edges: each corpus path its statements resolve to
+# (`resolved_targets`), read into the `(source node, target node, statement site)` the fold
+# records. A path outside the corpus and a statement naming the file's own node record
+# nothing.
+function file_declared_edges(f::ParsedFile, corpus::Corpus, nodes::Dict{String, Int})
+    out = Tuple{Int, Int, Location}[]
+    src = nodes[to_posix(f.file)]
+    for (path, line) in resolved_targets(f, corpus)
+        dst = get(nodes, path, 0)
+        (dst == 0 || dst == src) && continue
+        push!(out, (src, dst, Location(f.file, line, "")))
+    end
+    return out
+end
 
-Contract `fg` by `key`, which maps a file path to the group it belongs to. The default
-groups by directory: it needs no query work, it is available in every language, and it is
-what a repo usually means by a module. A declared-module grouping is available in some
-languages and not others, which would make one rule fire differently across a polyglot
-corpus for reasons unrelated to the code, so it is not the default.
+"""
+    module_graph(paths, fedges, key) -> ModuleGraph
+
+Contract a file graph's `paths` and `fedges` by `key`, which maps a file path to the group
+it belongs to. `build_file_graph` runs it by `dirname` and keeps the result as
+[`FileGraph`](@ref)'s `modules`, the contraction every directory-level rule reads.
+Grouping by directory needs no query work, is available in every language, and is what a
+repo usually means by a module. A declared-module grouping exists in some languages and not
+others, which would make one rule fire differently across a polyglot corpus for reasons
+unrelated to the code, so it is not what the graph carries.
+
+Takes the pieces, not the graph, because the graph is what it helps build: a `FileGraph`
+holds its own contraction, so there is nothing to contract from yet when this runs.
 
 Edge weights sum across the file edges crossing between two groups; an edge inside one
 group is dropped.
 """
-function module_graph(fg::FileGraph, key::Function = dirname)
-    labels = String[String(key(path)::AbstractString) for path in fg.files]
+function module_graph(paths::Vector{String}, fedges::Dict{Tuple{Int, Int}, FileEdge}, key::Function)
+    labels = String[String(key(path)::AbstractString) for path in paths]
     groups = sort!(unique(labels))
     index = Dict{String, Int}(g => i for (i, g) in enumerate(groups))
     members = [Int[] for _ in groups]
@@ -202,10 +232,10 @@ function module_graph(fg::FileGraph, key::Function = dirname)
         push!(members[index[label]], node)
     end
     edges = Dict{Tuple{Int, Int}, Int}()
-    for (src, dst) in sort!(collect(keys(fg.edges)))
+    for (src, dst) in sort!(collect(keys(fedges)))
         pair = (index[labels[src]], index[labels[dst]])
         pair[1] == pair[2] && continue
-        edges[pair] = get(edges, pair, 0) + fg.edges[(src, dst)].weight
+        edges[pair] = get(edges, pair, 0) + fedges[(src, dst)].weight
     end
     return ModuleGraph(groups, index, members, edges)
 end

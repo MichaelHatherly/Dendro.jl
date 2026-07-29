@@ -7,7 +7,7 @@
     b = Fixtures.parsedfile(:julia, "alpha(y) = y\nbeta(y) = y\ngamma(y) = y\n"; file = "b.jl")
     files = [a, b]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # Three definitions referenced, one of them twice: the edge weight is the reference
@@ -30,7 +30,7 @@ end
     c = Fixtures.parsedfile(:julia, "helper(y) = y\n"; file = "c.jl")
     files = [main, b, c]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # `helper` names a definition in both b.jl and c.jl, so each of the two references
@@ -48,7 +48,7 @@ end
     c = Fixtures.parsedfile(:julia, "helper(y) = y\n"; file = "c.jl")
     files = [main, b, c]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # One reference split two ways is half a reference on each edge. Rounding that to zero
@@ -66,7 +66,7 @@ end
     b = Fixtures.parsedfile(:julia, "bhelp(y) = y\n"; file = "b.jl")
     files = [a, b]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # a.jl leans on its own helpers far harder than on b.jl. Within-file coupling is what
@@ -81,7 +81,7 @@ end
     lonely = Fixtures.parsedfile(:julia, "# nothing to see\n"; file = "lonely.jl")
     files = [a, b, lonely]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # A file nothing references and that references nothing is a real observation, and it
@@ -114,7 +114,7 @@ end
             (julia_files, "a.jl", "b.jl"), (python_files, "m.py", "u.py"), (rust_files, "main.rs", "foo.rs"),
         ]
         table = Dendro.corpus_symbols(files)
-        corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+        corpus = Dendro.Corpus(files)
         fg = Dendro.build_file_graph(files, table, corpus)
         edge = fg.edges[(fg.index[from], fg.index[to])]
         @test [(l.file, l.line) for l in edge.declared] == [(from, 2)]
@@ -126,7 +126,7 @@ end
     b = Fixtures.parsedfile(:julia, "helper(y) = y\n"; file = "b.jl")
     files = [a, b]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     # No `include` joins a.jl and b.jl, so `helper` is not a name a.jl can see. The graph
@@ -139,7 +139,7 @@ end
     )
     pyfiles = [u, m]
     pytable = Dendro.corpus_symbols(pyfiles)
-    pycorpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in pyfiles))
+    pycorpus = Dendro.Corpus(pyfiles)
     pyfg = Dendro.build_file_graph(pyfiles, pytable, pycorpus)
 
     # The import names `helper` and not `other`, so only `helper` is evidence on the edge.
@@ -157,9 +157,10 @@ end
     )
     files = [ca, cb, api]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
-    mg = Dendro.module_graph(fg)
+    # The contraction the graph carries, the one every directory-level rule reads.
+    mg = fg.modules
 
     @test mg.groups == ["api", "core"]
     @test mg.members[mg.index["core"]] == [fg.index["core/a.jl"], fg.index["core/b.jl"]]
@@ -182,7 +183,7 @@ end
     b = Fixtures.parsedfile(:julia, defs; file = "b.jl")
     files = [a, b]
     table = Dendro.corpus_symbols(files)
-    corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+    corpus = Dendro.Corpus(files)
     fg = Dendro.build_file_graph(files, table, corpus)
 
     edge = fg.edges[(fg.index["a.jl"], fg.index["b.jl"])]

@@ -141,14 +141,16 @@ caller is not an audience. Each finding carries both scores, the absolute `band`
 count and the corpus percentile, fired when either trips. The locations are one
 representative definition per group, earliest line first, the split the finding proposes.
 
-A file serving one audience has nothing to separate, so it is never reported, whatever
-the corpus distribution says. It stays in the scored population, since it is what makes
-two audiences unusual or ordinary for a corpus.
+A file scoring below `$MIN_SPLIT_GROUPS` audiences has nothing to separate, so it is never
+reported, whatever the corpus distribution says. It stays in the scored population, since
+it is what makes two audiences unusual or ordinary for a corpus. That covers the file
+serving one audience and the file whose definitions form no qualifying group at all: both
+were examined, both scored, and both belong in the distribution.
 
-A file with fewer than `$MIN_AUDIENCE_UNITS` units is too small to read this way, and a
-file fewer than `$MIN_SPLIT_CONSUMERS` other files consume has one audience by
-construction and is left out of the scored population entirely, so the percentile compares
-only files that could split.
+Only two things leave a file out of the population: fewer than `$MIN_AUDIENCE_UNITS` units,
+too small to read this way, and fewer than `$MIN_SPLIT_CONSUMERS` consuming files, which
+gives it one audience by construction. So the percentile compares the files that could
+split against each other.
 
 The audience is resolved from references, not from declared exports: `file_exports`
 returns nothing for a language with no export marker, where an export reading would
@@ -181,8 +183,11 @@ function cluster_split_audience(
             union!(audience, consumers)
         end
         length(audience) < MIN_SPLIT_CONSUMERS && continue
+        # A file whose definitions form no qualifying group scores zero and is kept, since
+        # it was examined like every other and is part of what makes an audience count
+        # ordinary or unusual. `min_reported` is what holds it back from being reported,
+        # and it reads the value before it reads the locations, so the empty set is safe.
         groups = audience_components(defs, table)
-        isempty(groups) && continue
         locations = Location[audience_location(f.file, g, defs, table) for g in groups]
         push!(scored, (f, length(locations), locations))
     end

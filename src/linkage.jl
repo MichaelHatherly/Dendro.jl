@@ -646,14 +646,54 @@ end
 # corpus paths and the 1-based line the statement sits on: an import statement's module and
 # a splice target alike. The file graph records these against the edge each admits, so a
 # finding about a dependency can name the statement to drop.
+#
+# One walk over the captures, not `file_imports` and `include_targets` in turn. The two
+# readings want different things from the same query, and a dependency edge needs neither
+# the imported name set nor the splice target's byte range, so walking twice would build
+# both to discard both. An import statement naming no module declares nothing and is
+# dropped, as it is for visibility.
 function declared_targets(file::ParsedFile)
-    targets = Tuple{String, Int}[(st.module_name, st.line) for st in file_imports(file)]
     query = imports_query_for(file)
-    query === nothing && return targets
-    for target in include_targets(file.tree, query, file.source)
-        push!(targets, (target.path, target.line))
+    query === nothing && return Tuple{String, Int}[]
+    regions = Tuple{Int, Int, Int}[]
+    froms = TreeSitter.Node[]
+    targets = Tuple{String, Int}[]
+    for cap in TreeSitter.each_capture(file.tree, query, file.source)
+        name = TreeSitter.capture_name(query, cap)
+        if name == "import"
+            push!(regions, (TreeSitter.byte_range(cap.node)..., line_of(cap.node)))
+        elseif name == "import.from"
+            push!(froms, cap.node)
+        elseif name == "include.path"
+            push!(targets, (String(TreeSitter.slice(file.source, cap.node)), line_of(cap.node)))
+        end
+    end
+    for (rf, rt, line) in regions
+        for node in froms
+            nf, nt = TreeSitter.byte_range(node)
+            rf <= nf && nt <= rt || continue
+            push!(targets, (String(strip(TreeSitter.slice(file.source, node))), line))
+            break
+        end
     end
     return targets
+end
+
+# Every corpus path one file's declared targets name, each paired with the 1-based line of
+# the statement naming it. The resolution half of a declared dependency: which language a
+# file is written in, what its statements point at, and where its resolver maps them all
+# live here, so the file graph is left with the node lookup and nothing else. A file whose
+# language has no linkage entry declares nothing this way.
+function resolved_targets(file::ParsedFile, corpus::Corpus)
+    link = get(LINKAGES, file.language, nothing)
+    link === nothing && return Tuple{String, Int}[]
+    out = Tuple{String, Int}[]
+    for (target, line) in declared_targets(file)
+        for path in link.resolve_target(target, file.file, corpus)::Vector{String}
+            push!(out, (path, line))
+        end
+    end
+    return out
 end
 
 # The scope with the largest span, the file root: the namespace a file-level definition

@@ -48,7 +48,7 @@ const MIN_CYCLE_COMPONENTS = 5
 
 # Tarjan's running state: the discovery index and low-link per node, the stack of nodes in
 # the component being built, and the components closed so far. Carried as one record so the
-# recursion takes three arguments rather than seven.
+# walk takes three arguments rather than seven.
 mutable struct TarjanState
     index::Vector{Int}
     low::Vector{Int}
@@ -85,23 +85,47 @@ function strong_components(adj::Vector{Vector{Int}})
     return st.components
 end
 
-# One depth-first visit: number `v`, walk its successors, and close a component when `v`
-# turns out to be the root of one, the node whose low-link never reached an earlier node.
-function tarjan_visit!(st::TarjanState, adj::Vector{Vector{Int}}, v::Int)
+# Number `v` and put it on the component stack: the entry half of a depth-first visit.
+function tarjan_enter!(st::TarjanState, v::Int)
     st.next += 1
     st.index[v] = st.next
     st.low[v] = st.next
     push!(st.stack, v)
     st.onstack[v] = true
-    for w in adj[v]
-        if st.index[w] == 0
-            tarjan_visit!(st, adj, w)
-            st.low[v] = min(st.low[v], st.low[w])
-        elseif st.onstack[w]
-            st.low[v] = min(st.low[v], st.index[w])
+    return nothing
+end
+
+# The depth-first walk from `root`, closing a component whenever it finishes a node whose
+# low-link never reached an earlier one. Carries its own frame stack rather than recursing:
+# the depth is the corpus file count, and a scan of a large enough repo would exhaust the
+# call stack and throw where it has to report. Each frame is a node and the index of the
+# next successor to walk, which is the whole of what the recursive form kept in a call
+# frame.
+#
+# The order components close in is the recursive order, and every reader depends on it. A
+# child's low-link travels to its parent as that child's frame pops, which is where the
+# recursion assigned it on return, and before the parent's next successor is read.
+function tarjan_visit!(st::TarjanState, adj::Vector{Vector{Int}}, root::Int)
+    frames = Tuple{Int, Int}[(root, 1)]
+    tarjan_enter!(st, root)
+    while !isempty(frames)
+        v, i = frames[end]
+        succs = adj[v]
+        if i <= length(succs)
+            frames[end] = (v, i + 1)
+            w = succs[i]
+            if st.index[w] == 0
+                tarjan_enter!(st, w)
+                push!(frames, (w, 1))
+            elseif st.onstack[w]
+                st.low[v] = min(st.low[v], st.index[w])
+            end
+        else
+            pop!(frames)
+            st.low[v] == st.index[v] && push!(st.components, pop_component!(st, v))
+            isempty(frames) || (p = first(frames[end]); st.low[p] = min(st.low[p], st.low[v]))
         end
     end
-    st.low[v] == st.index[v] && push!(st.components, pop_component!(st, v))
     return nothing
 end
 
@@ -300,6 +324,13 @@ the honest-over-silent call: silently dropping the worst architectural problem i
 is worse than reporting one that says plainly it is not an edit. The label is what makes
 the two kinds tell apart without inferring anything from the location count, and it carries
 the true cut count so a truncated report reads as truncated.
+
+That cut count sits in each location's `unit` field, which `fkey` (`gate.jl`) reads, so a
+tangle growing from twelve cuts to thirteen re-keys and the ratchet reports it as new. This
+is the trade `:back_edge` and `:hub` make, and for the same reason: the count is part of
+what the finding claims, so a gate that stayed quiet through a change to it would be
+reporting a stale reading. More edges to cut is worsening, and the ratchet is there to catch
+worsening.
 
 # Failure modes
 

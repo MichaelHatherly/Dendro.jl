@@ -132,7 +132,7 @@ end
         files = Dendro.parse_corpus(Dendro.source_files(ARGS[1]))
         table = Dendro.corpus_symbols(files)
         linkage = Dendro.resolve_linkage(files, table)
-        corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+        corpus = Dendro.Corpus(files)
         fg = Dendro.build_file_graph(files, table, corpus; linkage)
         fs = Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 10)
         io = IOBuffer()
@@ -191,7 +191,7 @@ end
                 end
                 print(io, ';')
             end
-            mg = Dendro.module_graph(fg)
+            mg = fg.modules
             for k in sort!(collect(keys(mg.edges)))
                 print(io, mg.groups[k[1]], "=>", mg.groups[k[2]], '|', mg.edges[k], ';')
             end
@@ -199,7 +199,7 @@ end
         end
         files = Dendro.parse_corpus(Dendro.source_files(ARGS[1]))
         table = Dendro.corpus_symbols(files)
-        corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+        corpus = Dendro.Corpus(files)
         fg = Dendro.build_file_graph(files, table, corpus)
         print(digest(fg), '|', length(fg.edges))
         """
@@ -310,7 +310,7 @@ end
         end
         files = Dendro.parse_corpus(Dendro.source_files(ARGS[1]))
         table = Dendro.corpus_symbols(files)
-        corpus = Dendro.Corpus(Set{String}(Dendro.to_posix(f.file) for f in files))
+        corpus = Dendro.Corpus(files)
         fg = Dendro.build_file_graph(files, table, corpus)
         fs = Dendro.cluster_dependency_cycles(files, fg; band = (2, 4))
         print(digest(fs), '|', length(fs))

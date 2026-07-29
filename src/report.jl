@@ -249,12 +249,12 @@ The findings not suppressed by an inline directive. Use this for gating.
 """
 active(findings) = Findings(filter(f -> !f.suppressed, findings))
 
-# The score column shared by every renderer: the absolute band, plus the corpus
-# percentile when one ranks the value.
 # A location's label as it renders, set off from the unit name so the two read apart. Empty
 # for a site whose finding attached no meaning to it, which is every per-file metric.
 note(loc::Location) = isempty(loc.label) ? "" : string("  [", loc.label, "]")
 
+# The score column shared by every renderer: the absolute band, plus the corpus
+# percentile when one ranks the value.
 function score_suffix(f::Finding)
     rel = f.percentile === nothing ? "" : string("; p", round(Int, f.percentile * 100))
     return string("(", f.absolute, rel, ")")

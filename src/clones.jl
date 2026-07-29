@@ -204,15 +204,18 @@ Where each corpus file sits in the module graph. `module_of` maps a file path to
 module node, `community` labels each module node with the neighbourhood modularity puts it
 in. Together they are everything [`clone_distance`](@ref) needs, resolved once so a corpus
 with three clone passes over it pays for one community optimisation.
+
+Read off the graph's own `modules` contraction, the one `:back_edge` reads the grain
+between, so a clone's distance and a back edge's grain are measured over the same groups.
 """
 struct ModulePlacement
     module_of::Dict{String, Int}
     community::Vector{Int}
 end
 
-ModulePlacement(fg::FileGraph, mg::ModuleGraph) = ModulePlacement(
-    Dict{String, Int}(fg.files[i] => g for (g, files) in enumerate(mg.members) for i in files),
-    module_communities(mg)
+ModulePlacement(fg::FileGraph) = ModulePlacement(
+    Dict{String, Int}(fg.files[i] => g for (g, files) in enumerate(fg.modules.members) for i in files),
+    module_communities(fg.modules)
 )
 
 """

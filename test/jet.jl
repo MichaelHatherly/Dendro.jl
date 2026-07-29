@@ -114,6 +114,23 @@
 # and `DeclaredLinkage` add two sites of that same kind, and the location labels then took it
 # to 1308, moving `label_path` out to `placement.jl` and having `audience_reps` return
 # `Location`s rather than indices the caller re-wraps.
+#
+# The review fixes then took the count from 1308 to 1303, so the limit drops to match.
+# Measure under `Pkg.test`, which is what CI runs and what these numbers are on. A bare
+# `report_package` against this project reads exactly one lower, since `Pkg.test` analyses
+# with `--check-bounds=yes`; the deltas below are the same either way, the absolute figure
+# is not. Resolving each corpus path once per scope into `Scope.rels` and reading it through
+# `in_scope` took `analyze.jl` from 50 to 40: the inline `relpath(realpath(...))` per
+# location was re-resolving inside a closure the scoping filter and the parallel per-file
+# pass both widened through. Against that, `cluster_back_edge`'s `floors` keyword adds 2,
+# irreducibly, since a caller may name either floor and the NamedTuple's type is therefore
+# unknown at the callee; the `@NamedTuple` assertion on the merge stops the widening
+# travelling further, and dropping partial override would buy the last 2 at the cost of the
+# API. `linkage.jl` adds 2 for `resolved_targets`, the new seam between the linkage
+# resolution and the file graph's node lookup, and `gate.jl` 1 for `relative_to`. Two
+# measured non-costs worth recording: the iterative Tarjan walk and the `FileGraph.modules`
+# field each read zero, so neither the explicit frame stack nor the extra field cost
+# inference anything.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -121,7 +138,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1308  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1303  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 23      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
