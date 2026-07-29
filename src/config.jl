@@ -313,27 +313,44 @@ end
 # settings (`cut` and the clone thresholds) it leaves. Only the keys present are
 # touched; an unknown top-level key warns rather than failing, so a file written for a
 # newer Dendro still applies the keys this version knows.
+# The order keys are applied in, which matters where one table's validation reads another's
+# result: `[bands]` checks a band name against the scalar rules, and a project's own
+# `[patterns]` declarations are among them, so patterns must land first. TOML parses to a
+# Dict, whose iteration order is arbitrary, so relying on file order would make a config
+# apply differently run to run.
+const CONFIG_KEY_ORDER = (
+    "patterns", "languages", "cut", "clones", "reimplementation",
+    "patterns_dir", "bands", "rules",
+)
+
 function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
-    for (key, value) in data
-        if key == "cut"
-            scalars = merge(scalars, (cut = config_float(value, key, source),))
-        elseif key == "clones"
-            scalars = apply_clones(scalars, config_table(value, key, source), source)
-        elseif key == "reimplementation"
-            scalars = apply_reimplementation(scalars, config_table(value, key, source), source)
-        elseif key == "bands"
-            apply_bands!(acc, config_table(value, key, source), source)
-        elseif key == "rules"
-            apply_rules!(acc, config_table(value, key, source), source)
-        elseif key == "languages"
-            apply_named_tables!(apply_language!, acc, config_table(value, key, source), key, source)
-        elseif key == "patterns"
-            apply_named_tables!(apply_pattern!, acc, config_table(value, key, source), key, source)
-        elseif key == "patterns_dir"
-            scalars = merge(scalars, (patterns_dir = config_path(value, key, source),))
-        else
-            @warn "Dendro: unknown key in $source, ignored" key
-        end
+    for key in CONFIG_KEY_ORDER
+        haskey(data, key) || continue
+        scalars = apply_key!(acc, scalars, key, data[key], source)
+    end
+    for key in keys(data)
+        key in CONFIG_KEY_ORDER || @warn "Dendro: unknown key in $source, ignored" key
+    end
+    return scalars
+end
+
+# Apply one known top-level key, returning the scalar settings it leaves.
+function apply_key!(acc, scalars, key, value, source)
+    if key == "cut"
+        scalars = merge(scalars, (cut = config_float(value, key, source),))
+    elseif key == "clones"
+        scalars = apply_clones(scalars, config_table(value, key, source), source)
+    elseif key == "reimplementation"
+        scalars = apply_reimplementation(scalars, config_table(value, key, source), source)
+    elseif key == "bands"
+        apply_bands!(acc, config_table(value, key, source), source)
+    elseif key == "rules"
+        apply_rules!(acc, config_table(value, key, source), source)
+    elseif key == "patterns_dir"
+        scalars = merge(scalars, (patterns_dir = config_path(value, key, source),))
+    else
+        applier = key == "languages" ? apply_language! : apply_pattern!
+        apply_named_tables!(applier, acc, config_table(value, key, source), key, source)
     end
     return scalars
 end
