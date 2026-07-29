@@ -136,6 +136,84 @@ says more about the directory's size than about its coupling. Reading the direct
 the path rather than from a declared module keeps the rule the same across languages that
 have modules and languages that do not.
 
+## Directories that outgrew one folder
+
+Reported as `:divisible_package`: a directory holding groups of children that could become
+subdirectories. Placement, scattering and layout all ask the outward question, whether code
+belongs somewhere else. This asks the inward one. A directory whose contents all belong
+exactly where they are can still hold several independent groups that never became folders,
+and then the contents are right while the internal shape is missing.
+
+The directory is read as its direct children over the file dependency graph, a child file as
+one node and a child directory as one node with everything under it contracted in. The
+communities of that induced subgraph are the candidate groups, and the score is the best
+one's internal ratio as a percentage: of the reference weight its members carry inside the
+directory, the share that stays inside the group. A group at 95 sends nineteen references in
+twenty to its own members.
+
+Groups are extracted, not partitioned. Whatever no folder claims stays at the top level and
+is expected to, so a directory of two cohesive subsystems beside a pile of miscellaneous
+files yields two folders and keeps the rest loose. The first location stands for the
+directory and its label says how much of it the proposal places, so the leftover reads off
+the finding. One location per proposed folder follows, each labelled with its size and its
+internal ratio:
+
+```
+src/backend/constfold/pass.jl:1  [src/backend, 12 of 12 children placed]  divisible_package 100 (high)
+    also at src/backend/constfold/pass.jl:1  [6 children, 100% internal]
+    also at src/backend/emit/pass.jl:1  [6 children, 100% internal]
+src/parser/cursor.jl:1  [src/parser, 16 of 16 children placed]  divisible_package 95 (high)
+    also at src/parser/decl.jl:1  [5 children, 95% internal]
+    also at src/parser/diagnostic.jl:1  [5 children, 95% internal]
+    also at src/parser/cursor.jl:1  [6 children, 91% internal]
+```
+
+Both readings are in that report. `src/parser` holds sixteen loose files and divides into
+three folders. `src/backend` holds twelve subdirectories and no loose files at all, and its
+proposal groups those subdirectories under two new parents. Same score, same gates, same
+proposal, and only the things being moved differ. Contracting a child directory into one
+node is what makes one rule cover both: score a directory on its files alone and a
+fully-subdivided one has no nodes and is never asked the question.
+
+A finding proposes one level and stops. A group that itself wants dividing says so on the
+next scan, once it is a directory rather than a proposal, which terminates on its own
+because each level's children are fewer.
+
+Several gates decide whether the question applies before any ratio is read. A directory
+below twelve children is small enough to read at a glance and does not want subdirectories
+whatever its shape. A group below five children is a family rather than a folder, so eight
+groups of three stay silent even though they divide perfectly. A proposal placing less than
+a quarter of the directory leaves too much loose to be worth the move, and a lone folder
+covering more than seven tenths of it is a rename rather than a split. Where fewer than
+three quarters of the children carry any resolved reference the rule declines to score the
+directory at all: an unreferenced child is either genuinely independent or a reference the
+resolver missed, and nothing syntactic tells the two apart, so a score built on the
+connected part would measure the resolver rather than the code.
+
+Two kinds of child are dropped before the groups are read. One that most of its siblings
+reach for is an artifact of cross-cutting coupling rather than a subsystem, and left in it
+pulls the whole directory into one group. One that names the directory it sits in
+(`lib.rs`, `mod.rs`, `__init__.py`, `index.ts`) cannot move into a subdirectory of it. Both
+stay at the top level, like everything else the proposal does not extract.
+
+The pass proposes a rearrangement rather than a bounded edit, so it is off by default and
+opts in through a `.dendro.toml`:
+
+```toml
+[rules]
+divisible_package = true
+```
+
+The band comes from directories whose factoring is known because they were generated, not
+from any corpus. Three groups of eight files read 100 when nothing crosses between them, 75
+at one cross-reference per file, 59 at two and 44 at four, so warn at 60 sits just above the
+level where groups are too entangled to separate without trading one tangle for another, and
+high at 85 above the level where they are nearly independent. Warn is also the bar a group
+clears to be proposed, so retuning the band under `[bands]` retunes what gets proposed with
+it. Dendro's own `src` reads 44 over six groups and stays quiet, which is the rule declining
+to call recognisable layers a modular decomposition. A directory deliberately kept flat is
+accepted with `dendro-ignore: divisible_package` in the file the finding reports it at.
+
 ## Dependencies against the grain
 
 Reported as `:back_edge`: a reference running against the direction two directories

@@ -123,7 +123,6 @@ function cluster_incoherent_packages(
         band::Tuple{Int, Int} = INCOHERENT_PACKAGE_BAND, cut::Real = 0.95,
         min_dirs::Integer = MIN_INCOHERENT_DIRS
     )
-    findings = Finding[]
     comm = communities(graph)
     plur = community_plurality(graph, comm, u -> dirname(u.file))
     anchors = community_anchor(graph, comm, plur)
@@ -150,17 +149,7 @@ function cluster_incoherent_packages(
         away == 0 && continue
         push!(scored, (round(Int, 100 * away / length(nodes)), incoherent_locations(graph, comm, reps, anchors)))
     end
-    isempty(scored) && return findings
-
-    counts = sort([s[1] for s in scored])
-    enough = length(scored) >= min_dirs
-    for (score, locations) in scored
-        absolute, pct = two_scores(score, counts, band, enough)
-        fires(absolute, pct, cut) || continue
-        home = first(locations)
-        sup = is_suppressed(get(() -> Directive[], directives, home.file), home.line, RELATIONAL.incoherent_package)
-        push!(findings, Finding(RELATIONAL.incoherent_package, locations, score, absolute, pct, :scalar, sup))
-    end
-    sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
-    return findings
+    return directory_findings(
+        RELATIONAL.incoherent_package, scored, directives, band, cut, length(scored) >= min_dirs
+    )
 end

@@ -190,6 +190,33 @@ shipping it, two of 24 findings across 37 corpora landing in directories `:scatt
 already covered file by file, and that measurement is the standard any future
 directory-level rule answers to.
 
+Every layout rule so far asks the outward question. `:divisible_package` asks the inward
+one: a directory whose contents all belong exactly where they are can still hold several
+independent groups that never became subdirectories, and then the contents are right while
+the internal shape is missing. It reads the file graph induced on one directory's direct
+children, a child file as one node and a child directory as one node with everything under
+it contracted in. That contraction is what makes one rule cover both directions, a directory
+of files dividing into folders and a directory of subdirectories grouping under new parents,
+and it is why the node set contracts subdirectories instead of dropping them: score a
+directory on its files alone and a fully-subdivided one has no nodes and is never asked the
+question, which is the case the sibling reading exists for. Groups are extracted, never
+partitioned. Asking what fraction of the directory a partition covers punishes the ordinary
+layout, where two cohesive subsystems sit beside a pile of genuinely miscellaneous files and
+the right answer is two folders with the rest left loose, so what no folder claims stays at
+the top level and the finding says so. A finding proposes one level and stops: a two-level
+tree of nine folders is a rearrangement nobody executes, and once the move lands the next
+scan reads directories that exist rather than a partition that might. The gates decide
+whether the directory has a proposal to make and the score answers how good the best one is,
+the division `MIN_COHESION_UNITS` and `MIN_HUB_CORPUS_FILES` already make. Keep the band
+anchored on directories whose factoring is known because they were generated: there is no
+external threshold for how modular a directory should be, and the corpus cannot supply one,
+since deleting nodes raises separation mechanically and any statistic a cut improves is
+circular. It proposes a rearrangement rather than a bounded edit and restates per directory
+some of what `:scattered` says per file, so it ships off by default and never reaches the
+gate floor. A chain of directories each holding one child is a real layout defect it cannot
+see, because that is not about coupling at all and no reading of the graph finds it; answer
+that with a separate structural check, not by making this rule cleverer.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment

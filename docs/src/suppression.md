@@ -28,7 +28,7 @@ Metric names are the active rules' names plus the relational `duplicate` and
 `identical_operands`, `duplicate_branches`, `unused_parameter`, `unused_local`,
 `broad_catch`, `duplicate`, `near_duplicate`, `reimplementation`, `unnatural`,
 `low_cohesion`, `misplaced`, `scattered`, `split_audience`, `unreferenced`, `back_edge`,
-`dependency_cycle`, `hub`, `incoherent_package`. A custom rule's
+`dependency_cycle`, `hub`, `incoherent_package`, `divisible_package`. A custom rule's
 name is accepted too. An unknown name warns, so a typo does not silently disable a
 check. `dendro-ignore-file: low_cohesion` is the usual way to accept a file that is
 meant to be a grab-bag.

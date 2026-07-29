@@ -169,6 +169,7 @@ npath = true               # enable an optional rule
 parameter_count = false    # disable a built-in rule
 reimplementation = true    # enable the opt-in vocabulary-overlap pass
 incoherent_package = true  # enable the opt-in directory-layout pass
+divisible_package = true   # enable the opt-in directory-division pass
 
 [clones]
 min_size = 12              # min named-node subtree to count as a clone
@@ -181,12 +182,12 @@ threshold = 0.6            # vocabulary overlap a candidate pair must reach
 
 `[bands]` keys are the scalar metric names plus the relational names (`unnatural`,
 `low_cohesion`, `scattered`, `split_audience`, `misplaced`, `back_edge`,
-`dependency_cycle`, `hub`, `incoherent_package`); `[rules]` keys are any rule name, plus
-`reimplementation` and `incoherent_package` to gate those corpus passes; `[clones]` and
-`[reimplementation]` set the duplicate- and reimplementation-detection thresholds. An
-unknown key warns and is ignored, so a typo is visible rather than silent. The bands,
-the `cut`, the clone thresholds, and rule on/off are configurable; the corpus floors
-and model internals stay fixed.
+`dependency_cycle`, `hub`, `incoherent_package`, `divisible_package`); `[rules]` keys are
+any rule name, plus `reimplementation`, `incoherent_package` and `divisible_package` to
+gate those corpus passes; `[clones]` and `[reimplementation]` set the duplicate- and
+reimplementation-detection thresholds. An unknown key warns and is ignored, so a typo is
+visible rather than silent. The bands, the `cut`, the clone thresholds, and rule on/off
+are configurable; the corpus floors and model internals stay fixed.
 
 ## Pattern rules
 

@@ -59,6 +59,58 @@
     unref_sites(files) =
         Set((loc.file, loc.unit) for f in Dendro.cluster_unreferenced(files, Dendro.corpus_symbols(files)) for loc in f.locations)
 
+    # A synthetic directory whose factoring is known because it was generated, the ground
+    # truth the layout rules are held to. `sizes` is one entry per cohesive group whose
+    # files reference each other; `cross` is how many calls each file makes into other
+    # groups; `isolated` adds files referencing nothing; `loose` adds files referencing the
+    # groups and each other indiscriminately, the miscellaneous top level of a real
+    # directory; `hub` adds one utility every file calls. With `nest`, each unit lands in
+    # its own subdirectory, so `dir`'s children are directories rather than files and the
+    # same construction covers the sibling-grouping case.
+    #
+    # Every target is chosen by index rather than at random, so one scenario reads the same
+    # way on every run.
+    function layout_corpus(
+            dir; sizes, cross = 0, isolated = 0, loose = 0, hub = false, nest = false
+        )
+        names = [["g$(g)u$(u)" for u in 1:sizes[g]] for g in eachindex(sizes)]
+        flat = reduce(vcat, names; init = String[])
+        sources = Pair{String, String}[]
+        body(name, calls) = "$(name)_f(x) = x" * join(" + $(c)_f(x)" for c in calls) * "\n"
+        place(name) = nest ? "$dir/$name/impl.jl" : "$dir/$name.jl"
+        for g in eachindex(sizes), u in 1:sizes[g]
+            me = names[g][u]
+            calls = [v for v in names[g] if v != me]
+            others = [x for x in eachindex(sizes) if x != g]
+            for k in 1:cross
+                isempty(others) && break
+                og = others[mod1(k, length(others))]
+                push!(calls, names[og][mod1(u + k, sizes[og])])
+            end
+            hub && push!(calls, "util")
+            push!(sources, place(me) => body(me, calls))
+        end
+        for i in 1:isolated
+            push!(sources, place("solo$i") => body("solo$i", String[]))
+        end
+        loosenames = ["misc$i" for i in 1:loose]
+        pool = [flat; loosenames]
+        for i in 1:loose
+            calls = [pool[mod1(3i + j, length(pool))] for j in 1:3]
+            push!(sources, place("misc$i") => body("misc$i", filter(!=("misc$i"), calls)))
+        end
+        hub && push!(sources, place("util") => body("util", String[]))
+        mod = "mod.jl" => join("include(\"$p\")\n" for (p, _) in sources)
+        return [parsedfile(:julia, src; file = path) for (path, src) in [mod; sources]]
+    end
+
+    # The file graph over a corpus, the substrate every architecture rule reads.
+    function filegraph(files)
+        table = Dendro.corpus_symbols(files)
+        linkage = Dendro.resolve_linkage(files, table)
+        return Dendro.build_file_graph(files, table, Dendro.Corpus(files), linkage = linkage)
+    end
+
     # A Julia function whose body is `n` chained assignments. Two such with different
     # names are renamed clones; with different `n` they are near-misses. Each statement
     # adds 7 named nodes, so `n` controls the size band.
