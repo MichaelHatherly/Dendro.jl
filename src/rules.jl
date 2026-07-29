@@ -23,6 +23,38 @@ struct Rule
 end
 
 """
+    PatternSpec
+
+One user-authored lint rule, as declared by a `[patterns.<name>]` table in a
+`.dendro.toml`. Where a [`Rule`](@ref) carries the function that measures, a spec carries
+what a project said it wants; `pattern_rule` turns one into the other once the query
+behind it has compiled.
+
+`name` is the metric a finding reports under and the name an inline `dendro-ignore`
+accepts. `message` is what the rule says when it fires. `severity` is `:warn` or `:high`,
+deciding whether the rule reaches the [`errors`](@ref) floor. `kind` is `:flag` or
+`:scalar`; a scalar carries its `(warn, high)` `band` and a flag carries `nothing`.
+
+The declaration is language-independent. One `<lang>.patterns.scm` per grammar realises
+it, so a rule says one thing across every language a project scans.
+"""
+struct PatternSpec
+    name::Symbol
+    message::String
+    severity::Symbol
+    kind::Symbol
+    band::Union{Tuple{Int, Int}, Nothing}
+end
+
+# The severities a `[patterns.<name>]` table may name. `warn` is the default: `high_floor`
+# gates on an absolute band of `:high`, so a rule that fires across a corpus would make
+# `errors()` unsatisfiable. Promoting one is the project's call.
+const PATTERN_SEVERITIES = (:warn, :high)
+
+# The rule kinds. A flag reports presence, a scalar counts its matches per unit.
+const PATTERN_KINDS = (:flag, :scalar)
+
+"""
     BUILTIN_RULES :: Vector{Rule}
 
 The default rule set, in report order. Scalar bands are fixed `(warn, high)`

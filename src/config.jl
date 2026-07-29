@@ -51,7 +51,9 @@ are the clone-detection thresholds; `reimpl_threshold` is the reimplementation o
 cutoff; `languages` carries the languages the config registers beyond the ones Dendro
 ships, each a `LanguageProfile` naming where to load its grammar and queries from; and
 `patterns` carries the user-authored lint rules the config declares, each a
-[`PatternSpec`](@ref), sorted by name so a report reads in a stable order.
+[`PatternSpec`](@ref), sorted by name so a report reads in a stable order, and
+`patterns_dir` overrides where their queries are read from (empty for the default,
+`.dendro/patterns` beside the config).
 Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
@@ -73,6 +75,7 @@ struct Config
     reimpl_threshold::Float64
     languages::Dict{Symbol, LanguageProfile}
     patterns::Vector{PatternSpec}
+    patterns_dir::String
 end
 
 """
@@ -145,6 +148,13 @@ reband(r::Rule, config::Config) =
 
 @inline config_string(value, key, source)::String =
     value isa AbstractString ? String(value) : config_error("`$key` in $source must be a string, got $value")
+
+# A path read from a config file, resolved against that file's own directory rather than
+# the process working directory. A config is discovered from a repo root while `dendro`
+# may be run from any subdirectory, so a relative path stored verbatim resolves against
+# whichever directory the caller happened to be in.
+config_path(value, key, source)::String =
+    (p = config_string(value, key, source); isabspath(p) ? p : normpath(joinpath(dirname(String(source)), p)))
 
 # Coerce a TOML `[warn, high]` array into the band tuple `severity` reads.
 @inline function band_tuple(value, name, source)::Tuple{Int, Int}
@@ -304,6 +314,8 @@ function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
             apply_named_tables!(apply_language!, acc, config_table(value, key, source), key, source)
         elseif key == "patterns"
             apply_named_tables!(apply_pattern!, acc, config_table(value, key, source), key, source)
+        elseif key == "patterns_dir"
+            scalars = merge(scalars, (patterns_dir = config_path(value, key, source),))
         else
             @warn "Dendro: unknown key in $source, ignored" key
         end
@@ -361,6 +373,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
     scalars = (
         cut = DEFAULT_CUT, min_size = DEFAULT_MIN_SIZE, threshold = DEFAULT_THRESHOLD,
         radius_factor = DEFAULT_RADIUS_FACTOR, reimpl_threshold = DEFAULT_REIMPL_THRESHOLD,
+        patterns_dir = "",
     )
     if use_files
         for path in config_files(roots, explicit)
@@ -381,7 +394,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
         scalars.reimpl_threshold, acc.languages,
-        sort!(collect(values(acc.patterns)); by = s -> s.name),
+        sort!(collect(values(acc.patterns)); by = s -> s.name), scalars.patterns_dir,
     )
 end
 
@@ -408,6 +421,6 @@ function override_config(
         min_size === nothing ? config.min_size : Int(min_size),
         threshold === nothing ? config.threshold : Float64(threshold),
         radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
-        config.reimpl_threshold, config.languages, config.patterns,
+        config.reimpl_threshold, config.languages, config.patterns, config.patterns_dir,
     )
 end

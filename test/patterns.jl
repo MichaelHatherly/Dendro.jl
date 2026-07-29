@@ -76,3 +76,85 @@ end
         @test only(cfg.patterns).name === :a
     end
 end
+
+@testitem "pattern dirs cascade global then repo" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: pattern_dirs
+
+    root, srcdir = Fixtures.gitrepo()
+    repo_dir = joinpath(root, ".dendro", "patterns")
+    mkpath(repo_dir)
+    mktempdir() do xdg
+        global_dir = joinpath(xdg, "dendro", "patterns")
+        mkpath(global_dir)
+        cfg = withenv("XDG_CONFIG_HOME" => xdg) do
+            Dendro.discover_config([srcdir])
+        end
+        dirs = withenv("XDG_CONFIG_HOME" => xdg) do
+            pattern_dirs(cfg, [srcdir])
+        end
+        # Global first, repo second: the later entry wins for a rule defined in both.
+        # Resolved before comparing: macOS maps /var to /private/var and the repo dir
+        # arrives through `git rev-parse`, which reports the real path.
+        @test realpath.(dirs) == realpath.([global_dir, repo_dir])
+    end
+end
+
+@testitem "patterns_dir resolves against its config file" setup = [Fixtures] tags = [:patterns] begin
+    root, srcdir = Fixtures.gitrepo()
+    elsewhere = joinpath(root, "lint", "queries")
+    mkpath(elsewhere)
+    write(joinpath(root, ".dendro.toml"), "patterns_dir = \"lint/queries\"\n")
+
+    cfg = Fixtures.isolated_config([srcdir])
+    # Relative to the config's own directory, never the process working directory,
+    # so running dendro from a subdirectory keeps working.
+    @test realpath(cfg.patterns_dir) == realpath(elsewhere)
+    @test realpath.(Dendro.pattern_dirs(cfg, [srcdir])) == [realpath(elsewhere)]
+end
+
+@testitem "a malformed pattern query names its file and line" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: compile_pattern_query, ConfigError, language_grammar, profile_for
+
+    g = language_grammar(profile_for(:julia))
+    cases = [
+        # A node type the grammar does not have: caught by tree-sitter at compile.
+        ("(call_expression) @a\n(no_such_node) @b\n", "node type", 2),
+        # A capture a predicate references but no pattern binds.
+        ("(identifier) @a\n\n((identifier) @b (#eq? @nope \"x\"))\n", "capture", 3),
+        ("(call_expression @a\n", "syntax", 1),
+    ]
+    for (src, kind, line) in cases
+        err = try
+            compile_pattern_query(g, src, "julia.patterns.scm")
+            nothing
+        catch e
+            e
+        end
+        @test err isa ConfigError
+        @test occursin(kind, err.msg)
+        @test occursin("line $line", err.msg)
+    end
+end
+
+@testitem "an unimplemented predicate is rejected at load" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: compile_pattern_query, ConfigError, language_grammar, profile_for
+
+    g = language_grammar(profile_for(:julia))
+    # `#not-any-of?` compiles cleanly and then rejects every match, so a rule using it
+    # reports nothing and reads as clean code. That is the one hole tree-sitter leaves.
+    src = "(identifier) @a\n((identifier) @b (#not-any-of? @b \"x\"))\n"
+    err = try
+        compile_pattern_query(g, src, "julia.patterns.scm")
+        nothing
+    catch e
+        e
+    end
+    @test err isa ConfigError
+    @test occursin("not-any-of?", err.msg)
+    @test occursin("line 2", err.msg)
+    @test occursin("any-of?", err.msg)   # names the alternatives
+
+    # Every implemented predicate compiles.
+    ok = "((identifier) @a (#any-of? @a \"x\" \"y\"))\n((identifier) @c (#match? @c \"^z\"))\n"
+    @test compile_pattern_query(g, ok, "julia.patterns.scm") isa Dendro.TreeSitter.Query
+end
