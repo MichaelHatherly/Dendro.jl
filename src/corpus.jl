@@ -9,7 +9,7 @@
 function parse_corpus(
         paths::AbstractVector{<:AbstractString}; language = nothing,
         rules = BUILTIN_RULES, profiles::Dict{Symbol, LanguageProfile} = PROFILES,
-        patterns = PatternSpec[], pattern_dirs = String[]
+        patterns::Vector{PatternSpec} = PatternSpec[], pattern_dirs::Vector{String} = String[]
     )
     forced = language === nothing ? nothing : Symbol(lowercase(String(language)))
     extensions = extension_map(profiles)
@@ -44,7 +44,8 @@ end
 # parser cannot take leaves its slot unassigned and `parse_corpus` drops it.
 function parse_chunk!(
         files::Vector{ParsedFile}, parsers::Dict{LanguageProfile, TreeSitter.Parser},
-        entries::Vector{Tuple{String, LanguageProfile}}, idxs, rules, patterns, pattern_dirs
+        entries::Vector{Tuple{String, LanguageProfile}}, idxs, rules,
+        patterns::Vector{PatternSpec}, pattern_dirs::Vector{String}
     )
     for i in idxs
         path, profile = entries[i]

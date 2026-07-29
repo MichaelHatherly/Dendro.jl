@@ -135,7 +135,7 @@ Inside an expansion this names the fragment, the line it was defined on, and the
 used on. Outside one it names the file and line directly, which is the same thing an
 unexpanded query reports.
 """
-function error_site(expanded::ExpandedQuery, offset::Integer, path::AbstractString)
+function error_site(expanded::ExpandedQuery, offset::Int, path::AbstractString)
     for (range, frag) in expanded.spans
         offset in range || continue
         at = get(expanded.used_at, frag.name, 0)
@@ -151,7 +151,7 @@ Reject a fragment whose name is also a declared rule. The two share the `@` sigi
 `@signature` cannot mean both a rule to report and a shape to splice, and guessing which was
 meant would be worse than stopping.
 """
-function check_fragment_names(fragments, specs, path::AbstractString)
+function check_fragment_names(fragments::Dict{String, Fragment}, specs::Vector{PatternSpec}, path::AbstractString)
     declared = Set(s.name for s in specs)
     for (name, frag) in fragments
         Symbol(name) in declared && config_error(

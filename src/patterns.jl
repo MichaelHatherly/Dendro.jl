@@ -13,7 +13,7 @@
 # Coerce a TOML value naming one of a fixed set of symbols. Unlike an unknown key, which
 # warns and is dropped, a bad value here is an error: the author clearly meant to set it,
 # and guessing which of two severities they wanted would be worse than stopping.
-function pattern_symbol(value, allowed, key, rule, source)::Symbol
+function pattern_symbol(value, allowed::Tuple{Vararg{Symbol}}, key::String, rule::String, source)::Symbol
     value isa AbstractString || config_error("`$key` for pattern `$rule` in $source must be a string, got $value")
     sym = Symbol(value)
     sym in allowed && return sym
@@ -52,7 +52,7 @@ end
 # scalar without a band has no absolute score at all. A scalar band starting below 1 lets
 # `severity(0, band)` return something other than `:ok`, which would report every unit in
 # the corpus for holding no matches.
-function validate_pattern_band(name, kind::Symbol, band, source)
+function validate_pattern_band(name::String, kind::Symbol, band::Union{Nothing, Tuple{Int, Int}}, source)
     if kind === :flag
         band === nothing || config_error("pattern `$name` in $source is a flag and cannot carry a `band`")
     else
@@ -144,13 +144,13 @@ end
 
 # 1-based line holding byte offset `offset` in `text`, for turning a `QueryException`'s
 # index into something a rule author can navigate to.
-line_at_offset(text::AbstractString, offset::Integer) =
+line_at_offset(text::String, offset::Int) =
     count(==('\n'), SubString(text, 1, min(max(offset, 0), ncodeunits(text)))) + 1
 
 # The byte offset a `QueryException` names. Its message is
 # `"'<kind>' error starting at index <n>"` and it carries nothing else, so the offset is
 # recovered from the text rather than from a field.
-function query_error_offset(e)
+function query_error_offset(e::TreeSitter.QueryException)
     m = match(r"at index (\d+)", e.msg)
     m === nothing && return 0
     digits = capture_text(m, 1)
@@ -158,7 +158,7 @@ function query_error_offset(e)
 end
 
 # The error kind a `QueryException` names: `node type`, `field`, `capture`, `syntax`.
-function query_error_kind(e)
+function query_error_kind(e::TreeSitter.QueryException)
     m = match(r"'([^']+)'", e.msg)
     m === nothing && return "query"
     return something(capture_text(m, 1), "query")
@@ -177,7 +177,9 @@ Predicates are checked against [`PATTERN_PREDICATES`](@ref): an unimplemented on
 cleanly and then rejects every match, so a rule using one would report nothing and read as
 clean code.
 """
-function compile_pattern_query(grammar, source::AbstractString, path::AbstractString; specs = PatternSpec[])
+function compile_pattern_query(
+        grammar, source::AbstractString, path::AbstractString; specs::Vector{PatternSpec} = PatternSpec[]
+    )
     fragments = collect_fragments(source, path)
     check_fragment_names(fragments, specs, path)
     expanded = expand_fragments(source, path)
@@ -194,7 +196,7 @@ end
 
 # Reject a predicate TreeSitter.jl does not implement, naming the alternatives, since a
 # reader hitting this needs to know what to use instead.
-function check_predicates(source::AbstractString, path::AbstractString)
+function check_predicates(source::String, path::AbstractString)
     for m in eachmatch(PREDICATE_RE, source)
         name = capture_text(m, 1)
         (name === nothing || name in PATTERN_PREDICATES) && continue
@@ -228,12 +230,12 @@ const PATTERN_NOT_SUFFIX = ".not"
 const PATTERN_HELPER_PREFIX = '_'
 
 # True when a capture name is a helper for a predicate rather than a rule to report.
-is_helper_capture(name::AbstractString) =
+is_helper_capture(name::String) =
     !isempty(name) && first(name) == PATTERN_HELPER_PREFIX
 
 # The rule a capture name belongs to, and whether it subtracts. A `.not` suffix is
 # stripped; anything else is the rule name itself.
-function capture_rule(name::AbstractString)
+function capture_rule(name::String)
     endswith(name, PATTERN_NOT_SUFFIX) &&
         return Symbol(SubString(name, 1, lastindex(name) - length(PATTERN_NOT_SUFFIX))), true
     return Symbol(name), false
@@ -266,7 +268,7 @@ mistakes into silent misbehaviour: a typo'd `@no_anyy` becomes a rule reporting 
 name nobody wrote, and a helper capture that lost its `_` becomes a rule firing on every
 node its predicate examined. Checked once per compiled query at load, never per file.
 """
-function check_declared_rules(query::TreeSitter.Query, specs, path::AbstractString)
+function check_declared_rules(query::TreeSitter.Query, specs::Vector{PatternSpec}, path::AbstractString)
     known = Set(s.name for s in specs)
     for name in declared_captures(query)
         is_helper_capture(name) && continue
@@ -355,7 +357,7 @@ rules a later location shadows. Empty when no location holds a file for the lang
 Each query is validated as it compiles: node types by tree-sitter, predicates by
 [`PATTERN_PREDICATES`](@ref), and capture names against `specs`.
 """
-function pattern_queries(profile::LanguageProfile, dirs::Vector{String}, specs)
+function pattern_queries(profile::LanguageProfile, dirs::Vector{String}, specs::Vector{PatternSpec})
     key = (profile.name, dirs, Symbol[s.name for s in specs])
     return lock(CACHE_LOCK) do
         get!(PATTERN_QUERY_CACHE, key) do
@@ -364,7 +366,7 @@ function pattern_queries(profile::LanguageProfile, dirs::Vector{String}, specs)
     end
 end
 
-function build_pattern_queries(profile::LanguageProfile, dirs::Vector{String}, specs)
+function build_pattern_queries(profile::LanguageProfile, dirs::Vector{String}, specs::Vector{PatternSpec})
     grammar = language_grammar(profile)
     found = Tuple{TreeSitter.Query, Set{Symbol}}[]
     for dir in dirs
@@ -476,7 +478,7 @@ A rule is only reported when the corpus actually holds a file of a language it h
 for: a Python-only rule scanned over a Julia repo has not failed, it just had nothing to
 say.
 """
-function unmatched_patterns(files::Vector{ParsedFile}, specs)
+function unmatched_patterns(files::Vector{ParsedFile}, specs::Vector{PatternSpec})
     isempty(specs) && return Symbol[]
     matched = Set{Symbol}()
     for f in files, (name, bucket) in f.index.patterns

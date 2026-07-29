@@ -90,7 +90,7 @@ end
 
 # The fixture file for one language: `tests/<lang>.<ext>` beside the queries, using the
 # first extension the language claims.
-function fixture_file(dir::AbstractString, lang::Symbol, profiles)
+function fixture_file(dir::AbstractString, lang::Symbol, profiles::Dict{Symbol, LanguageProfile})
     for ext in extensions_for(lang, profiles)
         path = joinpath(dir, "tests", "$(lang).$(ext)")
         isfile(path) && return path
@@ -100,7 +100,7 @@ end
 
 # The extensions a language claims, from its profile when it registers its own and from the
 # built-in table otherwise.
-function extensions_for(lang::Symbol, profiles)
+function extensions_for(lang::Symbol, profiles::Dict{Symbol, LanguageProfile})
     profile = get(profiles, lang, nothing)
     profile === nothing && return String[]
     isempty(profile.extensions) || return profile.extensions
@@ -108,7 +108,9 @@ function extensions_for(lang::Symbol, profiles)
 end
 
 # Compare one fixture against every rule with a query for its language.
-function check_fixture(path::AbstractString, profile::LanguageProfile, dirs::Vector{String}, specs)
+function check_fixture(
+        path::AbstractString, profile::LanguageProfile, dirs::Vector{String}, specs::Vector{PatternSpec}
+    )
     source = read(path, String)
     tree = TreeSitter.parse(parser_for(profile), source)
     index = build_index(tree, profile.name, source, query_for(profile), scopes_query_for(profile))
