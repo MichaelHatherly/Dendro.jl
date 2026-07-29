@@ -98,9 +98,16 @@ function clone_clusters(files::Vector{ParsedFile}, cfg::Config, scope, placement
     return findings
 end
 
-# Every corpus-relational pass, scoped, in the order a report reads them. The opt-in
-# directory pass is gated here for the same reason the vocabulary one is: it proposes a
-# rearrangement rather than a bounded edit, so it stays out of the default set and out of
+# A corpus pass a `[rules]` key gates, appended only when the config enables it. `pass` is a
+# thunk so a disabled rule costs the lookup and nothing else.
+function append_gated!(findings::Vector{Finding}, cfg::Config, metric::Symbol, scope, pass)
+    get(cfg.rules, metric, false) && append!(findings, scope_clusters(pass(), scope))
+    return findings
+end
+
+# Every corpus-relational pass, scoped, in the order a report reads them. The two opt-in
+# directory passes are gated here for the same reason the vocabulary one is: each proposes a
+# rearrangement rather than a bounded edit, so they stay out of the default set and out of
 # the gate floor.
 function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res::CorpusResolution)
     ecut = cfg.cut
@@ -115,14 +122,14 @@ function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res:
         findings,
         scope_clusters(cluster_split_audience(files, table; cut = ecut, band = cfg.split_audience, linkage), scope)
     )
-    if get(cfg.rules, RELATIONAL.incoherent_package, false)
-        append!(
-            findings,
-            scope_clusters(
-                cluster_incoherent_packages(files, graph; cut = ecut, band = cfg.incoherent_package), scope
-            )
-        )
-    end
+    append_gated!(
+        findings, cfg, RELATIONAL.incoherent_package, scope,
+        () -> cluster_incoherent_packages(files, graph; cut = ecut, band = cfg.incoherent_package)
+    )
+    append_gated!(
+        findings, cfg, RELATIONAL.divisible_package, scope,
+        () -> cluster_divisible_packages(files, fg; cut = ecut, band = cfg.divisible_package)
+    )
     append!(findings, scope_clusters(cluster_back_edge(files, fg, table; cut = ecut, band = cfg.back_edge, linkage), scope))
     append!(
         findings,

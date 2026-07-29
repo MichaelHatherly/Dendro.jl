@@ -45,7 +45,7 @@ Cross-file resolution needs more than a query: a linkage entry is Julia code in 
 package, so a registered language reaches the per-file metrics, the flags, and clone
 detection, but none of the passes built on cross-file references: `:misplaced`,
 `:scattered`, `:unreferenced`, `:split_audience`, `:back_edge`, `:dependency_cycle`,
-`:hub`, or `:incoherent_package`.
+`:hub`, `:incoherent_package`, or `:divisible_package`.
 
 `examples/languages/` in the repository carries a worked Zig query, both files, along with
 the reasoning behind the choices a query has to make.
@@ -64,11 +64,11 @@ both the unit graph and the file graph fill in and every rule applies.
 type the resolver never works out, so what one Java or PHP file sees of another is the class
 name. The file graph is unaffected and well populated, 1220 edges across Guava's `collect`
 package and 304 across Laravel's `Database`, so `:back_edge`, `:dependency_cycle`, `:hub` and
-`:split_audience` all work. The *unit* graph carries no cross-file edge at all, because a
-class definition is not a function unit, which leaves `:misplaced`, `:scattered` and
-`:incoherent_package` silent on a Java or PHP corpus. That is the type-and-dispatch line
-holding, not a gap to close: following a method call to its definition is exactly the
-resolution Dendro does not do.
+`:split_audience` all work, and so does `:divisible_package`. The *unit* graph carries no
+cross-file edge at all, because a class definition is not a function unit, which leaves
+`:misplaced`, `:scattered` and `:incoherent_package` silent on a Java or PHP corpus. That is
+the type-and-dispatch line holding, not a gap to close: following a method call to its
+definition is exactly the resolution Dendro does not do.
 
 **JavaScript resolves ES modules only.** The linkage query reads `import ... from` and
 `export`. A corpus written in CommonJS, `require()` and `module.exports`, resolves nothing

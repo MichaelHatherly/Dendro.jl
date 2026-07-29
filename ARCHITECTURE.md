@@ -59,7 +59,8 @@ reference sites among them, so a scan resolves the corpus once rather than six t
 travels through the keyword slot the bare visibility map used to occupy, so no pass grew a
 parameter to take it. Cohesion, placement,
 scattering, reachability, and the opt-in `:incoherent_package` run over the unit graph;
-`:back_edge`, `:dependency_cycle` and `:hub` run over the one file graph, the substrate
+`:back_edge`, `:dependency_cycle`, `:hub` and the opt-in `:divisible_package` run over the
+one file graph, the substrate
 for the rules that read the corpus as files depending on files. It is built before the
 clone passes report, since they rank their clusters by distance in its directory
 contraction.
@@ -308,7 +309,10 @@ Reporting:
   given each file's value and the locations to report it at, it scores, reads the
   suppression directive at the first location, and returns the findings sorted.
   `min_reported` holds back a value that names nothing to act on while keeping it in the
-  distribution, which is how `:split_audience` scores a single audience. Two renderers
+  distribution, which is how `:split_audience` scores a single audience.
+  `directory_findings` is the same emission for the two passes whose subject is a directory:
+  the suppression directives arrive keyed by path rather than carried on a `ParsedFile`,
+  which is the only thing that separates the two. Two renderers
   walk `Findings`: the `show`
   method for `text/plain`, and `github_annotations`, a standalone function (not a
   `show` method) that emits GitHub Actions workflow commands for inline PR
@@ -467,6 +471,21 @@ Reporting:
   a representative unit of the directory with the unit anchoring that unit's community,
   which is how the finding names a directory without inventing a path. Included after
   `scattered.jl`.
+- `divisible_package.jl` asks the inward layout question, the other opt-in pass `analyze`
+  gates on `cfg.rules`. Where `:incoherent_package` asks whether a directory's contents
+  belong elsewhere, this asks whether they want subdividing where they are. `child_graph`
+  induces the file graph on one directory's direct children, contracting a child directory
+  into one node with everything under it folded in, which is what lets the same reading
+  cover a directory of files dividing into folders and a directory of subdirectories
+  grouping under new parents. `movable_children` drops the children a proposal cannot move,
+  those most of the directory reaches for and those naming the directory itself, the
+  per-directory analog of the corpus ubiquity cut. `folder_candidates` scores each community
+  of the remainder by its internal ratio, `read_divisible` applies the gates that decide
+  whether the question applies at all, and `cluster_divisible_packages` emits a
+  `:divisible_package` finding per directory against `DIVISIBLE_PACKAGE_BAND` and the corpus
+  percentile. Groups are extracted rather than partitioned: what no folder claims stays at
+  the top level, and the anchor location's label says how much the proposal places. Included
+  after `incoherent_package.jl`.
 - `unreferenced.jl` defines dead-code detection by reachability, not the corpus graph but
   a dedicated reference graph over `table.defs` that keeps non-unit targets and discounts
   no cross-cutting utility. `reach_graph` builds the forward edges (within-file bindings
@@ -544,13 +563,14 @@ Reporting:
   (exact and near duplicates plus the config-gated reimplementation pass, each ranked
   against the `ModulePlacement`), `relational_clusters` (naturalness, low cohesion,
   cross-file placement, scattering, unreferenced definitions, the audience pass over the
-  symbol table, the config-gated directory-layout pass, and the three passes over the
+  symbol table, the two config-gated directory passes, and the three passes over the
   file graph, in the order a report reads them), and the diff scope, `Scope` and
   `scope_clusters`, which live here because they are `analyze`'s framing of the question
   rather than a property of the corpus. It is included after `corpus.jl` and after
   `report.jl`, `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`,
   `file_graph.jl`, `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
-  `incoherent_package.jl`, `cohesion.jl`, `hub.jl`, and `split_audience.jl` so everything
+  `incoherent_package.jl`, `divisible_package.jl`, `cohesion.jl`, `hub.jl`, and
+  `split_audience.jl` so everything
   it calls is defined first.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, and the clone clusters into mermaid
@@ -658,7 +678,9 @@ per keying pass, through `relative_to` (`gate.jl`), where the corpus is not to h
 optional label. A `Finding` carries one or more. A finding about something larger than a unit
 points at a representative real site rather than inventing one: `:scattered` names one
 unit per community, and `:incoherent_package`, whose subject is a directory, names a
-representative unit in it. Both `scope_clusters` and the gate's `fkey` resolve a
+representative unit in it. `:divisible_package` does the same for a directory and for each
+folder it proposes, naming the earliest file the group holds, so a proposed folder made of
+subdirectories still points at code. Both `scope_clusters` and the gate's `fkey` resolve a
 location's path and line, so a synthetic path or line would throw in the ratchet and
 misbehave under `base`.
 

@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   match; a capture naming no declared rule is a load error, catching a typo and a predicate
   helper that lost its `_` prefix; and a rule that compiled cleanly but matched nothing
   anywhere in the corpus is reported after the scan.
+- Opt-in corpus finding `:divisible_package`: a directory whose direct children divide into
+  groups that could become subdirectories. Where `:incoherent_package` asks whether a
+  directory's contents belong elsewhere, this asks whether contents that do belong are
+  missing an internal shape. It reads the file graph induced on one directory's children, a
+  child file as one node and a child directory as one node with everything under it
+  contracted in, so one rule covers a directory of files splitting into folders and a
+  directory of folders grouping under new parents. The score is the best proposed folder's
+  internal reference ratio, and the finding names the children each folder takes.
+  `[rules] divisible_package = true` enables it; banded `[60, 85]`.
 
 ### Changed
 

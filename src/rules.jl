@@ -135,6 +135,7 @@ const RELATIONAL = (
     dependency_cycle = :dependency_cycle,
     hub = :hub,
     incoherent_package = :incoherent_package,
+    divisible_package = :divisible_package,
 )
 const RELATIONAL_METRICS = values(RELATIONAL)
 
