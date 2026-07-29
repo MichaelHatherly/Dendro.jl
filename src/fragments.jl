@@ -63,16 +63,27 @@ Every `; fragment:` definition in `source`, keyed by name. A name defined twice 
 in a way nothing else in the format does.
 """
 function collect_fragments(source::AbstractString, path::AbstractString)
+    text = String(source)
     out = Dict{String, Fragment}()
-    for m in eachmatch(FRAGMENT_DEF_RE, source)
-        name = String(m.captures[1])
-        line = line_at_offset(source, m.offset - 1)
+    for m in eachmatch(FRAGMENT_DEF_RE, text)
+        # Both groups are required by the pattern, but a capture's type admits `nothing`
+        # whatever the pattern says, and the suite's JET gate is zero-tolerance.
+        name, body = capture_text(m, 1), capture_text(m, 2)
+        (name === nothing || body === nothing) && continue
+        line = line_at_offset(text, m.offset - 1)
         haskey(out, name) && config_error(
             "fragment `$name` at line $line of $path is already defined at line $(out[name].line)"
         )
-        out[name] = Fragment(name, strip(String(m.captures[2])), line)
+        out[name] = Fragment(name, String(strip(body)), line)
     end
     return out
+end
+
+# One capture group's text, or `nothing` when the group did not participate. Narrows the
+# `Union{Nothing, SubString}` a `RegexMatch` yields to something concrete.
+function capture_text(m::RegexMatch, i::Int)::Union{String, Nothing}
+    c = m.captures[i]
+    return c === nothing ? nothing : String(c)
 end
 
 # Blank out the definition lines, keeping the newlines so every later line keeps its number.
@@ -95,13 +106,14 @@ function expand_fragments(source::AbstractString, path::AbstractString)
     fragments = collect_fragments(source, path)
     isempty(fragments) && return ExpandedQuery(source)
 
-    stripped = strip_fragment_defs(source)
+    stripped = String(strip_fragment_defs(String(source)))
     io = IOBuffer()
     spans = Tuple{UnitRange{Int}, Fragment}[]
     used_at = Dict{String, Int}()
     last = 1
     for m in eachmatch(FRAGMENT_REF_RE, stripped)
-        frag = get(fragments, String(m.captures[1]), nothing)
+        name = capture_text(m, 1)
+        frag = name === nothing ? nothing : get(fragments, name, nothing)
         frag === nothing && continue
         write(io, SubString(stripped, last, prevind(stripped, m.offset)))
         from = position(io) + 1

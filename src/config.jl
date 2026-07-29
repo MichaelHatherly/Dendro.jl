@@ -371,6 +371,7 @@ function repo_config_dir(roots)
     isempty(roots) && return nothing
     try
         return git_toplevel(roots)
+        # dendro-ignore: empty_catch_binding -- the only question is whether git answered
     catch
         ref = first(roots)
         return isdir(ref) ? String(ref) : dirname(ref)

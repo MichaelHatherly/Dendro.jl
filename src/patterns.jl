@@ -152,13 +152,16 @@ line_at_offset(text::AbstractString, offset::Integer) =
 # recovered from the text rather than from a field.
 function query_error_offset(e)
     m = match(r"at index (\d+)", e.msg)
-    return m === nothing ? 0 : parse(Int, m.captures[1])
+    m === nothing && return 0
+    digits = capture_text(m, 1)
+    return digits === nothing ? 0 : parse(Int, digits)
 end
 
 # The error kind a `QueryException` names: `node type`, `field`, `capture`, `syntax`.
 function query_error_kind(e)
     m = match(r"'([^']+)'", e.msg)
-    return m === nothing ? "query" : m.captures[1]
+    m === nothing && return "query"
+    return something(capture_text(m, 1), "query")
 end
 
 """
@@ -193,8 +196,8 @@ end
 # reader hitting this needs to know what to use instead.
 function check_predicates(source::AbstractString, path::AbstractString)
     for m in eachmatch(PREDICATE_RE, source)
-        name = m.captures[1]
-        name in PATTERN_PREDICATES && continue
+        name = capture_text(m, 1)
+        (name === nothing || name in PATTERN_PREDICATES) && continue
         line = line_at_offset(source, m.offset - 1)
         available = join(sort!(collect(PATTERN_PREDICATES)), ", ")
         config_error(

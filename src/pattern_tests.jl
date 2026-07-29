@@ -41,8 +41,11 @@ function expectations(index::QueryIndex)
     for node in index.comment.nodes
         m = match(EXPECT_RE, TreeSitter.slice(index.source, node))
         m === nothing && continue
-        names = m.captures[1] === nothing ? Set{Symbol}() :
-            Set(Symbol(strip(t)) for t in split(m.captures[1], r"[,\s]+"; keepempty = false))
+        # `capture_text` narrows the `Union{Nothing, SubString}` a match yields, which the
+        # zero-tolerance JET gate reads even where the pattern makes the group required.
+        listed = capture_text(m, 1)
+        names = listed === nothing ? Set{Symbol}() :
+            Set(Symbol(strip(t)) for t in split(listed, r"[,\s]+"; keepempty = false))
         # A marker sits on the line it describes, or on the line above it, matching how a
         # `dendro-ignore` covers a finding.
         line = line_of(node)
@@ -58,8 +61,12 @@ Run every declared pattern rule against the fixtures in its pattern directories 
 where a fixture and the rule disagree.
 
 Fixtures live in a `tests/` folder beside the queries, one file per language, and mark the
-lines a rule must report with a `dendro-expect: <rule>` comment. A marked line the rule did
-not report is a miss; an unmarked line it did report is a false positive. Both fail.
+lines a rule must match with a `dendro-expect: <rule>` comment. A marked line the rule did
+not match is a miss; an unmarked line it did match is a false positive. Both fail.
+
+What a fixture pins is what the *query* matched, for either kind of rule. A scalar rule's
+band and percentile are Dendro's own scoring and are tested elsewhere, so a scalar fixture
+marks the lines its occurrences sit on exactly as a flag fixture does.
 
 A rule with no fixture is not a failure. Requiring one would be friction on writing a
 two-line house rule, and the zero-match report already catches the rule that never fires at
