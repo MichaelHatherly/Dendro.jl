@@ -96,6 +96,41 @@
 # as well as the edge list. Everything else in the diff moves reports between files:
 # `baseline_from` and `sample_chunk!` are counted under `baseline.jl` rather than
 # `corpus.jl`, and `member_visible` reads a `VisibilityIndex` where it read a `SymbolTable`.
+# The architecture rules over the corpus file graph (`file_graph.jl`, `back_edge.jl`,
+# `dependency_cycle.jl`, `hub.jl`, `incoherent_package.jl`, `scattered.jl`, and the clone
+# ranking in `clones.jl`) raised sound from 1120 to 1322 and opt from 22 to 23: seven more
+# corpus passes, each carrying the keyword-argument lowering and `Any`-node walk every
+# existing cluster pass already counts, re-counted through `analyze`'s new call edges, and
+# `rank_clones!` dispatches through a function-valued comparison of the kind the rule vector
+# already incurs. Basic mode stays at zero throughout, so none of this is a type-level
+# regression. Extracting `analyze`'s pass sequence into `clone_clusters` and
+# `relational_clusters` and moving the coordination into `analyze.jl` then brought sound to
+# 1312, ten fewer sites of the same kinds. Resolving the corpus once per scan
+# (`resolve_linkage`, and the `linkage.jl`/`resolution.jl` split) brought it to 1308, opt
+# unchanged: five passes stopped re-resolving the corpus, so five `corpus_references` and
+# `corpus_visibility` call edges and `public_surface`'s second walk are gone, each of which
+# carried the keyword-argument lowering and `Any`-widening every corpus pass counts. Measured
+# in two steps, which is worth recording: the refactor alone read 1314, since `resolve_linkage`
+# and `DeclaredLinkage` add two sites of that same kind, and the location labels then took it
+# to 1308, moving `label_path` out to `placement.jl` and having `audience_reps` return
+# `Location`s rather than indices the caller re-wraps.
+#
+# The review fixes then took the count from 1308 to 1303, so the limit drops to match.
+# Measure under `Pkg.test`, which is what CI runs and what these numbers are on. A bare
+# `report_package` against this project reads exactly one lower, since `Pkg.test` analyses
+# with `--check-bounds=yes`; the deltas below are the same either way, the absolute figure
+# is not. Resolving each corpus path once per scope into `Scope.rels` and reading it through
+# `in_scope` took `analyze.jl` from 50 to 40: the inline `relpath(realpath(...))` per
+# location was re-resolving inside a closure the scoping filter and the parallel per-file
+# pass both widened through. Against that, `cluster_back_edge`'s `floors` keyword adds 2,
+# irreducibly, since a caller may name either floor and the NamedTuple's type is therefore
+# unknown at the callee; the `@NamedTuple` assertion on the merge stops the widening
+# travelling further, and dropping partial override would buy the last 2 at the cost of the
+# API. `linkage.jl` adds 2 for `resolved_targets`, the new seam between the linkage
+# resolution and the file graph's node lookup, and `gate.jl` 1 for `relative_to`. Two
+# measured non-costs worth recording: the iterative Tarjan walk and the `FileGraph.modules`
+# field each read zero, so neither the explicit frame stack nor the extra field cost
+# inference anything.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -103,8 +138,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1120  # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 22      # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 1303  # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 23      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))

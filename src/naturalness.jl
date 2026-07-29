@@ -209,6 +209,11 @@ function unnatural_in_language!(
         interpolated_cross_entropy(units[i].tokens, global_model, caches[units[i].location.file], CACHE_LAMBDA)
     end
     sorted = sort(entropies)
+    # Ranked on the cross-entropy itself, not on the centibit value the band reads, so this
+    # spells out the guard `two_scores` and `fires` hold for every other relational pass
+    # rather than calling them. Rounding to centibits first would tie functions the model
+    # separates, and the rank is what this metric is read by. Reconcile the two only if the
+    # ranking key is ever unified.
     for (u, h) in zip(units, entropies)
         isempty(u.tokens) && continue
         value = round(Int, 100 * h)

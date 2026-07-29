@@ -47,6 +47,34 @@ const CORPUS_UBIQUITY_FLOOR = 3
 ubiquity_threshold(reach::Int) = max(CORPUS_UBIQUITY_FLOOR, ceil(Int, CORPUS_UBIQUITY * reach))
 
 """
+    definition_reach(files, visible, ndefs) -> Vector{Int}
+
+Per definition index, the number of units that can reference it across the file
+boundary: the population its reference breadth is measured against. A file's own
+definitions are outside its `visible` map, so this counts the same cross-file
+population [`corpus_references`](@ref) draws from. Source a definition's visibility
+cannot reach contributes nothing, which is what keeps a corpus-relative cut on breadth
+from moving when unrelated source is added alongside.
+"""
+function definition_reach(files::Vector{ParsedFile}, visible::Dict{String, Dict{String, Vector{Int}}}, ndefs::Int)
+    reach = zeros(Int, ndefs)
+    seen = Set{Int}()
+    for f in files
+        units = length(f.index.functions)
+        units == 0 && continue
+        empty!(seen)
+        for candidates in values(visible[f.file])
+            for di in candidates
+                di in seen && continue
+                push!(seen, di)
+                reach[di] += units
+            end
+        end
+    end
+    return reach
+end
+
+"""
     build_corpus_graph(files, table; within_ubiquity=$COHESION_UBIQUITY) -> CorpusGraph
 
 Resolve every cross-file reference in `files` against `table` and record it as a
@@ -60,8 +88,15 @@ the units that can see it, are dropped so a shared helper does not pull a unit t
 its file. The within edges star-link each [`binding_groups`](@ref) group to its first
 member, dropping a binding referenced by more than `within_ubiquity` of a file's units;
 a language with no scopes query carries none.
+
+Pass a prebuilt `linkage` from [`resolve_linkage`](@ref) to share one resolution with
+another pass over the corpus, rather than resolving it twice.
 """
-function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; within_ubiquity::Float64 = COHESION_UBIQUITY)
+function build_corpus_graph(
+        files::Vector{ParsedFile}, table::SymbolTable;
+        within_ubiquity::Float64 = COHESION_UBIQUITY,
+        linkage::ResolvedLinkage = resolve_linkage(files, table)
+    )
     units = CorpusUnit[]
     unit_index = Dict{Tuple{String, Int}, Int}()
     for f in files
@@ -74,18 +109,17 @@ function build_corpus_graph(files::Vector{ParsedFile}, table::SymbolTable; withi
     # Resolve references first, counting the distinct units that reach each definition,
     # so cross-cutting names can be dropped before the weighted edges are built. A
     # reference in top-level code couples no unit, so it is skipped here.
-    visible = corpus_visibility(files, table)
     resolved = Tuple{Int, Vector{Int}}[]
     breadth = Dict{Int, Set{Int}}()
-    for (f, ref, candidates) in corpus_references(files, visible)
-        ref.unit == 0 && continue
-        src = unit_index[(f.file, ref.unit)]
-        push!(resolved, (src, candidates))
-        for di in candidates
+    for reference in linkage.references
+        reference.ref.unit == 0 && continue
+        src = unit_index[(reference.file.file, reference.ref.unit)]
+        push!(resolved, (src, reference.candidates))
+        for di in reference.candidates
             push!(get!(() -> Set{Int}(), breadth, di), src)
         end
     end
-    reach = definition_reach(files, visible, length(table.defs))
+    reach = definition_reach(files, linkage.visible, length(table.defs))
     utility = Set{Int}(di for (di, srcs) in breadth if length(srcs) > ubiquity_threshold(reach[di]))
 
     edges = Dict{Tuple{Int, Int}, Float64}()
@@ -143,9 +177,13 @@ function adjacency(graph::CorpusGraph; within::Bool = false)
 end
 
 # Fold directed weighted edges into an undirected neighbour-weight adjacency, each edge
-# added to both endpoints.
-function fold_edges!(adj::Vector{Dict{Int, Float64}}, edges::Dict{Tuple{Int, Int}, Float64})
-    for ((a, b), w) in edges
+# added to both endpoints. Keys are sorted first, so the sums accumulate in corpus order
+# rather than in whatever order the `Dict` yields. The weight type is the caller's: the
+# unit graph counts references as `Float64`, the module graph as `Int`.
+function fold_edges!(adj::Vector{Dict{Int, Float64}}, edges::Dict{Tuple{Int, Int}, <:Real})
+    for key in sort!(collect(keys(edges)))
+        a, b = key
+        w = Float64(edges[key])
         adj[a][b] = get(adj[a], b, 0.0) + w
         adj[b][a] = get(adj[b], a, 0.0) + w
     end

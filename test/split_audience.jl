@@ -1,0 +1,196 @@
+@testitem ":split_audience flags a file serving two disjoint audiences" setup = [Fixtures] tags = [:split_audience] begin
+    # f.jl's `fa`/`fb` are read only by x.jl and its `fc`/`fd` only by y.jl: two consumer
+    # sets that never meet, so the file splits cleanly in two.
+    mod = Fixtures.parsedfile(:julia, "include(\"f.jl\")\ninclude(\"x.jl\")\ninclude(\"y.jl\")\n"; file = "mod.jl")
+    f = Fixtures.parsedfile(:julia, "fa() = 1\nfb() = 2\nfc() = 3\nfd() = 4\n"; file = "f.jl")
+    x = Fixtures.parsedfile(:julia, "x1() = fa() + fb()\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "y1() = fc() + fd()\n"; file = "y.jl")
+    files = [mod, f, x, y]
+    table = Dendro.corpus_symbols(files)
+    findings = Dendro.cluster_split_audience(files, table; band = (2, 3))
+
+    hit = only(findings)
+    @test hit.metric == :split_audience
+    @test hit.kind == :scalar
+    @test hit.value == 2
+    @test hit.absolute == :warn
+    # Four files, so the percentile gate stays off: only the absolute band fires.
+    @test hit.percentile === nothing
+    # One representative definition per audience group, earliest line first.
+    @test [(l.file, l.unit, l.line) for l in hit.locations] == [("f.jl", "fa", 1), ("f.jl", "fc", 3)]
+end
+
+@testitem ":split_audience merges groups a shared definition joins" setup = [Fixtures] tags = [:split_audience] begin
+    # `fe` is read by both consumers, so its consumer set meets both others and the two
+    # audiences become one: the file has nothing to split along.
+    mod = Fixtures.parsedfile(:julia, "include(\"f.jl\")\ninclude(\"x.jl\")\ninclude(\"y.jl\")\n"; file = "mod.jl")
+    f = Fixtures.parsedfile(:julia, "fa() = 1\nfb() = 2\nfc() = 3\nfd() = 4\nfe() = 5\n"; file = "f.jl")
+    x = Fixtures.parsedfile(:julia, "x1() = fa() + fb() + fe()\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "y1() = fc() + fd() + fe()\n"; file = "y.jl")
+    files = [mod, f, x, y]
+    table = Dendro.corpus_symbols(files)
+    consumed = Dendro.resolve_linkage(files, table).consumers
+
+    @test length(Dendro.audience_components(consumed["f.jl"], table)) == 1
+    # One audience is nothing to split, so the pass stays silent whatever the band says.
+    @test isempty(Dendro.cluster_split_audience(files, table; band = (1, 2)))
+end
+
+@testitem ":split_audience stays silent on a corpus of single-audience files" setup = [Fixtures] tags = [:split_audience] begin
+    # Every provider serves one audience, so every scored file sits at the top of the
+    # corpus distribution. The percentile must not turn a uniform corpus into six
+    # findings that name no split.
+    files = Dendro.ParsedFile[]
+    includes = String[]
+    for i in 1:6
+        push!(files, Fixtures.parsedfile(:julia, "pa$i() = 1\npb$i() = 2\npc$i() = 3\n"; file = "p$i.jl"))
+        push!(files, Fixtures.parsedfile(:julia, "x$i() = pa$i() + pb$i()\n"; file = "x$i.jl"))
+        push!(files, Fixtures.parsedfile(:julia, "y$i() = pb$i() + pc$i()\n"; file = "y$i.jl"))
+        append!(includes, ["include(\"p$i.jl\")", "include(\"x$i.jl\")", "include(\"y$i.jl\")"])
+    end
+    pushfirst!(files, Fixtures.parsedfile(:julia, join(includes, "\n") * "\n"; file = "mod.jl"))
+    table = Dendro.corpus_symbols(files)
+
+    # A cut of 0 puts every scored file at or above the percentile, the worst case.
+    @test isempty(Dendro.cluster_split_audience(files, table; cut = 0.0))
+end
+
+@testitem ":split_audience counts a file that names no audience into the population" setup = [Fixtures] tags = [:split_audience] begin
+    # A file whose consumed definitions each have a consumer of their own forms no group
+    # above the definition floor, so it scores zero audiences. It was still examined and
+    # still scored, so it belongs in the distribution the percentile reads: dropping it
+    # would make the corpus look thinner than it is, and the percentile floor is counted
+    # against exactly that thinness. Four files score above zero here and two score zero,
+    # which is the corpus reaching the floor of five only if the zeros are counted.
+    files = Dendro.ParsedFile[]
+    includes = String[]
+    add!(name, src) = (push!(files, Fixtures.parsedfile(:julia, src; file = name)); push!(includes, "include(\"$name\")"))
+
+    # Two audiences: `sa`/`sb` for one consumer, `sc`/`sd` for another.
+    add!("split.jl", "sa() = 1\nsb() = 2\nsc() = 3\nsd() = 4\n")
+    add!("sx.jl", "sx1() = sa() + sb()\n")
+    add!("sy.jl", "sy1() = sc() + sd()\n")
+    # Three files with one audience apiece: two consumers that meet on `ob`, so the two
+    # groups merge into one and the file clears the consumer floor without naming a split.
+    for i in 1:3
+        add!("one$i.jl", "oa$i() = 1\nob$i() = 2\noc$i() = 3\n")
+        add!("ox$i.jl", "ox$i() = oa$i() + ob$i()\n")
+        add!("oy$i.jl", "oy$i() = ob$i() + oc$i()\n")
+    end
+    # Two files with two consumers but no group of two definitions between them.
+    for i in 1:2
+        add!("zero$i.jl", "za$i() = 1\nzb$i() = 2\nzc$i() = 3\n")
+        add!("zx$i.jl", "zx$i() = za$i()\n")
+        add!("zy$i.jl", "zy$i() = zb$i()\n")
+    end
+    pushfirst!(files, Fixtures.parsedfile(:julia, join(includes, "\n") * "\n"; file = "mod.jl"))
+    table = Dendro.corpus_symbols(files)
+
+    # Neither zero-audience file names a split, so neither is ever reported.
+    @test Dendro.audience_components(Dendro.resolve_linkage(files, table).consumers["zero1.jl"], table) == Vector{Int}[]
+
+    # An unreachable band isolates the corpus-relative half, so the percentile alone
+    # decides, and it is read only once the population reaches the file floor.
+    hit = only(Dendro.cluster_split_audience(files, table; band = (99, 100)))
+    @test (hit.locations[1].file, hit.value) == ("split.jl", 2)
+    @test hit.percentile == 1.0
+end
+
+@testitem ":split_audience reads a language with no export marker the same way" setup = [Fixtures] tags = [:split_audience] begin
+    # Python declares no exports, so the audience is resolved from references alone,
+    # exactly as it is for Julia's splice linkage. Same shape, same verdict.
+    f = Fixtures.parsedfile(:python, "def fa():\n    return 1\ndef fb():\n    return 2\ndef fc():\n    return 3\ndef fd():\n    return 4\n"; file = "f.py")
+    x = Fixtures.parsedfile(:python, "from f import fa, fb\ndef x1():\n    return fa() + fb()\n"; file = "x.py")
+    y = Fixtures.parsedfile(:python, "from f import fc, fd\ndef y1():\n    return fc() + fd()\n"; file = "y.py")
+    files = [f, x, y]
+    table = Dendro.corpus_symbols(files)
+    hit = only(Dendro.cluster_split_audience(files, table; band = (2, 3)))
+
+    @test hit.value == 2
+    @test [(l.file, l.unit, l.line) for l in hit.locations] == [("f.py", "fa", 1), ("f.py", "fc", 5)]
+end
+
+@testitem ":split_audience leaves a file with one audience alone" setup = [Fixtures] tags = [:split_audience] begin
+    # One consumer file reads everything f.jl offers: one audience, nothing to split.
+    mod = Fixtures.parsedfile(:julia, "include(\"f.jl\")\ninclude(\"x.jl\")\n"; file = "mod.jl")
+    f = Fixtures.parsedfile(:julia, "fa() = 1\nfb() = 2\nfc() = 3\nfd() = 4\n"; file = "f.jl")
+    x = Fixtures.parsedfile(:julia, "x1() = fa() + fb()\nx2() = fc() + fd()\n"; file = "x.jl")
+    files = [mod, f, x]
+    table = Dendro.corpus_symbols(files)
+    @test isempty(Dendro.cluster_split_audience(files, table; band = (1, 2)))
+end
+
+@testitem ":split_audience skips a file below the unit floor" setup = [Fixtures] tags = [:split_audience] begin
+    # Two definitions serving two audiences is too small a file to read as split.
+    mod = Fixtures.parsedfile(:julia, "include(\"f.jl\")\ninclude(\"x.jl\")\ninclude(\"y.jl\")\n"; file = "mod.jl")
+    f = Fixtures.parsedfile(:julia, "fa() = 1\nfb() = 2\n"; file = "f.jl")
+    x = Fixtures.parsedfile(:julia, "x1() = fa()\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "y1() = fb()\n"; file = "y.jl")
+    files = [mod, f, x, y]
+    table = Dendro.corpus_symbols(files)
+    @test isempty(Dendro.cluster_split_audience(files, table; band = (1, 2)))
+end
+
+@testitem ":split_audience needs two definitions per group" setup = [Fixtures] tags = [:split_audience] begin
+    # Each consumer reads one definition: two groups, but both singletons, which is the
+    # ordinary shape of a helper with a single caller rather than an audience.
+    mod = Fixtures.parsedfile(:julia, "include(\"f.jl\")\ninclude(\"x.jl\")\ninclude(\"y.jl\")\n"; file = "mod.jl")
+    f = Fixtures.parsedfile(:julia, "fa() = 1\nfb() = 2\nfc() = 3\n"; file = "f.jl")
+    x = Fixtures.parsedfile(:julia, "x1() = fa()\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "y1() = fb()\n"; file = "y.jl")
+    files = [mod, f, x, y]
+    table = Dendro.corpus_symbols(files)
+    @test isempty(Dendro.cluster_split_audience(files, table; band = (1, 2)))
+end
+
+@testitem ":split_audience respects dendro-ignore-file" setup = [Fixtures] tags = [:split_audience] begin
+    fsrc = "# dendro-ignore-file: split_audience\nfa() = 1\nfb() = 2\nfc() = 3\nfd() = 4\n"
+    i = Fixtures.idx(:julia, fsrc)
+    directives = Dendro.suppressions(i; file = "f.jl")
+    mod = Fixtures.parsedfile(:julia, "include(\"f.jl\")\ninclude(\"x.jl\")\ninclude(\"y.jl\")\n"; file = "mod.jl")
+    f = Fixtures.parsedfile(:julia, fsrc; file = "f.jl", directives = directives)
+    x = Fixtures.parsedfile(:julia, "x1() = fa() + fb()\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "y1() = fc() + fd()\n"; file = "y.jl")
+    files = [mod, f, x, y]
+    table = Dendro.corpus_symbols(files)
+    hit = only(Dendro.cluster_split_audience(files, table; band = (2, 3)))
+    @test hit.suppressed
+end
+
+@testitem ":split_audience reaches analyze through the config band" setup = [Fixtures] tags = [:split_audience] begin
+    mktempdir() do dir
+        write(joinpath(dir, "mod.jl"), "include(\"f.jl\")\ninclude(\"x.jl\")\ninclude(\"y.jl\")\n")
+        write(joinpath(dir, "f.jl"), "fa() = 1\nfb() = 2\nfc() = 3\nfd() = 4\n")
+        write(joinpath(dir, "x.jl"), "x1() = fa() + fb()\n")
+        write(joinpath(dir, "y.jl"), "y1() = fc() + fd()\n")
+        toml = joinpath(dir, "c.toml")
+        write(toml, "[bands]\nsplit_audience = [2, 3]\n")
+
+        # Isolate the user-global layer so a developer's own config cannot leak in. The
+        # band reaching its `Config` field is pinned in test/config.jl; what this item
+        # adds is that the band reaches the pass through `analyze`.
+        cfg = mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                Dendro.discover_config([dir]; explicit = toml)
+            end
+        end
+        hit = only(filter(f -> f.metric == :split_audience, Dendro.analyze(dir; config = cfg)))
+        @test hit.value == 2
+        @test basename(first(hit.locations).file) == "f.jl"
+    end
+end
+
+@testitem ":split_audience labels each group with the files consuming it" setup = [Fixtures] tags = [:split_audience] begin
+    # The score counts a file's audiences; what names the split is who each one serves, so
+    # every representative carries its consumers. Without it the finding says "this file has
+    # two audiences" and leaves working out which two to the reader.
+    mod = Fixtures.parsedfile(:julia, "include(\"f.jl\")\ninclude(\"x.jl\")\ninclude(\"y.jl\")\n"; file = "mod.jl")
+    f = Fixtures.parsedfile(:julia, "fa() = 1\nfb() = 2\nfc() = 3\nfd() = 4\n"; file = "f.jl")
+    x = Fixtures.parsedfile(:julia, "x1() = fa() + fb()\n"; file = "x.jl")
+    y = Fixtures.parsedfile(:julia, "y1() = fc() + fd()\n"; file = "y.jl")
+    files = [mod, f, x, y]
+    hit = only(Dendro.cluster_split_audience(files, Dendro.corpus_symbols(files); band = (2, 3)))
+
+    @test [(l.unit, l.label) for l in hit.locations] ==
+        [("fa", "used by x.jl"), ("fc", "used by y.jl")]
+end

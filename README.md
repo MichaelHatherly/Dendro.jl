@@ -161,11 +161,14 @@ cut = 0.97                 # percentile cutoff for corpus-relative flags
 cyclomatic = [15, 30]      # scalar metric: override (warn, high)
 function_length = [60, 120]
 low_cohesion = [5, 7]      # relational metric: override its band
+back_edge = [90, 97]
+dependency_cycle = [6, 12]
 
 [rules]
 npath = true               # enable an optional rule
 parameter_count = false    # disable a built-in rule
 reimplementation = true    # enable the opt-in vocabulary-overlap pass
+incoherent_package = true  # enable the opt-in directory-layout pass
 
 [clones]
 min_size = 12              # min named-node subtree to count as a clone
@@ -176,9 +179,10 @@ radius_factor = 0.5       # candidate-search radius, as a fraction of function s
 threshold = 0.6            # vocabulary overlap a candidate pair must reach
 ```
 
-`[bands]` keys are the scalar metric names plus the four relational names
-(`unnatural`, `low_cohesion`, `scattered`, `misplaced`); `[rules]` keys are any rule
-name, plus `reimplementation` to gate that corpus pass; `[clones]` and
+`[bands]` keys are the scalar metric names plus the relational names (`unnatural`,
+`low_cohesion`, `scattered`, `split_audience`, `misplaced`, `back_edge`,
+`dependency_cycle`, `hub`, `incoherent_package`); `[rules]` keys are any rule name, plus
+`reimplementation` and `incoherent_package` to gate those corpus passes; `[clones]` and
 `[reimplementation]` set the duplicate- and reimplementation-detection thresholds. An
 unknown key warns and is ignored, so a typo is visible rather than silent. The bands,
 the `cut`, the clone thresholds, and rule on/off are configurable; the corpus floors
@@ -209,6 +213,9 @@ The cross-file passes need a linkage entry in the package, so they skip it. See
 
 The [documentation](https://MichaelHatherly.github.io/Dendro.jl/stable) covers the
 rest: the two-score model and every metric, duplicate and near-duplicate detection,
-within-file cohesion, cross-file placement and scattering, dead private code by
+within-file cohesion, cross-file placement and scattering, files serving disjoint
+audiences, dependencies running against a directory pair's grain, dependency cycles
+reported as the edges that break them (`dependency_cycle`, banded on the number of files
+caught in the cycle at `[5, 10]`), hub files by fan-in and fan-out, dead private code by
 reachability, suppression directives and path ignores, custom rules, and the public API
 reference.

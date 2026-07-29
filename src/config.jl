@@ -16,9 +16,13 @@
 # The percentile cutoff a corpus-relative metric flags above, absent a `.dendro.toml`.
 const DEFAULT_CUT = 0.95
 
-# The four relational metrics whose band a `[bands]` key may set. The rest of a
-# `[bands]` table names scalar rules.
-const RELATIONAL_BANDS = (:unnatural, :low_cohesion, :scattered, :misplaced)
+# The relational metrics whose band a `[bands]` key may set. The rest of a `[bands]`
+# table names scalar rules. Ordered as the `Config` fields are, since the constructor is
+# positional and every band shares a type.
+const RELATIONAL_BANDS = (
+    :unnatural, :low_cohesion, :scattered, :split_audience, :misplaced,
+    :back_edge, :dependency_cycle, :hub, :incoherent_package,
+)
 
 # A malformed `.dendro.toml` value: a band that is not two integers, a `cut` that is
 # not a number, a rule toggle that is not a boolean. Carried as one exception type so
@@ -39,9 +43,10 @@ config_error(msg) = throw(ConfigError(msg))
 
 Resolved tuning thresholds for one analysis, built by `discover_config` from the
 built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
-overrides scalar rule `(warn, high)` tuples by metric name; the four relational fields
-override the relational bands; `rules` toggles a rule on or off by name, and the
-`reimplementation` corpus pass with it; `min_size`, `threshold`, and `radius_factor`
+overrides scalar rule `(warn, high)` tuples by metric name; one field per relational
+metric overrides that metric's band; `rules` toggles a rule on or off by name, and the
+`reimplementation` and `incoherent_package` corpus passes with it; `min_size`,
+`threshold`, and `radius_factor`
 are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
 cutoff; `languages` carries the languages the config registers beyond the ones Dendro
 ships, each a `LanguageProfile` naming where to load its grammar and queries from.
@@ -53,7 +58,12 @@ struct Config
     unnatural::Tuple{Int, Int}
     low_cohesion::Tuple{Int, Int}
     scattered::Tuple{Int, Int}
+    split_audience::Tuple{Int, Int}
     misplaced::Tuple{Int, Int}
+    back_edge::Tuple{Int, Int}
+    dependency_cycle::Tuple{Int, Int}
+    hub::Tuple{Int, Int}
+    incoherent_package::Tuple{Int, Int}
     rules::Dict{Symbol, Bool}
     min_size::Int
     threshold::Float64
@@ -79,7 +89,7 @@ scalar_metric_names() = Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES] if r
 # Corpus passes a `[rules]` key may toggle alongside the per-unit rules. They are
 # gated in `analyze` rather than resolved into the rule set, so `resolve_rules`
 # ignores these names.
-const TOGGLEABLE_RELATIONAL = (:reimplementation,)
+const TOGGLEABLE_RELATIONAL = (:reimplementation, :incoherent_package)
 
 # Every rule name a `[rules]` key may toggle: built-in or optional, of either kind,
 # plus the toggleable corpus passes.
@@ -350,9 +360,41 @@ function discover_config(roots; explicit = nothing, use_files = true)
         get(acc.relational, :unnatural, UNNATURAL_BAND),
         get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
         get(acc.relational, :scattered, SCATTERED_BAND),
+        get(acc.relational, :split_audience, SPLIT_AUDIENCE_BAND),
         get(acc.relational, :misplaced, MISPLACED_BAND),
+        get(acc.relational, :back_edge, BACK_EDGE_BAND),
+        get(acc.relational, :dependency_cycle, DEPENDENCY_CYCLE_BAND),
+        get(acc.relational, :hub, HUB_BAND),
+        get(acc.relational, :incoherent_package, INCOHERENT_PACKAGE_BAND),
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
         scalars.reimpl_threshold, acc.languages,
+    )
+end
+
+"""
+    override_config(config; cut=nothing, min_size=nothing, threshold=nothing, radius_factor=nothing) -> Config
+
+`config` with the thresholds a caller named directly applied over it, the last layer of
+the cascade [`discover_config`](@ref) resolves the earlier ones of. A `nothing` keeps the
+config's own value.
+
+[`analyze`](@ref) folds its keywords in through this, so a threshold is resolved once and
+every pass reads it from the same place rather than from a keyword the caller may or may
+not have set.
+"""
+function override_config(
+        config::Config; cut = nothing, min_size = nothing,
+        threshold = nothing, radius_factor = nothing
+    )
+    return Config(
+        cut === nothing ? config.cut : Float64(cut), config.bands,
+        config.unnatural, config.low_cohesion, config.scattered, config.split_audience,
+        config.misplaced, config.back_edge, config.dependency_cycle, config.hub,
+        config.incoherent_package, config.rules,
+        min_size === nothing ? config.min_size : Int(min_size),
+        threshold === nothing ? config.threshold : Float64(threshold),
+        radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
+        config.reimpl_threshold, config.languages,
     )
 end

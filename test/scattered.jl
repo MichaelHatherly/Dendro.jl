@@ -61,3 +61,31 @@ end
     hit = only(Dendro.cluster_scattered(files, graph; band = (2, 3)))
     @test hit.suppressed
 end
+
+@testitem ":scattered labels each unit with the file its community is anchored in" setup = [Fixtures] tags = [:scattered] begin
+    # The score says how many communities a file's units are pulled into. What names the
+    # edit is which file each one is pulled toward, so every location carries it: a reader
+    # gets the move from the finding rather than having to rebuild the graph to find it.
+    mod = Fixtures.parsedfile(:julia, "include(\"foo.jl\")\ninclude(\"a.jl\")\ninclude(\"b.jl\")\n"; file = "mod.jl")
+    foo = Fixtures.parsedfile(:julia, "fa() = ay() + az()\nfb() = by() + bz()\n"; file = "foo.jl")
+    a = Fixtures.parsedfile(:julia, "ay() = az()\naz() = ay()\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "by() = bz()\nbz() = by()\n"; file = "b.jl")
+    files = [mod, foo, a, b]
+    graph = Dendro.build_corpus_graph(files, Dendro.corpus_symbols(files))
+    f = only(Dendro.cluster_scattered(files, graph; band = (2, 3)))
+
+    @test [(l.unit, l.label) for l in f.locations] ==
+        [("fa", "belongs with a.jl"), ("fb", "belongs with b.jl")]
+end
+
+@testitem "a location carries no label unless a finding gives it one" tags = [:scattered] begin
+    # A label is evidence a finding attaches to a site, so an ordinary per-file finding
+    # leaves it empty and the three-argument constructor stays the common shape.
+    @test Dendro.Location("f.jl", 3, "f").label == ""
+
+    mktempdir() do dir
+        write(joinpath(dir, "a.jl"), "function f(a, b, c, d, e, g, h, i)\n    return a\nend\n")
+        hit = only(filter(x -> x.metric === :parameter_count, Dendro.analyze(dir)))
+        @test first(hit.locations).label == ""
+    end
+end

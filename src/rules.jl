@@ -84,9 +84,14 @@ const RELATIONAL = (
     unnatural = :unnatural,
     low_cohesion = :low_cohesion,
     scattered = :scattered,
+    split_audience = :split_audience,
     misplaced = :misplaced,
     unreferenced = :unreferenced,
     reimplementation = :reimplementation,
+    back_edge = :back_edge,
+    dependency_cycle = :dependency_cycle,
+    hub = :hub,
+    incoherent_package = :incoherent_package,
 )
 const RELATIONAL_METRICS = values(RELATIONAL)
 

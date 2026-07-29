@@ -16,8 +16,20 @@ high_floor(findings) = Findings(filter(f -> f.absolute === :high, findings))
 # and clone members distinct. `root` anchors the file paths so HEAD and base align.
 const FloorKey = Tuple{Symbol, Vector{Tuple{String, String}}}
 
-fkey(f::Finding, root::AbstractString)::FloorKey =
-    (f.metric, sort!([(relpath(realpath(loc.file), root), loc.unit) for loc in f.locations]))
+fkey(f::Finding, root::AbstractString, rels::Dict{String, String})::FloorKey =
+    (f.metric, sort!([(relative_to(rels, loc.file, root), loc.unit) for loc in f.locations]))
+
+# One location's path made repo-relative, memoized across a whole keying pass. `realpath` is
+# a syscall, `fkey` resolves every location of every finding, and the architecture rules
+# carry many: a `:back_edge` finding names every reference site across its edge, so one
+# corpus file is resolved dozens of times over a run without this.
+function relative_to(rels::Dict{String, String}, path::String, root::AbstractString)
+    hit = get(rels, path, "")
+    isempty(hit) || return hit
+    resolved = relpath(realpath(path), root)
+    rels[path] = resolved
+    return resolved
+end
 
 # The base error floor as a multiset of keys. `git archive` the `since` revision of just
 # `paths` into a tempdir, no worktree or index mutation, analyze that, and count each
@@ -44,8 +56,9 @@ function base_floor_counts(roots::Vector{String}, since, root::AbstractString; c
         troot = realpath(tmp)
         tpaths = String[joinpath(troot, r) for r in rels if ispath(joinpath(troot, r))]
         (archived && !isempty(tpaths)) || return
+        resolved = Dict{String, String}()
         for f in high_floor(active(analyze(tpaths; config, rules, ignore, language)))
-            k = fkey(f, troot)
+            k = fkey(f, troot, resolved)
             counts[k] = get(counts, k, 0) + 1
         end
     end
@@ -59,9 +72,10 @@ end
 # flags, and clones key uniformly, no special case.
 function ratchet(head::Findings, base_counts::Dict{FloorKey, Int}, root::AbstractString)
     counts = copy(base_counts)
+    resolved = Dict{String, String}()
     out = Finding[]
     for f in head
-        k = fkey(f, root)
+        k = fkey(f, root, resolved)
         n = get(counts, k, 0)
         n > 0 ? (counts[k] = n - 1) : push!(out, f)
     end

@@ -80,6 +80,12 @@ A control-free whole function is boilerplate too, a dispatch stub or forwarding
 overload, so it clears the block floor, not the function floor. Only a function with
 control flow is a meaningful unit at the lower floor.
 The moment clone detection reaches for types or call graphs, it has left the bargain.
+Clusters are then ordered by how far apart their members sit in the module graph, one
+file to one directory to one community of directories to across communities, because two
+copies either side of a boundary are a missing abstraction where two copies in one file
+are a tidy-up. That is a ranking and nothing more: it never moves a finding's value, its
+band, or its membership of the floor `errors` gates on, since a package downstream gates
+its own tests on that floor.
 
 Reimplementation candidates are vocabulary, still not meaning. A helper rewritten
 with a different shape shares no subtrees with the original, so the clone passes miss
@@ -122,6 +128,67 @@ within-file edges in the graph, read them folded in for scattering and as compon
 within one file for cohesion, keep the score the count of communities a file's units
 occupy that are anchored elsewhere, and keep it name-based and lexical like the rest of
 placement.
+
+The file graph is that resolution read one level up. Placement asks where a unit belongs;
+the file graph asks which file depends on which. Nodes are corpus files, an edge counts the
+references crossing from one to another, and it carries the definition names behind it and
+the import statement that admits it, so a finding built on it names an edit rather than a
+score. It reads unfiltered references where placement drops the cross-cutting ones. That
+cut is right for placement, since without it a unit is judged to belong wherever a shared
+helper lives, and wrong here, since a file everything reaches for is the observation an
+architecture question is after. So it is a separate constructor over the same primitives,
+not a mode flag on `build_corpus_graph`: one function serving both notions of an edge
+leaves every reader working out which one a call site meant. Everything else holds.
+Name-based and lexical, gated by declared visibility, a name matching several definitions
+splits its weight, no types and no dispatch. Contract it by directory (`module_graph`) for
+a question about packages, not by a declared module, which some languages have and some do
+not, so the same rule would fire differently across a polyglot corpus for reasons unrelated
+to the code. An import statement is evidence on an edge, never an edge on its own: the
+dependency is the reference that crossed, and that is where the bargain's line sits here.
+
+Grain is the first question asked of that graph. Between two directories, count the
+reference weight each way: when one direction carries nearly all of it, the code has
+established a direction and the references going back run against it, each one an import
+to drop and a definition to move. `:back_edge` reads that, inferring the layering from the
+corpus rather than from a declared layer map nobody maintains. Higher dominance is worse,
+because a pair that couples both ways in earnest is a cycle rather than a violated grain.
+The score is a ratio, so it never bounds the size of the resulting edit: a pair with a
+large majority side clears the band while still carrying dozens of references home, one
+finding each. The location count says how big the edit is; the score does not, which is
+why a pair spread over more than a few file edges reports below `:high` whatever its
+dominance: it still names every edge, it just stops claiming an edit it cannot deliver,
+and one observation stays one observation rather than a burst of gate errors.
+Its locations are the import statement and then every reference across the edge, which is
+wider than any per-file metric's and is what lets a diff that adds a use of an
+already-imported name still scope the finding in. The consequence, that the gate ratchet
+re-reports a back edge each time a reference joins it, is the behaviour wanted and not a
+defect: one more reference across a back edge is worsening, and the ratchet is there to
+catch worsening. Deliberate callbacks and plugin registration point backwards on purpose;
+answer those with a suppression, not a smarter model.
+
+A hub is that graph read per file. A file both depended on by much of the corpus and
+depending on much of it propagates every change in either direction, so `:hub` scores
+`min(fan_in, fan_out)` over distinct files and nothing else: fan-in alone is every utility
+and fan-out alone every orchestrator, and only the conjunction names the file in the
+middle. Keep the `min`. The proposal is the split, the hub's definitions grouped by who
+consumes them, and a hub whose consumers all reach the whole file is reported as a warning
+with no proposal rather than dressed up as one. Both counts grow with the corpus, so the
+absolute band here is weaker than any per-function one and the percentile carries most of
+the weight, which is the two-score model earning its place rather than a defect to tune
+away.
+
+Layout is the same reading taken per directory. Placement asks where a unit belongs and
+scattering asks it per file; `:incoherent_package` asks it of the directory, the level a
+repo declares its structure at, scoring how much of a directory sits in communities
+anchored somewhere else. It reads the filtered unit graph, the one place among the
+architecture rules that does, because community detection needs the cross-cutting cut or
+a shared helper collapses the corpus into one community. A percentage, not a count, so a
+large directory is comparable with a small one. It proposes a rearrangement rather than a
+bounded edit and restates per directory much of what `:scattered` says per file, so it
+ships off by default and never reaches the gate floor. The overlap was measured before
+shipping it, two of 24 findings across 37 corpora landing in directories `:scattered`
+already covered file by file, and that measurement is the standard any future
+directory-level rule answers to.
 
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never

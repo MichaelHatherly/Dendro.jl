@@ -238,3 +238,20 @@ end
         @test all(loc.line == 1 for loc in first(hits).locations)
     end
 end
+
+@testitem "a source file holding a NUL byte is reported and skipped" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze
+
+    mktempdir() do dir
+        # Tree-sitter takes the source as a C string, so a file carrying an embedded NUL
+        # cannot be parsed at all. A corpus can hold one, typically a fuzzer test case
+        # checked in beside real source, and the scan has to report that file and carry on
+        # rather than die on it.
+        good = joinpath(dir, "good.jl")
+        write(good, "function f(x)\n    return x + 1\nend\n")
+        write(joinpath(dir, "fuzz.jl"), "function g()\n    return \"a\0b\"\nend\n")
+
+        findings = @test_logs (:warn,) match_mode = :any analyze(dir)
+        @test all(loc.file == good for finding in findings for loc in finding.locations)
+    end
+end

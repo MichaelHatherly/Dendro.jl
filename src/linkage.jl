@@ -1,12 +1,13 @@
-# Corpus-wide symbol resolution. The per-file binding resolver (`bindings.jl`) leaves
-# a reference unbound when its definition lives in another file. This builds the table
-# those references resolve against: every top-level definition across the corpus, each
-# carrying the enclosing module path that scopes a name match. Name-based and lexical,
-# never typed: it records what a name is declared as, not what a call dispatches to. The
-# file boundary is crossed; the symbol-resolution one is not.
+# How a language lets one file see another's names. This is the registry side of cross-file
+# resolution: one independent `*_resolve`, export rule, and visibility rule per language,
+# the readings of a language's linkage query those rules are written over, and what each
+# linkage model makes visible for one file. What resolves a whole corpus against this is
+# `resolution.jl`.
 #
-# This file is a registry of per-language resolvers: one independent `*_resolve` and
-# visibility rule per language, with nothing to connect them, so it reads as low
+# Name-based and lexical, never typed: a rule here records what a name is declared as and
+# where a declared target points, not what a call dispatches to.
+#
+# One independent rule per language, with nothing to connect them, so it reads as low
 # cohesion by design.
 # dendro-ignore-file: low_cohesion
 
@@ -27,6 +28,9 @@ end
 # whether it is an external-entry root: a definition a wrapping construct the analyzer
 # cannot expand consumes (a macro, decorator, annotation, attribute), so reachability
 # roots the dead-code search from it rather than judging it dead.
+#
+# The record lives here rather than beside the pass that builds it, because every
+# per-language export and visibility rule below is written over one.
 struct CorpusDef
     file::String
     id::NodeId
@@ -41,7 +45,7 @@ end
 
 # Every top-level definition across the corpus. A cross-file reference resolves against
 # it by name, gated by what its file can see; the module path each def carries scopes a
-# match to the namespace a reference can reach.
+# match to the namespace a reference can reach. `corpus_symbols` (`resolution.jl`) builds it.
 struct SymbolTable
     defs::Vector{CorpusDef}
 end
@@ -94,18 +98,6 @@ function module_path_of(regions::Vector{ModuleRegion}, from::Int, to::Int)
     containing = ModuleRegion[r for r in regions if r.from <= from && to <= r.to]
     sort!(containing; by = r -> r.from - r.to)
     return String[r.name for r in containing]
-end
-
-# The scope with the largest span, the file root: the namespace a file-level definition
-# belongs to when no module encloses it.
-function root_scope(scopes::Vector{ScopeEntry})
-    best = scopes[1]
-    best_span = best.to - best.from
-    for s in scopes
-        span = s.to - s.from
-        span > best_span && (best = s; best_span = span)
-    end
-    return best
 end
 
 # The visibility a definition declares, read through the language's `Linkage.visibility`
@@ -225,49 +217,6 @@ function ancestor_of_type(node::TreeSitter.Node, kind::String)
     return nothing
 end
 
-# Add one file's top-level definitions to `table`. A definition is top-level when its
-# owning scope, hoisted for functions and types, is a namespace: the file root or a
-# module region. That excludes a helper defined inside another function, whose owning
-# scope is that function.
-function file_symbols!(table::SymbolTable, file::ParsedFile)
-    caps = file.index.scope_captures
-    isempty(caps.scopes) && return table
-    imports = imports_query_for(file)
-    regions = imports === nothing ? ModuleRegion[] : module_regions(file.tree, imports, file.source)
-    root = root_scope(caps.scopes)
-    namespaces = Set{Tuple{Int, Int}}([(root.from, root.to)])
-    for r in regions
-        push!(namespaces, (r.from, r.to))
-    end
-    units = file.index.functions
-    uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
-    link = get(LINKAGES, file.language, nothing)
-    for (i, d) in enumerate(caps.defnodes)
-        kind = caps.defkinds[i]
-        is_symbol_kind(kind) || continue
-        from, to = TreeSitter.byte_range(d)
-        owner = owning_scope(caps.scopes, from, to, caps.defhoist[i])
-        owner === nothing && continue
-        (owner.from, owner.to) in namespaces || continue
-        name = String(strip(TreeSitter.slice(file.source, d)))
-        path = module_path_of(regions, from, to)
-        unit = containing_unit(uranges, from, to)
-        line = Int(TreeSitter.start_point(d).row) + 1
-        external = link !== nothing && link.external_root(d, file.source)::Bool
-        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d), external))
-    end
-    return table
-end
-
-# A reference with no in-file definition: its identity, the name it uses, and the
-# function-unit index it sits in (0 at file scope). These are the references the corpus
-# graph resolves across files.
-struct UnboundRef
-    id::NodeId
-    name::String
-    unit::Int
-end
-
 # How a language writes a reference into a namespace, for the languages whose splice
 # carries namespaces. A definition inside a Julia `module` never joins the includer's
 # namespace, so nothing reaches it by bare name: a caller writes `Mod.name`. The resolver
@@ -324,51 +273,6 @@ function reference_name(
     return string(namespace, access.separator, name)
 end
 
-"""
-    unbound_references(file) -> Vector{UnboundRef}
-
-The references in `file` that resolve to no in-file definition, each tagged with the
-name it resolves under and its containing function unit. The per-file binding resolver
-drops these; the corpus graph picks them up and tries to resolve them against
-[`corpus_symbols`](@ref). A reference qualified by a namespace carries the qualified name
-([`reference_name`](@ref)). A file whose language ships no scopes query yields none.
-"""
-function unbound_references(file::ParsedFile)
-    caps = file.index.scope_captures
-    isempty(caps.scopes) && return UnboundRef[]
-    units = file.index.functions
-    uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
-    access = get(MODULE_ACCESS, file.language, nothing)
-    refs = UnboundRef[]
-    for r in caps.refnodes
-        rid = nodeid(r)
-        rid in caps.defids && continue
-        from, to = TreeSitter.byte_range(r)
-        name = String(strip(TreeSitter.slice(file.source, r)))
-        lookup_definition(caps.scopes, from, to, name) === nothing || continue
-        resolved = reference_name(r, file.source, access, name)
-        push!(refs, UnboundRef(rid, resolved, containing_unit(uranges, from, to)))
-    end
-    return refs
-end
-
-"""
-    corpus_symbols(files) -> SymbolTable
-
-The top-level definitions across `files`, each carrying its enclosing module path. The
-table a cross-file reference resolves against: each file contributes the functions,
-types, macros, and consts visible at its module scope, skipping locals and languages
-with no scopes query.
-"""
-function corpus_symbols(files::Vector{ParsedFile})
-    table = SymbolTable()
-    append!(
-        table.defs,
-        parallel_flatmap(i -> file_symbols!(SymbolTable(), files[i]).defs, length(files), CorpusDef),
-    )
-    return table
-end
-
 # How a language lets one file see another's names. `model` picks the resolver:
 # `:splice` joins included files into one namespace (Julia `include`, C `#include`);
 # `:import` brings named or whole-module names in (Python, JS); `:directory` shares a
@@ -423,6 +327,13 @@ function Corpus(paths::Set{String})
     end
     return Corpus(paths, by_basename)
 end
+
+# The corpus a parsed file set forms, the shape every pass that resolves linkage needs.
+# Paths are normalised to POSIX separators here, since the resolvers build their targets
+# that way whatever the host uses, and a caller that spells this out is one `to_posix` away
+# from a set that matches nothing on Windows.
+Corpus(files::Vector{ParsedFile}) = Corpus(Set{String}(to_posix(f.file) for f in files))
+
 Base.in(path::AbstractString, corpus::Corpus) = path in corpus.paths
 
 # Resolve a splice target (`include("path")`) to a corpus file: the path is relative to
@@ -471,22 +382,47 @@ end
 # does the gating.
 import_exported(::CorpusDef, ::Set{String}) = true
 
-# Resolve a JavaScript module specifier to corpus files. Only a relative specifier
-# (`./mod`, `../lib/mod`) names a corpus file; a bare specifier is a package. The path
-# resolves against the importing file's directory, trying each module extension and an
-# `index` file in a directory.
+# The extensions a corpus file written in one of the two ECMAScript languages carries, the
+# forms a resolved module path is tried under.
+const JS_SOURCE_EXTENSIONS = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
+
+# The extensions a module specifier names a compiled module under. TypeScript's ESM output
+# convention has the specifier name the emitted `.js` file while the source on disk is
+# `.ts`, so a specifier ending this way is also tried with the extension dropped.
+const JS_OUTPUT_EXTENSIONS = (".js", ".jsx", ".mjs", ".cjs")
+
+# Resolve a JavaScript or TypeScript module specifier to corpus files. Only a relative
+# specifier (`./mod`, `../lib/mod`) names a corpus file; a bare specifier is a package. The
+# path resolves against the importing file's directory, tried as written, under each module
+# extension, and, where the specifier names a compiled module, again with that extension
+# dropped: `./a.js` in a TypeScript corpus names `a.ts`, and without that reading a corpus
+# following the convention resolves nothing across the file boundary. A specifier that
+# matches under both forms resolves to both, the same split a name matching several
+# definitions already takes.
 function js_resolve(target::AbstractString, fromfile::AbstractString, corpus::Corpus)
     spec = strip(target, ['"', '\'', '`'])
     startswith(spec, ".") || return String[]
     base = corpus_join(dirname(fromfile), spec)
     found = String[]
     base in corpus && push!(found, base)
-    for ext in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
+    js_candidates!(found, base, corpus)
+    for ext in JS_OUTPUT_EXTENSIONS
+        endswith(base, ext) || continue
+        js_candidates!(found, chopsuffix(base, ext), corpus)
+        break
+    end
+    return unique(found)
+end
+
+# The corpus files a resolved module path may name: the path under each module extension,
+# and a directory's `index` file under each.
+function js_candidates!(found::Vector{String}, base::AbstractString, corpus::Corpus)
+    for ext in JS_SOURCE_EXTENSIONS
         (base * ext) in corpus && push!(found, base * ext)
         index = corpus_join(base, "index" * ext)
         index in corpus && push!(found, index)
     end
-    return unique(found)
+    return found
 end
 
 # JavaScript exports by name: only a name the module marks `export` is visible to an
@@ -639,23 +575,32 @@ function corpus_exports(files::Vector{ParsedFile})
     return exps
 end
 
-# The `from <module> import <names>` statements in one file, each as the module string
-# and the set of names it brings into scope. A name is paired to the statement whose
-# byte range contains it, the same geometric test the module regions use.
+# One `from <module> import <names>` statement: the module string its `@import.from` child
+# names, the names it brings into scope (empty for a whole-module import), and the 1-based
+# line it sits on, which is where a finding about the dependency it admits points.
+struct ImportStatement
+    module_name::String
+    names::Set{String}
+    line::Int
+end
+
+# The import statements in one file. A `@import.from` module and each `@import.name` is
+# paired to the statement whose byte range contains it, the same geometric test the module
+# regions use. A statement whose module string is missing declares nothing and is dropped.
 function file_imports(file::ParsedFile)
     query = imports_query_for(file)
-    query === nothing && return Tuple{String, Set{String}}[]
-    regions = Tuple{Int, Int}[]
+    query === nothing && return ImportStatement[]
+    regions = Tuple{Int, Int, Int}[]
     froms = TreeSitter.Node[]
     names = TreeSitter.Node[]
     for cap in TreeSitter.each_capture(file.tree, query, file.source)
         name = TreeSitter.capture_name(query, cap)
-        name == "import" && push!(regions, TreeSitter.byte_range(cap.node))
+        name == "import" && push!(regions, (TreeSitter.byte_range(cap.node)..., line_of(cap.node)))
         name == "import.from" && push!(froms, cap.node)
         name == "import.name" && push!(names, cap.node)
     end
-    imports = Tuple{String, Set{String}}[]
-    for (rf, rt) in regions
+    imports = ImportStatement[]
+    for (rf, rt, line) in regions
         module_name = ""
         for node in froms
             nf, nt = TreeSitter.byte_range(node)
@@ -670,89 +615,131 @@ function file_imports(file::ParsedFile)
             nf, nt = TreeSitter.byte_range(node)
             (rf <= nf && nt <= rt) && push!(imported, String(strip(TreeSitter.slice(file.source, node))))
         end
-        push!(imports, (module_name, imported))
+        push!(imports, ImportStatement(module_name, imported, line))
     end
     return imports
 end
 
-# The splice targets an imports query tags in one file (`@include.path`), each as the
-# path string with quotes and all, for the linkage resolver to map to a corpus path, and
-# the byte range of the capture, which locates the namespace the splice lands in.
+# One splice target an imports query tagged (`@include.path`): the `path` string with quotes
+# and all, for the linkage resolver to map to a corpus path, the byte range of the capture,
+# which locates the namespace the splice lands in, and the 1-based line of the call that
+# spliced it.
+struct SpliceTarget
+    path::String
+    from::Int
+    to::Int
+    line::Int
+end
+
+# The splice targets an imports query tags in one file.
 function include_targets(tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString)
-    targets = Tuple{String, Int, Int}[]
+    targets = SpliceTarget[]
     for cap in TreeSitter.each_capture(tree, query, source)
         TreeSitter.capture_name(query, cap) == "include.path" || continue
         from, to = TreeSitter.byte_range(cap.node)
-        push!(targets, (String(TreeSitter.slice(source, cap.node)), from, to))
+        push!(targets, SpliceTarget(String(TreeSitter.slice(source, cap.node)), from, to, line_of(cap.node)))
     end
     return targets
 end
 
-# Both readings of the corpus splice graph a resolver needs: the component root each file
-# belongs to, the files an `include` chain joins into one namespace, and the module path
-# each file is spliced into.
-struct SpliceGraph
-    components::Dict{String, Int}
-    namespaces::Dict{String, Vector{String}}
-end
-
-# Follow every splice edge in the corpus. An `include` joins two files into one module, so
-# a reference in either resolves to the other's names, and the file it pulls in lands in
-# the namespace enclosing that `include`. Components come from a union-find over the file
-# index; the namespace paths are walked down from the splice roots.
-function splice_graph(files::Vector{ParsedFile}, corpus::Corpus)
-    index = Dict{String, Int}(to_posix(f.file) => i for (i, f) in enumerate(files))
-    edges = [Tuple{Int, Vector{String}}[] for _ in files]
-    included = falses(length(files))
-    parent = collect(1:length(files))
-    for (i, f) in enumerate(files)
-        link = get(LINKAGES, f.language, nothing)
-        (link === nothing || link.model !== :splice) && continue
-        query = imports_query_for(f)
-        query === nothing && continue
-        regions = module_regions(f.tree, query, f.source)
-        for (target, from, to) in include_targets(f.tree, query, f.source)
-            for path in link.resolve_target(target, f.file, corpus)::Vector{String}
-                j = get(index, path, 0)
-                j == 0 && continue
-                push!(edges[i], (j, module_path_of(regions, from, to)))
-                included[j] = true
-                parent[uf_find(parent, j)] = uf_find(parent, i)
-            end
+# Every linkage target one file declares, each as the string its language's resolver maps to
+# corpus paths and the 1-based line the statement sits on: an import statement's module and
+# a splice target alike. The file graph records these against the edge each admits, so a
+# finding about a dependency can name the statement to drop.
+#
+# One walk over the captures, not `file_imports` and `include_targets` in turn. The two
+# readings want different things from the same query, and a dependency edge needs neither
+# the imported name set nor the splice target's byte range, so walking twice would build
+# both to discard both. An import statement naming no module declares nothing and is
+# dropped, as it is for visibility.
+function declared_targets(file::ParsedFile)
+    query = imports_query_for(file)
+    query === nothing && return Tuple{String, Int}[]
+    regions = Tuple{Int, Int, Int}[]
+    froms = TreeSitter.Node[]
+    targets = Tuple{String, Int}[]
+    for cap in TreeSitter.each_capture(file.tree, query, file.source)
+        name = TreeSitter.capture_name(query, cap)
+        if name == "import"
+            push!(regions, (TreeSitter.byte_range(cap.node)..., line_of(cap.node)))
+        elseif name == "import.from"
+            push!(froms, cap.node)
+        elseif name == "include.path"
+            push!(targets, (String(TreeSitter.slice(file.source, cap.node)), line_of(cap.node)))
         end
     end
-    components = Dict{String, Int}(f.file => uf_find(parent, i) for (i, f) in enumerate(files))
-    return SpliceGraph(components, splice_namespaces(files, edges, included))
-end
-
-# The module path each file is spliced into, outermost first: the namespace enclosing the
-# `include` that pulled it in, accumulated down the chain from each splice root, a file
-# `included` marks as reached by no other. This is the namespace a file-scope definition
-# belongs to and its own per-file module path cannot record, since the `module` is
-# declared in the includer, not in the file itself. A file in an include cycle with no
-# root above it belongs to no namespace the corpus can name and gets no entry.
-function splice_namespaces(
-        files::Vector{ParsedFile}, edges::Vector{Vector{Tuple{Int, Vector{String}}}},
-        included::BitVector
-    )
-    paths = Dict{String, Vector{String}}()
-    queue = Int[]
-    for i in eachindex(files)
-        included[i] && continue
-        paths[files[i].file] = String[]
-        push!(queue, i)
-    end
-    head = 1
-    while head <= length(queue)
-        i = queue[head]
-        head += 1
-        for (j, site) in edges[i]
-            haskey(paths, files[j].file) && continue
-            paths[files[j].file] = vcat(paths[files[i].file], site)
-            push!(queue, j)
+    for (rf, rt, line) in regions
+        for node in froms
+            nf, nt = TreeSitter.byte_range(node)
+            rf <= nf && nt <= rt || continue
+            push!(targets, (String(strip(TreeSitter.slice(file.source, node))), line))
+            break
         end
     end
-    return paths
+    return targets
+end
+
+# Every corpus path one file's declared targets name, each paired with the 1-based line of
+# the statement naming it. The resolution half of a declared dependency: which language a
+# file is written in, what its statements point at, and where its resolver maps them all
+# live here, so the file graph is left with the node lookup and nothing else. A file whose
+# language has no linkage entry declares nothing this way.
+function resolved_targets(file::ParsedFile, corpus::Corpus)
+    link = get(LINKAGES, file.language, nothing)
+    link === nothing && return Tuple{String, Int}[]
+    out = Tuple{String, Int}[]
+    for (target, line) in declared_targets(file)
+        for path in link.resolve_target(target, file.file, corpus)::Vector{String}
+            push!(out, (path, line))
+        end
+    end
+    return out
+end
+
+# The scope with the largest span, the file root: the namespace a file-level definition
+# belongs to when no module encloses it.
+function root_scope(scopes::Vector{ScopeEntry})
+    best = scopes[1]
+    best_span = best.to - best.from
+    for s in scopes
+        span = s.to - s.from
+        span > best_span && (best = s; best_span = span)
+    end
+    return best
+end
+
+# Add one file's top-level definitions to `table`. A definition is top-level when its
+# owning scope, hoisted for functions and types, is a namespace: the file root or a
+# module region. That excludes a helper defined inside another function, whose owning
+# scope is that function.
+function file_symbols!(table::SymbolTable, file::ParsedFile)
+    caps = file.index.scope_captures
+    isempty(caps.scopes) && return table
+    imports = imports_query_for(file)
+    regions = imports === nothing ? ModuleRegion[] : module_regions(file.tree, imports, file.source)
+    root = root_scope(caps.scopes)
+    namespaces = Set{Tuple{Int, Int}}([(root.from, root.to)])
+    for r in regions
+        push!(namespaces, (r.from, r.to))
+    end
+    units = file.index.functions
+    uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    link = get(LINKAGES, file.language, nothing)
+    for (i, d) in enumerate(caps.defnodes)
+        kind = caps.defkinds[i]
+        is_symbol_kind(kind) || continue
+        from, to = TreeSitter.byte_range(d)
+        owner = owning_scope(caps.scopes, from, to, caps.defhoist[i])
+        owner === nothing && continue
+        (owner.from, owner.to) in namespaces || continue
+        name = String(strip(TreeSitter.slice(file.source, d)))
+        path = module_path_of(regions, from, to)
+        unit = containing_unit(uranges, from, to)
+        line = Int(TreeSitter.start_point(d).row) + 1
+        external = link !== nothing && link.external_root(d, file.source)::Bool
+        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d), external))
+    end
+    return table
 end
 
 # The splice path of a file the graph never reaches: a file in an include cycle with no
@@ -815,14 +802,14 @@ function import_visible(
         defs_by_file::Dict{String, Vector{Int}}, exports_by_file::Dict{String, Set{String}}
     )
     names = Dict{String, Vector{Int}}()
-    for (module_name, imported) in file_imports(f)
-        for path in link.resolve_target(module_name, f.file, corpus)::Vector{String}
+    for statement in file_imports(f)
+        for path in link.resolve_target(statement.module_name, f.file, corpus)::Vector{String}
             exports = get(() -> Set{String}(), exports_by_file, path)
             for di in get(defs_by_file, path, Int[])
                 d = table.defs[di]
                 d.file == f.file && continue
                 link.is_exported(d, exports)::Bool || continue
-                (isempty(imported) || d.name in imported) || continue
+                (isempty(statement.names) || d.name in statement.names) || continue
                 push!(get!(() -> String[], names, d.name), di)
             end
         end
@@ -858,41 +845,6 @@ function merge_visible(a::Dict{String, Vector{Int}}, b::Dict{String, Vector{Int}
     return out
 end
 
-"""
-    visible_defs(files, table, corpus) -> Dict{String, Dict{String, Vector{Int}}}
-
-For each file, the corpus definitions it can reference from another file, indexed by
-name. The linkage model selects how: a splice shares every file-scope name in an
-inclusion component, an import brings the named definitions of a resolved module, a
-package adds the same-directory types an import model resolves without an import. A
-file's own definitions are excluded, and a file whose language has no linkage sees
-nothing across the boundary.
-"""
-function visible_defs(files::Vector{ParsedFile}, table::SymbolTable, corpus::Corpus)
-    graph = splice_graph(files, corpus)
-    roots = graph.components
-    bycomp = Dict{Int, Vector{Int}}()
-    defs_by_file = Dict{String, Vector{Int}}()
-    defs_by_dir = Dict{String, Vector{Int}}()
-    for (di, d) in enumerate(table.defs)
-        root = get(roots, d.file, 0)
-        root == 0 || push!(get!(() -> Int[], bycomp, root), di)
-        push!(get!(() -> Int[], defs_by_file, to_posix(d.file)), di)
-        push!(get!(() -> Int[], defs_by_dir, dirname(d.file)), di)
-    end
-    n = length(files)
-    exps = corpus_exports(files)
-    exports_by_file = Dict{String, Set{String}}(to_posix(files[i].file) => exps[i] for i in 1:n)
-    vi = VisibilityIndex(table, corpus, roots, bycomp, graph.namespaces, defs_by_dir, defs_by_file, exports_by_file)
-    entries = Vector{Dict{String, Vector{Int}}}(undef, n)
-    parallel_map!(i -> file_visible(files[i], vi), entries)
-    visible = Dict{String, Dict{String, Vector{Int}}}()
-    for i in 1:n
-        visible[files[i].file] = entries[i]
-    end
-    return visible
-end
-
 # The corpus definitions one file can reference across the boundary, indexed by name. The
 # linkage model selects the resolver; every input is read-only, so this runs per file in
 # parallel from `visible_defs`.
@@ -906,106 +858,4 @@ function file_visible(f::ParsedFile, vi::VisibilityIndex)
         package_visible(f, vi.table, get(vi.defs_by_dir, dirname(f.file), Int[])),
     )
     return import_visible(f, vi.table, link, vi.corpus, vi.defs_by_file, vi.exports_by_file)
-end
-
-"""
-    corpus_visibility(files, table) -> Dict{String, Dict{String, Vector{Int}}}
-
-Each file's cross-file candidates by name: [`visible_defs`](@ref) over the corpus `files`
-themselves form. A caller that needs both the resolved references and the visibility
-behind them builds this once and passes it to [`corpus_references`](@ref), rather than
-resolving the corpus twice.
-"""
-corpus_visibility(files::Vector{ParsedFile}, table::SymbolTable) =
-    visible_defs(files, table, Corpus(Set{String}(to_posix(f.file) for f in files)))
-
-"""
-    corpus_references(files, table) -> Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}
-    corpus_references(files, visible) -> Vector{Tuple{ParsedFile, UnboundRef, Vector{Int}}}
-
-Every cross-file reference in `files` that resolves against `table`, paired with the
-file it sits in and the candidate definition indices its name reaches through
-[`visible_defs`](@ref). Unlike the corpus graph, this keeps a reference sitting in
-top-level code (`ref.unit == 0`): the reachability pass attributes a reference to its
-enclosing definition by byte range, not by unit, and a top-level reference is a root
-edge. A name matching several visible definitions yields all of them.
-
-Pass a prebuilt `visible` from [`corpus_visibility`](@ref) to share one resolution with
-a caller that reads the visibility itself.
-"""
-corpus_references(files::Vector{ParsedFile}, table::SymbolTable) =
-    corpus_references(files, corpus_visibility(files, table))
-
-function corpus_references(files::Vector{ParsedFile}, visible::Dict{String, Dict{String, Vector{Int}}})
-    return parallel_flatmap(length(files), Tuple{ParsedFile, UnboundRef, Vector{Int}}) do i
-        f = files[i]
-        names = visible[f.file]
-        acc = Tuple{ParsedFile, UnboundRef, Vector{Int}}[]
-        for ref in unbound_references(f)
-            candidates = get(names, ref.name, nothing)
-            candidates === nothing && continue
-            push!(acc, (f, ref, candidates))
-        end
-        acc
-    end
-end
-
-"""
-    definition_reach(files, visible, ndefs) -> Vector{Int}
-
-Per definition index, the number of units that can reference it across the file
-boundary: the population its reference breadth is measured against. A file's own
-definitions are outside its `visible` map, so this counts the same cross-file
-population [`corpus_references`](@ref) draws from. Source a definition's visibility
-cannot reach contributes nothing, which is what keeps a corpus-relative cut on breadth
-from moving when unrelated source is added alongside.
-"""
-function definition_reach(files::Vector{ParsedFile}, visible::Dict{String, Dict{String, Vector{Int}}}, ndefs::Int)
-    reach = zeros(Int, ndefs)
-    seen = Set{Int}()
-    for f in files
-        units = length(f.index.functions)
-        units == 0 && continue
-        empty!(seen)
-        for candidates in values(visible[f.file])
-            for di in candidates
-                di in seen && continue
-                push!(seen, di)
-                reach[di] += units
-            end
-        end
-    end
-    return reach
-end
-
-"""
-    public_surface(files) -> Dict{String, Set{String}}
-
-The export names that gate each file's public definitions. For an import model the set
-is the file's own [`file_exports`](@ref); for a splice model it is the union across the
-file's inclusion component, so a Julia name exported from the module file counts as
-public for the spliced file that defines it. A language with no linkage maps to an empty
-set; its convention or modifier predicate decides publicness without consulting it.
-"""
-function public_surface(files::Vector{ParsedFile})
-    corpus = Corpus(Set{String}(to_posix(f.file) for f in files))
-    exps = corpus_exports(files)
-    own = Dict{String, Set{String}}(files[i].file => exps[i] for i in eachindex(files))
-    components = splice_graph(files, corpus).components
-    by_component = Dict{Int, Set{String}}()
-    for f in files
-        link = get(LINKAGES, f.language, nothing)
-        (link === nothing || link.model !== :splice) && continue
-        union!(get!(() -> Set{String}(), by_component, components[f.file]), own[f.file])
-    end
-    surface = Dict{String, Set{String}}()
-    for f in files
-        link = get(LINKAGES, f.language, nothing)
-        surface[f.file] = if link !== nothing && link.model === :splice
-            get(by_component, components[f.file], Set{String}())
-        else
-            own[f.file]
-        end
-    end
-    return surface
 end

@@ -91,3 +91,17 @@ codebase with such families to surface them; suppress with
 The pass stays name-based and corpus-derived, like the rest of Dendro: no types,
 no call graph, no pretrained model. A rewrite that also renames the domain
 vocabulary stays invisible to it.
+
+## Ranking
+
+All three passes come back ordered by how much of the system a duplicate implicates.
+Dendro contracts the corpus by directory, groups directories into communities by how they
+couple, and reads each cluster's spread: within one file, within one directory, within one
+community of directories, or across communities. Widest spread leads. Two copies in one
+file are a tidy-up one reader makes in one sitting; two copies either side of a community
+boundary are a missing abstraction that unrelated parts of the codebase each built.
+
+This is ordering only. A cluster's value, its band, and its locations are the same either
+way, so a duplicate is neither promoted into nor demoted out of the floor
+[`errors`](@ref) gates on. Inside one distance each pass keeps its own order: cluster size
+for `:duplicate`, similarity for `:near_duplicate`, overlap for `:reimplementation`.

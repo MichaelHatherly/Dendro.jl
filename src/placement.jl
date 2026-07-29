@@ -65,17 +65,26 @@ function dominant(counts::Dict{K}) where {K}
     return best
 end
 
-# The file holding the most units in each community: the module the neighbourhood is
-# anchored in. A unit whose community is anchored in another file is one the graph would
-# move there.
-function community_plurality(graph::CorpusGraph, comm::Vector{Int})
+# The group holding the most units in each community: the module the neighbourhood is
+# anchored in. `key` names a unit's group, its file by default and its directory for the
+# rule that reads packages. A unit whose community is anchored in another group is one
+# the graph would move there.
+function community_plurality(graph::CorpusGraph, comm::Vector{Int}, key::Function = u -> u.file)
     counts = Dict{Int, Dict{String, Int}}()
     for (i, c) in enumerate(comm)
-        files = get!(() -> Dict{String, Int}(), counts, c)
-        files[graph.units[i].file] = get(files, graph.units[i].file, 0) + 1
+        groups = get!(() -> Dict{String, Int}(), counts, c)
+        g = key(graph.units[i])::String
+        groups[g] = get(groups, g, 0) + 1
     end
-    return Dict{Int, String}(c => dominant(files) for (c, files) in counts)
+    return Dict{Int, String}(c => dominant(groups) for (c, groups) in counts)
 end
+
+# The path of `target` as a label in `from`'s file reads it: relative to that file's
+# directory, so a label names a neighbour rather than repeating the corpus root. Shared by
+# the placement passes that name another file in a label rather than in a second location,
+# `:scattered` and `:split_audience`, where `:misplaced` points at a real site in the target.
+label_path(target::AbstractString, from::AbstractString) =
+    (dir = dirname(from); relpath(target, isempty(dir) ? "." : dir))
 
 # The location to point at in the target file: the unit there the source unit references
 # most, or, when its envy is toward a type or const rather than a unit, the first
@@ -136,9 +145,8 @@ function cluster_misplaced(
     counts = sort([s[2] for s in scored])
     enough = length(scored) >= min_files
     for (src, score, target) in scored
-        absolute = severity(score, band)
-        pct = enough ? searchsortedlast(counts, score) / length(counts) : nothing
-        (absolute != :ok || (pct !== nothing && pct >= cut)) || continue
+        absolute, pct = two_scores(score, counts, band, enough)
+        fires(absolute, pct, cut) || continue
         unit = graph.units[src]
         locations = [Location(unit.file, unit.line, unit.name), target]
         sup = is_suppressed(get(() -> Directive[], directives, unit.file), unit.line, RELATIONAL.misplaced)

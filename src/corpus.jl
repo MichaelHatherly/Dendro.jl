@@ -1,8 +1,6 @@
-# Corpus analysis. The per-file pipeline scores one file; this scores a whole
-# project, building the baseline from the corpus and adding cross-file duplicate
-# detection (exact and near, defined in `clones.jl`). Detection crosses the
-# single-file boundary but stays inside the syntactic bargain, no symbol
-# resolution, just node types and tree shape.
+# Gathering a corpus. Resolving roots into a set of paths, and parsing each path once
+# into the `ParsedFile` records every later pass reads. What runs over those records
+# lives in `analyze.jl`.
 
 # Parse each path once. Each record carries everything the baseline, the per-file
 # scoring pass, and duplicate clustering need, so no file is parsed twice. Files
@@ -30,54 +28,38 @@ function parse_corpus(
     parallel_chunks(() -> Dict{LanguageProfile, TreeSitter.Parser}(), n) do parsers, idxs
         parse_chunk!(files, parsers, entries, idxs, rules)
     end
-    return files
+    # A file the parse boundary turned away leaves its slot unassigned. Compacting in index
+    # order keeps the corpus order every later pass and the parallel determinism rely on.
+    return ParsedFile[files[i] for i in 1:n if isassigned(files, i)]
 end
 
 # Parse one chunk of files with the chunk's parser pool: a `TreeSitter.Parser` is stateful,
 # so each chunk keeps its own, reused across its files. Writes into the shared preallocated
-# `files` at each entry's index, so the corpus order matches the serial path.
+# `files` at each entry's index, so the corpus order matches the serial path. A file the
+# parser cannot take leaves its slot unassigned and `parse_corpus` drops it.
 function parse_chunk!(
         files::Vector{ParsedFile}, parsers::Dict{LanguageProfile, TreeSitter.Parser},
         entries::Vector{Tuple{String, LanguageProfile}}, idxs, rules
     )
     for i in idxs
         path, profile = entries[i]
-        parser = get!(() -> parser_for(profile), parsers, profile)
         source = read(path, String)
+        # Tree-sitter takes the source as a C string, so a byte no C string can carry is a
+        # file the parser will never accept. A corpus holds such a file now and then, a
+        # fuzzer test case checked in beside real source, and one of them must not take the
+        # whole scan down. Report it and carry on, the honest-over-silent reading: naming the
+        # file is what tells a skipped file from a clean one.
+        if occursin('\0', source)
+            @warn "Dendro: skipping a file with an embedded NUL byte, which cannot be parsed" path
+            continue
+        end
+        parser = get!(() -> parser_for(profile), parsers, profile)
         tree = parse(parser, source)
         index = build_index(tree, profile.name, source, query_for(profile), scopes_query_for(profile))
         directives = suppressions(index; file = path, rules)
         files[i] = ParsedFile(profile, source, path, tree, index, directives)
     end
     return nothing
-end
-
-# The git toplevel containing the first of `paths`, found from that path's directory.
-# The repo root the diff scope and the ratchet base both resolve their relative paths
-# against.
-function git_toplevel(paths::Union{AbstractString, AbstractVector{<:AbstractString}})
-    ref = paths isa AbstractString ? paths : first(paths)
-    dir = isdir(ref) ? ref : dirname(ref)
-    return String(strip(read(pipeline(`git -C $dir rev-parse --show-toplevel`; stderr = devnull), String)))
-end
-
-# A diff scope: the git toplevel and the changed line ranges per file, relative to
-# that root. Mirrors the per-file shape `changed_ranges` returns.
-struct Scope
-    root::String
-    ranges::Dict{String, Vector{UnitRange{Int}}}
-end
-
-# Keep only cluster findings touching a changed line, the diff-scoped view shared
-# by exact and near-miss duplicates. Without a scope every cluster passes through.
-function scope_clusters(clusters::Vector{Finding}, scope::Union{Scope, Nothing})
-    scope === nothing && return clusters
-    return filter(clusters) do c
-        any(c.locations) do loc
-            rel = relpath(realpath(loc.file), scope.root)
-            haskey(scope.ranges, rel) && inrange(scope.ranges[rel], loc.line)
-        end
-    end
 end
 
 # Recurse a directory for files Dendro can analyze, pruning dot-directories like
@@ -129,116 +111,4 @@ function collect_corpus(
     end
     unique!(corpus)
     return corpus
-end
-
-"""
-    analyze(path; base=nothing, cut=nothing, min_size=nothing, threshold=nothing, radius_factor=nothing, language=nothing, rules=nothing, ignore=String[], config=nothing) -> Findings
-    analyze(paths::AbstractVector; ...) -> Findings
-
-Analyze the file or folder at `path`. Every function gets scalar and flag metrics;
-functions duplicated across the corpus are reported as `:duplicate` findings, and
-functions that are close but not identical as `:near_duplicate`. A baseline is built
-from the corpus, the folder's files or the single file, so relative scoring works
-against the input's own distribution with no setup. With `base`, only functions
-changed against that git ref are reported, scored against the full-corpus baseline.
-
-Passing several paths folds their files into one corpus, so a package's `src` and
-`ext` are scanned together (`analyze(["src", "ext"])`) without dragging in the rest
-of the tree. The baseline, duplicate detection, and naturalness span the roots, so
-a function copied from one into another is caught. With `base`, all roots resolve
-to the one git toplevel and the repo-wide diff scopes them.
-
-`threshold` is the LCS-similarity cutoff for a near-miss, `radius_factor` scales the
-candidate-search radius to a function's size.
-
-The `:reimplementation` pass, vocabulary-overlap pairs the structural passes miss, is
-off by default and enabled only through the config, `[rules] reimplementation = true`
-in a `.dendro.toml` or a `config` built here; the `rules` kwarg carries `Rule`s and
-cannot express it. Its overlap cutoff is the config's `[reimplementation] threshold`.
-
-Thresholds come from a [`Config`](@ref): the bands, the percentile `cut`, and which
-rules are active. By default `analyze` discovers one, merging a user-global config and
-the repo `.dendro.toml` over the built-in defaults.
-Pass `config` to supply one directly and skip discovery. An explicit `cut` or `rules`
-overrides the config, so a caller keeps the final say.
-
-`cut` is the percentile cutoff a corpus-relative metric flags above; it defaults to
-the config's, `0.95` absent a file. `rules` is the active rule set; absent, it is the
-config's resolution of [`BUILTIN_RULES`](@ref) and the enabled [`OPTIONAL_RULES`](@ref).
-Pass your own to lint for a project's structural conventions:
-`analyze(path; rules = [BUILTIN_RULES; my_rule])`.
-
-`ignore` is a list of gitignore-style patterns, matched against each path relative
-to a scanned folder. Matching files are dropped before parsing, so vendored or
-generated source is neither flagged nor counted in the baseline:
-`analyze(path; ignore = ["vendor/", "*.generated.jl"])`. A leading `!` re-includes,
-a trailing `/` matches directories only. As in gitignore, a file under an excluded
-directory cannot be re-included. Patterns apply to folder scans, not a single named
-file.
-"""
-function analyze(
-        paths::Union{AbstractString, AbstractVector{<:AbstractString}};
-        base = nothing, cut = nothing,
-        min_size = nothing, threshold = nothing, radius_factor = nothing,
-        language = nothing, rules = nothing, ignore = String[], config = nothing
-    )
-    roots::Vector{String} = paths isa AbstractString ? [paths] : paths
-    cfg::Config = config === nothing ? discover_config(roots) : config
-    ecut = cut === nothing ? cfg.cut : Float64(cut)
-    active_rules = rules === nothing ? resolve_rules(cfg) : collect(Rule, rules)
-    msize = min_size === nothing ? cfg.min_size : Int(min_size)
-    thresh = threshold === nothing ? cfg.threshold : Float64(threshold)
-    radius = radius_factor === nothing ? cfg.radius_factor : Float64(radius_factor)
-
-    profiles = resolve_profiles(cfg)
-    corpus = collect_corpus(roots, ignore, language; profiles)
-    files = parse_corpus(corpus; language, rules = active_rules, profiles)
-    bl = baseline_from(files, active_rules)
-
-    # Assigned once, so the scoring closure captures it concretely, never as a `Core.Box`.
-    scope = if base === nothing
-        nothing
-    else
-        root = git_toplevel(roots)
-        Scope(root, changed_ranges(read(`git -C $root diff $base`, String)))
-    end
-
-    findings = parallel_flatmap(length(files), Finding) do i
-        f = files[i]
-        within = nothing
-        if scope !== nothing
-            rel = relpath(realpath(f.file), scope.root)
-            haskey(scope.ranges, rel) || return Finding[]
-            within = scope.ranges[rel]
-        end
-        scan = Scan(f.index, f.file; rules = active_rules, baseline = bl, cut = ecut, within = within, directives = f.directives)
-        findings_for(scan)
-    end
-
-    exact = cluster_duplicates(files; min_size = msize)
-    near = cluster_near_duplicates(files; min_size = msize, threshold = thresh, radius_factor = radius)
-    append!(findings, scope_clusters(exact, scope))
-    append!(findings, scope_clusters(near, scope))
-    # Opt-in corpus pass, gated here rather than resolved into the rule set. It reads
-    # the unscoped clone findings: a pair is excluded because the structural passes
-    # reported it at all, not because the diff kept it.
-    if get(cfg.rules, RELATIONAL.reimplementation, false)
-        append!(
-            findings, scope_clusters(
-                cluster_reimplementations(
-                    files; min_size = msize, threshold = cfg.reimpl_threshold,
-                    clone_findings = [exact; near]
-                ), scope
-            )
-        )
-    end
-    append!(findings, scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope))
-
-    table = corpus_symbols(files)
-    graph = build_corpus_graph(files, table)
-    append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = ecut, band = cfg.low_cohesion), scope))
-    append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
-    append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
-    append!(findings, scope_clusters(cluster_unreferenced(files, table), scope))
-    return Findings(findings)
 end
