@@ -12,6 +12,7 @@ makedocs(;
         "Cohesion and placement" => "cohesion.md",
         "Suppressing findings" => "suppression.md",
         "Custom rules" => "rules.md",
+        "Pattern rules" => "patterns.md",
         "Languages and limitations" => "languages.md",
         "API reference" => "api.md",
     ],

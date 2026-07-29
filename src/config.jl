@@ -49,7 +49,11 @@ metric overrides that metric's band; `rules` toggles a rule on or off by name, a
 `threshold`, and `radius_factor`
 are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
 cutoff; `languages` carries the languages the config registers beyond the ones Dendro
-ships, each a `LanguageProfile` naming where to load its grammar and queries from.
+ships, each a `LanguageProfile` naming where to load its grammar and queries from; and
+`patterns` carries the user-authored lint rules the config declares, each a
+[`PatternSpec`](@ref), sorted by name so a report reads in a stable order, and
+`patterns_dir` overrides where their queries are read from (empty for the default,
+`.dendro/patterns` beside the config).
 Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
@@ -70,6 +74,8 @@ struct Config
     radius_factor::Float64
     reimpl_threshold::Float64
     languages::Dict{Symbol, LanguageProfile}
+    patterns::Vector{PatternSpec}
+    patterns_dir::String
 end
 
 """
@@ -83,25 +89,37 @@ leak a registration into the next.
 resolve_profiles(config::Config) = merge(PROFILES, config.languages)
 
 # The scalar metric names a `[bands]` key may set: every scalar rule, built-in or
-# optional. Flag rules carry no band, so naming one under `[bands]` is an error.
-scalar_metric_names() = Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES] if r.kind === :scalar)
+# optional, plus the scalar pattern rules the same config declares. Flag rules carry no
+# band, so naming one under `[bands]` is an error. Pattern names come from the
+# accumulator rather than a constant, since a project's own rules are only known once its
+# config has been read.
+scalar_metric_names(acc) = union(
+    Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES] if r.kind === :scalar),
+    Set(s.name for s in values(acc.patterns) if s.kind === :scalar),
+)
 
 # Corpus passes a `[rules]` key may toggle alongside the per-unit rules. They are
 # gated in `analyze` rather than resolved into the rule set, so `resolve_rules`
 # ignores these names.
 const TOGGLEABLE_RELATIONAL = (:reimplementation, :incoherent_package)
 
-# Every rule name a `[rules]` key may toggle: built-in or optional, of either kind,
-# plus the toggleable corpus passes.
-rule_names() = union(Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES]), TOGGLEABLE_RELATIONAL)
+# Every rule name a `[rules]` key may toggle: built-in or optional, of either kind, the
+# toggleable corpus passes, and the pattern rules the same config declares, so a project
+# turns its own rule off the way it turns `cyclomatic` off.
+rule_names(acc) = union(
+    Set(r.name for r in [BUILTIN_RULES; OPTIONAL_RULES]),
+    TOGGLEABLE_RELATIONAL, keys(acc.patterns),
+)
 
 """
     resolve_rules(config) -> Vector{Rule}
 
 The active rule set the config selects: [`BUILTIN_RULES`](@ref) minus the names
-`config` disables, plus the [`OPTIONAL_RULES`](@ref) it enables, each scalar rule's
-band replaced by a `config` override when one is set. The default carries the same
-rules `analyze` used before configuration.
+`config` disables, plus the [`OPTIONAL_RULES`](@ref) it enables, then one rule per
+user-authored `[patterns.<name>]` declaration, each scalar rule's band replaced by a
+`config` override when one is set. A pattern rule toggles off through `[rules]` by the
+same name a built-in does. The default carries the same rules `analyze` used before
+configuration.
 """
 function resolve_rules(config::Config)
     out = Rule[]
@@ -110,12 +128,15 @@ function resolve_rules(config::Config)
             get(config.rules, r.name, default_on) && push!(out, reband(r, config))
         end
     end
+    for spec in config.patterns
+        get(config.rules, spec.name, true) && push!(out, reband(pattern_rule(spec), config))
+    end
     return out
 end
 
 # A rule with its band replaced by the config override, when the metric carries one.
 reband(r::Rule, config::Config) =
-    haskey(config.bands, r.name) ? Rule(r.name, r.kind, config.bands[r.name], r.fn) : r
+    haskey(config.bands, r.name) ? Rule(r.name, r.kind, config.bands[r.name], r.fn, r.severity) : r
 
 # Coerce a TOML value to the type a config field reads, erroring on a malformed one so a
 # typo fails loud rather than scoring against garbage. The `isa` guard narrows the `Any` a
@@ -143,6 +164,13 @@ reband(r::Rule, config::Config) =
 @inline config_string(value, key, source)::String =
     value isa AbstractString ? String(value) : config_error("`$key` in $source must be a string, got $value")
 
+# A path read from a config file, resolved against that file's own directory rather than
+# the process working directory. A config is discovered from a repo root while `dendro`
+# may be run from any subdirectory, so a relative path stored verbatim resolves against
+# whichever directory the caller happened to be in.
+config_path(value, key, source)::String =
+    (p = config_string(value, key, source); isabspath(p) ? p : normpath(joinpath(dirname(String(source)), p)))
+
 # Coerce a TOML `[warn, high]` array into the band tuple `severity` reads.
 @inline function band_tuple(value, name, source)::Tuple{Int, Int}
     if value isa AbstractVector && length(value) == 2
@@ -160,13 +188,14 @@ overrides() = (
     relational = Dict{Symbol, Tuple{Int, Int}}(),
     rules = Dict{Symbol, Bool}(),
     languages = Dict{Symbol, LanguageProfile}(),
+    patterns = Dict{Symbol, PatternSpec}(),
 )
 
 # Apply a `[bands]` table into the override dicts: a relational name lands in
 # `relational`, a scalar name in `bands`, anything else warns and is dropped, as a
 # typo'd directive does.
 function apply_bands!(acc, table, source)
-    scalars = scalar_metric_names()
+    scalars = scalar_metric_names(acc)
     for (name, value) in table
         sym = Symbol(name)
         if sym in RELATIONAL_BANDS
@@ -182,7 +211,7 @@ end
 
 # Apply a `[rules]` table: each known rule name toggles on or off, anything else warns.
 function apply_rules!(acc, table, source)
-    known = rule_names()
+    known = rule_names(acc)
     for (name, on) in table
         sym = Symbol(name)
         if sym in known
@@ -239,7 +268,10 @@ function apply_language!(acc, name::String, table::Dict{String, Any}, source)
         if key == "grammar"
             grammar = config_string(value, "languages.$name.$key", source)
         elseif key == "queries"
-            queries = config_string(value, "languages.$name.$key", source)
+            # Resolved against the config that declared it, as `patterns_dir` is: a
+            # relative path stored verbatim resolves against whichever directory `dendro`
+            # happened to be run from.
+            queries = config_path(value, "languages.$name.$key", source)
         elseif key == "extensions"
             extensions = extension_list(value, "languages.$name.$key", source)
         else
@@ -251,15 +283,21 @@ function apply_language!(acc, name::String, table::Dict{String, Any}, source)
     return nothing
 end
 
-# Apply a `[languages]` table: each subtable registers one language by name. The key type
-# is spelled out so the per-language applier reads a concrete table rather than an `Any`
-# TOML value, the same narrowing the `config_*` coercion helpers do.
-function apply_languages!(acc, table::Dict{String, Any}, source)
+# Apply a table of named subtables: `[<prefix>.<name>]` becomes one `applier` call per
+# entry, carrying the entry's name and its narrowed table. The key type is spelled out so
+# the applier reads a concrete table rather than an `Any` TOML value, the same narrowing
+# the `config_*` coercion helpers do. `[languages]` and `[patterns]` are both this shape,
+# differing only in the prefix and what each entry means.
+function apply_named_tables!(applier::F, acc, table::Dict{String, Any}, prefix, source) where {F}
     for (name, value) in table
-        apply_language!(acc, name, config_table(value, "languages.$name", source), source)
+        applier(acc, name, config_table(value, "$prefix.$name", source), source)
     end
     return nothing
 end
+
+# `[languages]` and `[patterns]` reach this directly from `apply_toml!` rather than
+# through a named wrapper each: the wrappers would differ only in two arguments, which is
+# a forwarding pair rather than two ideas.
 
 # Apply a `[reimplementation]` table: the overlap `threshold` a candidate pair must
 # reach, anything else warns.
@@ -278,23 +316,44 @@ end
 # settings (`cut` and the clone thresholds) it leaves. Only the keys present are
 # touched; an unknown top-level key warns rather than failing, so a file written for a
 # newer Dendro still applies the keys this version knows.
+# The order keys are applied in, which matters where one table's validation reads another's
+# result: `[bands]` checks a band name against the scalar rules, and a project's own
+# `[patterns]` declarations are among them, so patterns must land first. TOML parses to a
+# Dict, whose iteration order is arbitrary, so relying on file order would make a config
+# apply differently run to run.
+const CONFIG_KEY_ORDER = (
+    "patterns", "languages", "cut", "clones", "reimplementation",
+    "patterns_dir", "bands", "rules",
+)
+
 function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
-    for (key, value) in data
-        if key == "cut"
-            scalars = merge(scalars, (cut = config_float(value, key, source),))
-        elseif key == "clones"
-            scalars = apply_clones(scalars, config_table(value, key, source), source)
-        elseif key == "reimplementation"
-            scalars = apply_reimplementation(scalars, config_table(value, key, source), source)
-        elseif key == "bands"
-            apply_bands!(acc, config_table(value, key, source), source)
-        elseif key == "rules"
-            apply_rules!(acc, config_table(value, key, source), source)
-        elseif key == "languages"
-            apply_languages!(acc, config_table(value, key, source), source)
-        else
-            @warn "Dendro: unknown key in $source, ignored" key
-        end
+    for key in CONFIG_KEY_ORDER
+        haskey(data, key) || continue
+        scalars = apply_key!(acc, scalars, key, data[key], source)
+    end
+    for key in keys(data)
+        key in CONFIG_KEY_ORDER || @warn "Dendro: unknown key in $source, ignored" key
+    end
+    return scalars
+end
+
+# Apply one known top-level key, returning the scalar settings it leaves.
+function apply_key!(acc, scalars, key, value, source)
+    if key == "cut"
+        scalars = merge(scalars, (cut = config_float(value, key, source),))
+    elseif key == "clones"
+        scalars = apply_clones(scalars, config_table(value, key, source), source)
+    elseif key == "reimplementation"
+        scalars = apply_reimplementation(scalars, config_table(value, key, source), source)
+    elseif key == "bands"
+        apply_bands!(acc, config_table(value, key, source), source)
+    elseif key == "rules"
+        apply_rules!(acc, config_table(value, key, source), source)
+    elseif key == "patterns_dir"
+        scalars = merge(scalars, (patterns_dir = config_path(value, key, source),))
+    else
+        applier = key == "languages" ? apply_language! : apply_pattern!
+        apply_named_tables!(applier, acc, config_table(value, key, source), key, source)
     end
     return scalars
 end
@@ -312,6 +371,7 @@ function repo_config_dir(roots)
     isempty(roots) && return nothing
     try
         return git_toplevel(roots)
+        # dendro-ignore: empty_catch_binding -- the only question is whether git answered
     catch
         ref = first(roots)
         return isdir(ref) ? String(ref) : dirname(ref)
@@ -349,6 +409,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
     scalars = (
         cut = DEFAULT_CUT, min_size = DEFAULT_MIN_SIZE, threshold = DEFAULT_THRESHOLD,
         radius_factor = DEFAULT_RADIUS_FACTOR, reimpl_threshold = DEFAULT_REIMPL_THRESHOLD,
+        patterns_dir = "",
     )
     if use_files
         for path in config_files(roots, explicit)
@@ -369,6 +430,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
         scalars.reimpl_threshold, acc.languages,
+        sort!(collect(values(acc.patterns)); by = s -> s.name), scalars.patterns_dir,
     )
 end
 
@@ -395,6 +457,6 @@ function override_config(
         min_size === nothing ? config.min_size : Int(min_size),
         threshold === nothing ? config.threshold : Float64(threshold),
         radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
-        config.reimpl_threshold, config.languages,
+        config.reimpl_threshold, config.languages, config.patterns, config.patterns_dir,
     )
 end

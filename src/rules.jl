@@ -12,15 +12,58 @@ scalar rule carries its `(warn, high)` `band`; a flag rule carries `nothing`.
 
 - scalar `fn(unit, index) -> Int`, scored against the band and the corpus
   percentile.
-- flag `fn(index) -> Vector{TreeSitter.Node}`, one `:high` finding per returned
-  node.
+- flag `fn(index) -> Vector{TreeSitter.Node}`, one finding per returned node.
+
+`severity` is the absolute band a flag rule's findings carry, and is meaningful
+only for a flag: a scalar reads its band instead. Every built-in flag is `:high`,
+which is what puts it in the [`errors`](@ref) floor. A user-authored pattern rule
+defaults to `:warn`, since a rule firing across a corpus would otherwise make the
+gate unsatisfiable. The two kind-specific fields mirror each other: `band` is
+scalar-only, `severity` flag-only.
 """
 struct Rule
     name::Symbol
     kind::Symbol
     band::Union{Tuple{Int, Int}, Nothing}
     fn::Function
+    severity::Symbol
 end
+
+# The built-in rules predate the severity field and every one of them is `:high`, so it
+# defaults rather than being repeated fifteen times.
+Rule(name::Symbol, kind::Symbol, band, fn) = Rule(name, kind, band, fn, :high)
+
+"""
+    PatternSpec
+
+One user-authored lint rule, as declared by a `[patterns.<name>]` table in a
+`.dendro.toml`. Where a [`Rule`](@ref) carries the function that measures, a spec carries
+what a project said it wants; `pattern_rule` turns one into the other once the query
+behind it has compiled.
+
+`name` is the metric a finding reports under and the name an inline `dendro-ignore`
+accepts. `message` is what the rule says when it fires. `severity` is `:warn` or `:high`,
+deciding whether the rule reaches the [`errors`](@ref) floor. `kind` is `:flag` or
+`:scalar`; a scalar carries its `(warn, high)` `band` and a flag carries `nothing`.
+
+The declaration is language-independent. One `<lang>.patterns.scm` per grammar realises
+it, so a rule says one thing across every language a project scans.
+"""
+struct PatternSpec
+    name::Symbol
+    message::String
+    severity::Symbol
+    kind::Symbol
+    band::Union{Tuple{Int, Int}, Nothing}
+end
+
+# The severities a `[patterns.<name>]` table may name. `warn` is the default: `high_floor`
+# gates on an absolute band of `:high`, so a rule that fires across a corpus would make
+# `errors()` unsatisfiable. Promoting one is the project's call.
+const PATTERN_SEVERITIES = (:warn, :high)
+
+# The rule kinds. A flag reports presence, a scalar counts its matches per unit.
+const PATTERN_KINDS = (:flag, :scalar)
 
 """
     BUILTIN_RULES :: Vector{Rule}

@@ -95,6 +95,30 @@
         return nothing
     end
 
+    # The lines rule `name` reports in `src`, the end-to-end shape a pattern rule test
+    # asserts on: compile the query, bucket its captures, subtract the `.not` matches.
+    function pattern_lines(lang, src, name::Symbol, query::AbstractString)
+        profile = Dendro.PROFILES[Symbol(lang)]
+        grammar = Dendro.language_grammar(profile)
+        tree = TreeSitter.parse(Dendro.parser_for(profile), String(src))
+        index = idx(lang, src)
+        compiled = Dendro.compile_pattern_query(grammar, query, "$(lang).patterns.scm")
+        Dendro.index_patterns!(index, tree, compiled, String(src))
+        return sort!([Int(TreeSitter.start_point(n).row) + 1 for n in Dendro.pattern_hits(index, name)])
+    end
+
+    # --- Config fixtures ------------------------------------------------------
+    # `discover_config` with the user-global layer pointed at an empty directory, so a
+    # developer's own `~/.config/dendro/config.toml` cannot leak into an assertion.
+    # Every config-reading test wants this, and one that forgets it passes locally and
+    # fails on a machine that has a global config.
+    isolated_config(roots, explicit = nothing) =
+        mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            Dendro.discover_config(roots isa AbstractString ? [roots] : roots; explicit)
+        end
+    end
+
     # A single-file Julia module whose exported `run` calls each of `calls`, so every
     # helper is reachable and the unreferenced pass stays quiet. `defs` is the helper
     # source spliced after `run`.

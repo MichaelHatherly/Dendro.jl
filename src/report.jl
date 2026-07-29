@@ -108,10 +108,27 @@ struct Scan
     cut::Float64
     within::Union{Vector{UnitRange{Int}}, Nothing}
     directives::Vector{Directive}
+    # Whether each `(language, metric)`'s distribution supports a rank, resolved once per
+    # scan by `percentile_guard`. A metric that is zero for most units has a degenerate
+    # rank, and reading it would report a function for holding a single occurrence.
+    guard::Dict{Tuple{Symbol, Symbol}, Bool}
 end
 
-Scan(index, file; rules = BUILTIN_RULES, baseline = nothing, cut = 0.95, within = nothing, directives = Directive[]) =
-    Scan(index, String(file), rules, baseline, Float64(cut), within, directives)
+# dendro-ignore: parameter_count -- one keyword per piece of scan context, mirroring the struct
+function Scan(
+        index, file; rules = BUILTIN_RULES, baseline = nothing, cut = 0.95,
+        within = nothing, directives = Directive[],
+        guard = Dict{Tuple{Symbol, Symbol}, Bool}()
+    )
+    return Scan(index, String(file), rules, baseline, Float64(cut), within, directives, guard)
+end
+
+# Whether this scan reads `metric`'s corpus rank at all: only with a baseline to rank
+# against, and only where that baseline's distribution supports a rank. Absent an entry the
+# guard defaults to reading it, which is what keeps a `Scan` built without one behaving as
+# it did before the guard existed.
+ranks(scan::Scan, metric::Symbol) =
+    scan.baseline !== nothing && get(scan.guard, (scan.index.language, metric), true)
 
 # Whether a line span (or single line) is reported, given the scan's diff scope.
 in_scope(scan::Scan, a::Int, b::Int) = scan.within === nothing || intersects(scan.within, a, b)
@@ -123,8 +140,8 @@ function unit_findings!(out, scan::Scan, unit::FunctionUnit)
     for r in rules_of_kind(scan.rules, :scalar)
         value = r.fn(unit, scan.index)::Int
         band = severity(value, something(r.band))
-        pct = scan.baseline === nothing ? nothing :
-            percentile(scan.baseline, scan.index.language, r.name, value)
+        pct = ranks(scan, r.name) ?
+            percentile(scan.baseline, scan.index.language, r.name, value) : nothing
         outlier = pct !== nothing && pct >= scan.cut
         if band != :ok || outlier
             sup = is_suppressed(scan.directives, unit.firstline, r.name)
@@ -134,16 +151,21 @@ function unit_findings!(out, scan::Scan, unit::FunctionUnit)
     return out
 end
 
-# Flag findings for a set of nodes, all reported with the same metric. A node
-# that is itself a function unit is labelled with its name; other nodes are not.
-function flag_findings!(out, scan::Scan, nodes, metric::Symbol)
+# Flag findings for a set of nodes, all reported with the same metric, each carrying
+# `severity` as its absolute band. A node that is itself a function unit is labelled with
+# its name; other nodes are not.
+#
+# Every built-in flag takes the `:high` default, which is what puts it in the `errors`
+# floor. A user-authored pattern rule may be `:warn` instead, so declaring one cannot make
+# the gate unsatisfiable on a codebase where it fires.
+function flag_findings!(out, scan::Scan, nodes, metric::Symbol, severity::Symbol = :high)
     for node in nodes
         line = line_of(node)
         in_scope(scan, line) || continue
         name = is_function(node, scan.index) ?
             unit_name(node, scan.index) : ""
         sup = is_suppressed(scan.directives, line, metric)
-        push!(out, Finding(scan.file, line, name, metric, nothing, :high, nothing, :flag, sup))
+        push!(out, Finding(scan.file, line, name, metric, nothing, severity, nothing, :flag, sup))
     end
     return out
 end
@@ -163,7 +185,7 @@ function findings_for(scan::Scan)
         unit_findings!(out, scan, unit)
     end
     for r in rules_of_kind(scan.rules, :flag)
-        flag_findings!(out, scan, r.fn(scan.index)::Vector{TreeSitter.Node}, r.name)
+        flag_findings!(out, scan, r.fn(scan.index)::Vector{TreeSitter.Node}, r.name, r.severity)
     end
     return out
 end
@@ -236,7 +258,14 @@ any vector of [`Finding`](@ref)s.
 """
 struct Findings <: AbstractVector{Finding}
     items::Vector{Finding}
+    # Declared pattern rules that matched nothing anywhere in the corpus. A rule whose
+    # query compiles cleanly but names a shape the grammar never produces reports nothing
+    # and reads as clean code, which is the one failure neither tree-sitter's own
+    # validation nor a review catches. Carried on the result rather than warned, since it
+    # describes the run rather than diagnosing a file.
+    unmatched::Vector{Symbol}
 end
+Findings(items::Vector{Finding}) = Findings(items, Symbol[])
 
 Base.size(fs::Findings) = size(fs.items)
 Base.getindex(fs::Findings, i::Int) = fs.items[i]
@@ -284,6 +313,8 @@ function Base.show(io::IO, ::MIME"text/plain", findings::Findings)
     end
     shown == 0 && suppressed == 0 && println(io, "No findings.")
     suppressed > 0 && println(io, suppressed, " finding(s) suppressed by directives")
+    isempty(findings.unmatched) ||
+        println(io, "warning: pattern rule(s) matched nothing: ", join(findings.unmatched, ", "))
     return nothing
 end
 

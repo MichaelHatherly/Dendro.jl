@@ -122,3 +122,78 @@ SUITE["stages"]["corpus_graph"] =
     BenchmarkTools.@benchmarkable Dendro.build_corpus_graph($SYNTH_FILES, $SYNTH_TABLE)
 SUITE["stages"]["cohesion"] =
     BenchmarkTools.@benchmarkable Dendro.cluster_low_cohesion($SYNTH_FILES, $SYNTH_GRAPH)
+
+# === Pattern rules ===
+#
+# ADR-0001 asks for numbers before merge. The concern is `each_capture`, which
+# re-evaluates a match's predicates once per capture, so a `#match?` rule reruns its regex
+# per capture rather than per match. These four cases separate the cost of declaring rules
+# at all from the cost of the predicate a rule chooses.
+#
+# `none` is the control: the same corpus with no rules declared, which must not move, since
+# the pattern pass is skipped entirely for a project that declares none.
+
+const PATTERN_DIR = mktempdir()
+mkpath(joinpath(PATTERN_DIR, ".dendro", "patterns"))
+
+# Three flag rules over shapes that occur throughout the corpus, using `#eq?` and plain
+# node types: the cheap spelling.
+write(
+    joinpath(PATTERN_DIR, ".dendro", "patterns", "julia.patterns.scm"),
+    """
+    (catch_clause) @bench_catch
+    (catch_clause (identifier)) @bench_catch.not
+    (while_statement) @bench_loop
+    (integer_literal) @bench_literal
+    """
+)
+
+# One rule whose predicate is a regex, the shape the per-capture re-evaluation penalises.
+const PATTERN_MATCH_DIR = mktempdir()
+mkpath(joinpath(PATTERN_MATCH_DIR, ".dendro", "patterns"))
+write(
+    joinpath(PATTERN_MATCH_DIR, ".dendro", "patterns", "julia.patterns.scm"),
+    """
+    ((identifier) @bench_named (#match? @bench_named "^[a-z_]+[0-9]*\$"))
+    """
+)
+
+# Scalar rules count through `fold_unit` per unit, a different cost than reporting nodes.
+const PATTERN_SCALAR_DIR = mktempdir()
+mkpath(joinpath(PATTERN_SCALAR_DIR, ".dendro", "patterns"))
+write(
+    joinpath(PATTERN_SCALAR_DIR, ".dendro", "patterns", "julia.patterns.scm"),
+    "(integer_literal) @bench_count\n(identifier) @bench_names\n(call_expression) @bench_calls\n"
+)
+
+# A config built directly rather than discovered, so a benchmark never reads whatever
+# `.dendro.toml` happens to sit above the checkout.
+function pattern_config(dir, specs)
+    base = Dendro.discover_config([dir]; use_files = false)
+    return Dendro.Config(
+        base.cut, base.bands, base.unnatural, base.low_cohesion, base.scattered,
+        base.split_audience, base.misplaced, base.back_edge, base.dependency_cycle,
+        base.hub, base.incoherent_package, base.rules, base.min_size, base.threshold,
+        base.radius_factor, base.reimpl_threshold, base.languages, specs,
+        joinpath(dir, ".dendro", "patterns"),
+    )
+end
+
+flag_spec(name) = Dendro.PatternSpec(name, "benchmark rule", :warn, :flag, nothing)
+scalar_spec(name) = Dendro.PatternSpec(name, "benchmark rule", :warn, :scalar, (5, 10))
+
+const PATTERN_CONFIGS = (
+    none = pattern_config(PATTERN_DIR, Dendro.PatternSpec[]),
+    flags = pattern_config(PATTERN_DIR, [flag_spec(:bench_catch), flag_spec(:bench_loop), flag_spec(:bench_literal)]),
+    regex = pattern_config(PATTERN_MATCH_DIR, [flag_spec(:bench_named)]),
+    scalars = pattern_config(
+        PATTERN_SCALAR_DIR,
+        [scalar_spec(:bench_count), scalar_spec(:bench_names), scalar_spec(:bench_calls)],
+    ),
+)
+
+SUITE["patterns"] = BenchmarkTools.BenchmarkGroup()
+for (name, cfg) in pairs(PATTERN_CONFIGS)
+    SUITE["patterns"][string(name)] =
+        BenchmarkTools.@benchmarkable Dendro.analyze($CORPUS_DIR; config = $cfg)
+end

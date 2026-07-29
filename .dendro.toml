@@ -1,0 +1,11 @@
+# Dendro's own configuration. The bands stay at their defaults: they are the standard the
+# package ships, and retuning them here would leave the shipped opinion untested.
+
+[patterns.empty_catch_binding]
+message  = "`catch` with no exception binding discards the error"
+severity = "high"
+
+[patterns.magic_number]
+message = "unnamed numeric literals in one function"
+kind    = "scalar"
+band    = [5, 10]

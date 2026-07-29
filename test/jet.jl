@@ -131,6 +131,19 @@
 # measured non-costs worth recording: the iterative Tarjan walk and the `FileGraph.modules`
 # field each read zero, so neither the explicit frame stack nor the extra field cost
 # inference anything.
+#
+# The pattern rules (`patterns.jl`, `fragments.jl`, `pattern_tests.jl`, and the `[patterns]`
+# plumbing in `config.jl` and `corpus.jl`) raised sound from 1303 to 1428 and opt from 23 to
+# 27: a second query family carries a TOML applier of the shape each existing one has, a
+# coercer per declared field over the `Any` values `TOML.parsefile` returns, and an
+# `Any`-node tree walk per compiled query, every kind already counted. It first measured
+# 1507. Typing the `specs`, `fragments`, and `profiles` parameters the new code threads, and
+# narrowing the offsets and query text it walks to `Int` and `String`, removed 79, so what is
+# left is the applier and the walk rather than inference that could be recovered. The four
+# new opt reports are `apply_pattern!`'s coercion branches, the same dispatch on an `Any`
+# TOML value that `apply_language!`'s three already carry; `@inline`, which folded the
+# `config_*` helpers off this count, moves nothing there, since the dispatch is on the value
+# rather than on the conversion.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -138,8 +151,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1303  # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 23      # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 1428  # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 27      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))

@@ -13,3 +13,19 @@
     isempty(errs) || show(stdout, MIME"text/plain"(), errs)
     @test isempty(errs)
 end
+
+# Dendro's own pattern rules, checked against their fixtures. A rule format with no test
+# story would sit badly beside a package that gates itself on its own metrics, so the
+# package's rules answer to the same standard a project's would.
+@testitem "dogfood: Dendro's own pattern rules" tags = [:dogfood] begin
+    using Dendro
+
+    srcdir = joinpath(pkgdir(Dendro), "src")
+    failures = Dendro.check_patterns(srcdir)
+    isempty(failures) || foreach(f -> println(stdout, f), failures)
+    @test isempty(failures)
+
+    # A declared rule that matches nothing across the package's own source would be a
+    # rule nobody has exercised.
+    @test isempty(Dendro.analyze(srcdir).unmatched)
+end

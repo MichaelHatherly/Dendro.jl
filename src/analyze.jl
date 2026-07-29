@@ -190,8 +190,13 @@ function analyze(
 
     profiles = resolve_profiles(cfg)
     corpus = collect_corpus(roots, ignore, language; profiles)
-    files = parse_corpus(corpus; language, rules = active_rules, profiles)
+    files = parse_corpus(
+        corpus; language, rules = active_rules, profiles,
+        patterns = cfg.patterns, pattern_dirs = pattern_dirs(cfg, roots)
+    )
     bl = baseline_from(files, active_rules)
+    # Resolved once for the whole scan: which metrics' distributions support a rank.
+    guard = percentile_guard(bl, cfg.cut)
 
     # Assigned once, so the scoring closure captures it concretely, never as a `Core.Box`.
     scope = if base === nothing
@@ -209,12 +214,15 @@ function analyze(
             haskey(scope.ranges, rel) || return Finding[]
             within = scope.ranges[rel]
         end
-        scan = Scan(f.index, f.file; rules = active_rules, baseline = bl, cut = cfg.cut, within = within, directives = f.directives)
+        scan = Scan(
+            f.index, f.file; rules = active_rules, baseline = bl, cut = cfg.cut,
+            within = within, directives = f.directives, guard
+        )
         findings_for(scan)
     end
 
     res = resolve_corpus(files)
     append!(findings, clone_clusters(files, cfg, scope, ModulePlacement(res.file_graph)))
     append!(findings, relational_clusters(files, cfg, scope, res))
-    return Findings(findings)
+    return Findings(findings, unmatched_patterns(files, cfg.patterns))
 end
