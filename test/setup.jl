@@ -95,6 +95,18 @@
         return nothing
     end
 
+    # --- Config fixtures ------------------------------------------------------
+    # `discover_config` with the user-global layer pointed at an empty directory, so a
+    # developer's own `~/.config/dendro/config.toml` cannot leak into an assertion.
+    # Every config-reading test wants this, and one that forgets it passes locally and
+    # fails on a machine that has a global config.
+    isolated_config(roots, explicit = nothing) =
+        mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            Dendro.discover_config(roots isa AbstractString ? [roots] : roots; explicit)
+        end
+    end
+
     # A single-file Julia module whose exported `run` calls each of `calls`, so every
     # helper is reachable and the unreferenced pass stays quiet. `defs` is the helper
     # source spliced after `run`.

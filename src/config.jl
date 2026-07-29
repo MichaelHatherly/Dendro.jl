@@ -49,7 +49,9 @@ metric overrides that metric's band; `rules` toggles a rule on or off by name, a
 `threshold`, and `radius_factor`
 are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
 cutoff; `languages` carries the languages the config registers beyond the ones Dendro
-ships, each a `LanguageProfile` naming where to load its grammar and queries from.
+ships, each a `LanguageProfile` naming where to load its grammar and queries from; and
+`patterns` carries the user-authored lint rules the config declares, each a
+[`PatternSpec`](@ref), sorted by name so a report reads in a stable order.
 Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
@@ -70,6 +72,7 @@ struct Config
     radius_factor::Float64
     reimpl_threshold::Float64
     languages::Dict{Symbol, LanguageProfile}
+    patterns::Vector{PatternSpec}
 end
 
 """
@@ -160,6 +163,7 @@ overrides() = (
     relational = Dict{Symbol, Tuple{Int, Int}}(),
     rules = Dict{Symbol, Bool}(),
     languages = Dict{Symbol, LanguageProfile}(),
+    patterns = Dict{Symbol, PatternSpec}(),
 )
 
 # Apply a `[bands]` table into the override dicts: a relational name lands in
@@ -251,15 +255,21 @@ function apply_language!(acc, name::String, table::Dict{String, Any}, source)
     return nothing
 end
 
-# Apply a `[languages]` table: each subtable registers one language by name. The key type
-# is spelled out so the per-language applier reads a concrete table rather than an `Any`
-# TOML value, the same narrowing the `config_*` coercion helpers do.
-function apply_languages!(acc, table::Dict{String, Any}, source)
+# Apply a table of named subtables: `[<prefix>.<name>]` becomes one `applier` call per
+# entry, carrying the entry's name and its narrowed table. The key type is spelled out so
+# the applier reads a concrete table rather than an `Any` TOML value, the same narrowing
+# the `config_*` coercion helpers do. `[languages]` and `[patterns]` are both this shape,
+# differing only in the prefix and what each entry means.
+function apply_named_tables!(applier::F, acc, table::Dict{String, Any}, prefix, source) where {F}
     for (name, value) in table
-        apply_language!(acc, name, config_table(value, "languages.$name", source), source)
+        applier(acc, name, config_table(value, "$prefix.$name", source), source)
     end
     return nothing
 end
+
+# `[languages]` and `[patterns]` reach this directly from `apply_toml!` rather than
+# through a named wrapper each: the wrappers would differ only in two arguments, which is
+# a forwarding pair rather than two ideas.
 
 # Apply a `[reimplementation]` table: the overlap `threshold` a candidate pair must
 # reach, anything else warns.
@@ -291,7 +301,9 @@ function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
         elseif key == "rules"
             apply_rules!(acc, config_table(value, key, source), source)
         elseif key == "languages"
-            apply_languages!(acc, config_table(value, key, source), source)
+            apply_named_tables!(apply_language!, acc, config_table(value, key, source), key, source)
+        elseif key == "patterns"
+            apply_named_tables!(apply_pattern!, acc, config_table(value, key, source), key, source)
         else
             @warn "Dendro: unknown key in $source, ignored" key
         end
@@ -369,6 +381,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
         scalars.reimpl_threshold, acc.languages,
+        sort!(collect(values(acc.patterns)); by = s -> s.name),
     )
 end
 
@@ -395,6 +408,6 @@ function override_config(
         min_size === nothing ? config.min_size : Int(min_size),
         threshold === nothing ? config.threshold : Float64(threshold),
         radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
-        config.reimpl_threshold, config.languages,
+        config.reimpl_threshold, config.languages, config.patterns,
     )
 end
