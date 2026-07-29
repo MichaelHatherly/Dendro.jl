@@ -241,7 +241,14 @@ any vector of [`Finding`](@ref)s.
 """
 struct Findings <: AbstractVector{Finding}
     items::Vector{Finding}
+    # Declared pattern rules that matched nothing anywhere in the corpus. A rule whose
+    # query compiles cleanly but names a shape the grammar never produces reports nothing
+    # and reads as clean code, which is the one failure neither tree-sitter's own
+    # validation nor a review catches. Carried on the result rather than warned, since it
+    # describes the run rather than diagnosing a file.
+    unmatched::Vector{Symbol}
 end
+Findings(items::Vector{Finding}) = Findings(items, Symbol[])
 
 Base.size(fs::Findings) = size(fs.items)
 Base.getindex(fs::Findings, i::Int) = fs.items[i]
@@ -289,6 +296,8 @@ function Base.show(io::IO, ::MIME"text/plain", findings::Findings)
     end
     shown == 0 && suppressed == 0 && println(io, "No findings.")
     suppressed > 0 && println(io, suppressed, " finding(s) suppressed by directives")
+    isempty(findings.unmatched) ||
+        println(io, "warning: pattern rule(s) matched nothing: ", join(findings.unmatched, ", "))
     return nothing
 end
 

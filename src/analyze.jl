@@ -219,5 +219,5 @@ function analyze(
     res = resolve_corpus(files)
     append!(findings, clone_clusters(files, cfg, scope, ModulePlacement(res.file_graph)))
     append!(findings, relational_clusters(files, cfg, scope, res))
-    return Findings(findings)
+    return Findings(findings, unmatched_patterns(files, cfg.patterns))
 end

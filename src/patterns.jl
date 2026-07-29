@@ -397,6 +397,12 @@ function index_all_patterns!(
         index::QueryIndex, tree::TreeSitter.Tree, queries::Vector{PatternQuery}, source::AbstractString
     )
     for pq in queries
+        # Seed a bucket for every rule this query declares, so a rule that has a query here
+        # but matches nothing is still distinguishable from one with no query at all. That
+        # is what `unmatched_patterns` reads to tell a broken rule from a silent one.
+        for rule in rules_declared_by(pq.query)
+            rule in pq.shadowed || get!(PatternBucket, index.patterns, rule)
+        end
         index_patterns!(index, tree, pq.query, source; skip = pq.shadowed)
     end
     return index
@@ -442,4 +448,40 @@ function pattern_rule(spec::PatternSpec)
     spec.kind === :scalar &&
         return Rule(spec.name, :scalar, spec.band, (u, i) -> pattern_count(u, i, spec.name), spec.severity)
     return Rule(spec.name, :flag, nothing, i -> pattern_hits(i, spec.name), spec.severity)
+end
+
+# --- Rules that matched nothing -------------------------------------------------------
+
+"""
+    unmatched_patterns(files, specs) -> Vector{Symbol}
+
+The declared rules that matched nothing anywhere in `files`, sorted by name.
+
+A rule whose query compiles and then matches nothing reads as clean code. Tree-sitter
+catches a query naming a node type the grammar lacks, and the predicate allowlist catches
+an unimplemented predicate, but neither catches a well-formed query naming a shape that
+simply never occurs. This does.
+
+A rule is only reported when the corpus actually holds a file of a language it has a query
+for: a Python-only rule scanned over a Julia repo has not failed, it just had nothing to
+say.
+"""
+function unmatched_patterns(files::Vector{ParsedFile}, specs)
+    isempty(specs) && return Symbol[]
+    matched = Set{Symbol}()
+    for f in files, (name, bucket) in f.index.patterns
+        isempty(bucket.hits.nodes) || push!(matched, name)
+    end
+    reachable = reachable_pattern_rules(files)
+    return sort!(Symbol[s.name for s in specs if s.name in reachable && !(s.name in matched)])
+end
+
+# The rules that had a query to run against at least one file in the corpus. A rule with no
+# query for any language present is silent by construction, not broken.
+function reachable_pattern_rules(files::Vector{ParsedFile})
+    out = Set{Symbol}()
+    for f in files
+        union!(out, keys(f.index.patterns))
+    end
+    return out
 end

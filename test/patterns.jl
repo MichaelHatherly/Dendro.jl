@@ -397,3 +397,47 @@ end
         end
     end
 end
+
+@testitem "a rule that matched nothing is reported" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: analyze
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(root, ".dendro", "patterns"))
+    # `never_fires` is well-formed and names a real node type, so nothing at load catches
+    # it. It just never occurs in this corpus, which is the case only a scan can see.
+    write(
+        joinpath(root, ".dendro", "patterns", "julia.patterns.scm"),
+        "(while_statement) @loop_rule\n(macro_definition) @never_fires\n"
+    )
+    write(
+        joinpath(root, ".dendro.toml"),
+        "[patterns.loop_rule]\nmessage = \"m\"\n\n[patterns.never_fires]\nmessage = \"m\"\n"
+    )
+    write(joinpath(srcdir, "f.jl"), "function f(x)\n    while x\n        g()\n    end\nend\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            found = analyze(srcdir)
+            @test found.unmatched == [:never_fires]
+            @test occursin("never_fires", sprint(show, MIME"text/plain"(), found))
+        end
+    end
+end
+
+@testitem "a rule with no query for the corpus is not reported" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: analyze
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(root, ".dendro", "patterns"))
+    # Declared, and realised only for Python. A Julia corpus gives it nothing to say,
+    # which is not the same as the rule being broken.
+    write(joinpath(root, ".dendro", "patterns", "python.patterns.scm"), "(pass_statement) @py_only\n")
+    write(joinpath(root, ".dendro.toml"), "[patterns.py_only]\nmessage = \"m\"\n")
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            @test isempty(analyze(srcdir).unmatched)
+        end
+    end
+end
