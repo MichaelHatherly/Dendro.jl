@@ -9,3 +9,23 @@ severity = "high"
 message = "unnamed numeric literals in one function"
 kind    = "scalar"
 band    = [5, 10]
+
+[patterns.nested_ternary]
+message = "a ternary whose branch is another ternary reads as a chain with no keywords"
+
+[patterns.concrete_numeric_parameter]
+message = "parameter fixed to a sized numeric type, where a wider one costs nothing"
+
+[patterns.splat_concatenation]
+message = "`[a..., b...]` builds a vector by splatting where `[a; b]` says it directly"
+
+[patterns.manual_inline]
+message = "an inlining hint claims a benchmark; without one the compiler already decides"
+
+[patterns.mutable_global]
+message = "`const` bound to an empty container is global mutable state, not a constant"
+
+[patterns.field_chain]
+message = "field accesses reaching through an intermediate value in one function"
+kind    = "scalar"
+band    = [4, 8]

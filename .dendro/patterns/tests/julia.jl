@@ -58,3 +58,47 @@ function compound(x)
     span = 7 + 13    # dendro-expect: magic_number
     return x + span
 end
+
+# A ternary reached from another ternary's branch is a chain. One inside a call is not:
+# the call is where the reader stops.
+chained(v, hi, lo) = v >= hi ? :high : v >= lo ? :warn : :ok    # dendro-expect: nested_ternary
+single(v, hi) = v >= hi ? :high : :ok
+guarded(v, hi) = wrap(v >= hi ? :high : :ok)
+
+# A parameter narrowed to a sized numeric type, positionally and as a keyword default.
+scaled(x::Float64) = x                    # dendro-expect: concrete_numeric_parameter
+counted(n::UInt32) = n                    # dendro-expect: concrete_numeric_parameter
+weighted(x; w::Float64 = 0.5) = x * w     # dendro-expect: concrete_numeric_parameter
+
+# The wider type dispatches the same, and `Int` is what a literal already is.
+widened(x::Real, n::Integer) = x + n
+indexed(i::Int) = i
+
+# A return annotation asserts an inference result rather than narrowing dispatch, and a
+# struct field is where a concrete type earns its keep. Neither is the rule's business.
+asserted(x)::Float64 = x
+
+struct Sized
+    cut::Float64
+end
+
+# Splatting two operands to build a vector, against the concatenation that says it, and
+# against a call that splats its arguments.
+joined(a, b) = [a..., b...]    # dendro-expect: splat_concatenation
+direct(a, b) = [a; b]
+forwarded(a, b) = f(a..., b...)
+
+# An inlining hint, either direction. A macro's name in a string is not a macro call.
+@inline hinted(x) = x      # dendro-expect: manual_inline
+@noinline blocked(x) = x   # dendro-expect: manual_inline
+const HINTS = Set{String}(["@inline", "@noinline"])
+
+# A `const` container built empty exists to be filled. One built with its entries is a
+# lookup table, and one bound to an immutable value is an ordinary constant.
+const CACHE = Dict{Symbol, Int}()    # dendro-expect: mutable_global
+const TABLE = Dict{Symbol, Int}(:a => 1)
+const BAND = (1, 2)
+
+# A field access reaching through another field access. One step is how a record is read.
+reaching(f) = f.index.functions    # dendro-expect: field_chain
+shallow(f) = f.index
