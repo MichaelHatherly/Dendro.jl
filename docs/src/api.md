@@ -38,6 +38,14 @@ BUILTIN_RULES
 OPTIONAL_RULES
 ```
 
+## Pattern rules
+
+```@docs
+PatternSpec
+check_patterns
+PatternTestFailure
+```
+
 ## Configuration
 
 ```@docs

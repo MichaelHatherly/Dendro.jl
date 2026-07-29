@@ -7,7 +7,8 @@ import TreeSitter
 
 public analyze, active, errors, github_annotations, mermaid
 public Finding, Findings, Location
-public Rule, BUILTIN_RULES, OPTIONAL_RULES
+public Rule, BUILTIN_RULES, OPTIONAL_RULES, PatternSpec
+public check_patterns, PatternTestFailure
 public Config
 
 include("profile.jl")
