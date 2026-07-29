@@ -195,6 +195,8 @@ function analyze(
         patterns = cfg.patterns, pattern_dirs = pattern_dirs(cfg, roots)
     )
     bl = baseline_from(files, active_rules)
+    # Resolved once for the whole scan: which metrics' distributions support a rank.
+    guard = percentile_guard(bl, cfg.cut)
 
     # Assigned once, so the scoring closure captures it concretely, never as a `Core.Box`.
     scope = if base === nothing
@@ -212,7 +214,10 @@ function analyze(
             haskey(scope.ranges, rel) || return Finding[]
             within = scope.ranges[rel]
         end
-        scan = Scan(f.index, f.file; rules = active_rules, baseline = bl, cut = cfg.cut, within = within, directives = f.directives)
+        scan = Scan(
+            f.index, f.file; rules = active_rules, baseline = bl, cut = cfg.cut,
+            within = within, directives = f.directives, guard
+        )
         findings_for(scan)
     end
 

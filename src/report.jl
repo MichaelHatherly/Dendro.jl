@@ -108,10 +108,27 @@ struct Scan
     cut::Float64
     within::Union{Vector{UnitRange{Int}}, Nothing}
     directives::Vector{Directive}
+    # Whether each `(language, metric)`'s distribution supports a rank, resolved once per
+    # scan by `percentile_guard`. A metric that is zero for most units has a degenerate
+    # rank, and reading it would report a function for holding a single occurrence.
+    guard::Dict{Tuple{Symbol, Symbol}, Bool}
 end
 
-Scan(index, file; rules = BUILTIN_RULES, baseline = nothing, cut = 0.95, within = nothing, directives = Directive[]) =
-    Scan(index, String(file), rules, baseline, Float64(cut), within, directives)
+# dendro-ignore: parameter_count -- one keyword per piece of scan context, mirroring the struct
+function Scan(
+        index, file; rules = BUILTIN_RULES, baseline = nothing, cut = 0.95,
+        within = nothing, directives = Directive[],
+        guard = Dict{Tuple{Symbol, Symbol}, Bool}()
+    )
+    return Scan(index, String(file), rules, baseline, Float64(cut), within, directives, guard)
+end
+
+# Whether this scan reads `metric`'s corpus rank at all: only with a baseline to rank
+# against, and only where that baseline's distribution supports a rank. Absent an entry the
+# guard defaults to reading it, which is what keeps a `Scan` built without one behaving as
+# it did before the guard existed.
+ranks(scan::Scan, metric::Symbol) =
+    scan.baseline !== nothing && get(scan.guard, (scan.index.language, metric), true)
 
 # Whether a line span (or single line) is reported, given the scan's diff scope.
 in_scope(scan::Scan, a::Int, b::Int) = scan.within === nothing || intersects(scan.within, a, b)
@@ -123,8 +140,8 @@ function unit_findings!(out, scan::Scan, unit::FunctionUnit)
     for r in rules_of_kind(scan.rules, :scalar)
         value = r.fn(unit, scan.index)::Int
         band = severity(value, something(r.band))
-        pct = scan.baseline === nothing ? nothing :
-            percentile(scan.baseline, scan.index.language, r.name, value)
+        pct = ranks(scan, r.name) ?
+            percentile(scan.baseline, scan.index.language, r.name, value) : nothing
         outlier = pct !== nothing && pct >= scan.cut
         if band != :ok || outlier
             sup = is_suppressed(scan.directives, unit.firstline, r.name)

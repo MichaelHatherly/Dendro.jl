@@ -70,3 +70,43 @@ function percentile(baseline::Baseline, language::Symbol, metric::Symbol, value:
     (samples === nothing || isempty(samples)) && return nothing
     return searchsortedlast(samples, value) / length(samples)
 end
+
+# --- The percentile guard -------------------------------------------------------------
+#
+# A percentile only says something when the corpus spreads out under it. For a metric that
+# is zero across most of a codebase the rank degenerates: at the extreme, a unit holding no
+# matches sits above the cut and `fires` reports a function for containing nothing.
+#
+# The test is `pct@1`, the percentile a unit holding exactly one occurrence is assigned.
+# When that already breaches the cut, every unit with a single occurrence fires on rank
+# alone and the rank has stopped ranking. One `searchsortedlast` against the sorted samples
+# decides it, and the absolute band is untouched either way: this decides whether the rank
+# is read, never what the fixed band says.
+
+"""
+    percentile_informs(baseline, language, metric, cut) -> Bool
+
+Whether `(language, metric)`'s corpus distribution supports a rank at `cut`.
+
+False when a single occurrence already lands at or above the cut, which is the signature of
+a metric that is zero for most units. Such a metric is read on its absolute band alone.
+"""
+function percentile_informs(baseline::Baseline, language::Symbol, metric::Symbol, cut::Real)
+    at_one = percentile(baseline, language, metric, 1)
+    return at_one === nothing || at_one < cut
+end
+
+"""
+    percentile_guard(baseline, rules, cut) -> Dict{Tuple{Symbol, Symbol}, Bool}
+
+Whether each `(language, metric)` the baseline sampled supports a rank, resolved once per
+scan. Read per unit, so computing it per unit would repeat one binary search across every
+function in the corpus.
+"""
+function percentile_guard(baseline::Baseline, cut::Real)
+    out = Dict{Tuple{Symbol, Symbol}, Bool}()
+    for (language, metric) in keys(baseline.samples)
+        out[(language, metric)] = percentile_informs(baseline, language, metric, cut)
+    end
+    return out
+end
