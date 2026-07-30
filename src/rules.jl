@@ -20,12 +20,17 @@ which is what puts it in the [`errors`](@ref) floor. A user-authored pattern rul
 defaults to `:warn`, since a rule firing across a corpus would otherwise make the
 gate unsatisfiable. The two kind-specific fields mirror each other: `band` is
 scalar-only, `severity` flag-only.
+
+`fn` is abstractly typed, so calling it dispatches dynamically. Parametrising it
+would make every rule a distinct type, and the rule set is a `Vector{Rule}` a
+project extends at run time, which needs one. The dispatch is paid once per unit
+per rule, never per node.
 """
 struct Rule
     name::Symbol
     kind::Symbol
     band::Union{Tuple{Int, Int}, Nothing}
-    fn::Function
+    fn::Function    # dendro-ignore: abstract_field
     severity::Symbol
 end
 
@@ -46,6 +51,12 @@ accepts. `message` is what the rule says when it fires. `severity` is `:warn` or
 deciding whether the rule reaches the [`errors`](@ref) floor. `kind` is `:flag` or
 `:scalar`; a scalar carries its `(warn, high)` `band` and a flag carries `nothing`.
 
+`guard` says the rule is written to catch something the project intends never to write, so
+matching nothing is the state it wants rather than a rule to go and fix. Only the zero-match
+report reads it, and everything else treats a guard as any other rule. Without it that
+report, which exists to catch a query naming a shape the grammar never produces, cannot tell
+that case from a rule doing its job.
+
 The declaration is language-independent. One `<lang>.patterns.scm` per grammar realises
 it, so a rule says one thing across every language a project scans.
 """
@@ -55,7 +66,10 @@ struct PatternSpec
     severity::Symbol
     kind::Symbol
     band::Union{Tuple{Int, Int}, Nothing}
+    guard::Bool
 end
+PatternSpec(name::Symbol, message::String, severity::Symbol, kind::Symbol, band) =
+    PatternSpec(name, message, severity, kind, band, false)
 
 # The severities a `[patterns.<name>]` table may name. `warn` is the default: `high_floor`
 # gates on an absolute band of `:high`, so a rule that fires across a corpus would make
@@ -141,4 +155,13 @@ const RELATIONAL_METRICS = values(RELATIONAL)
 
 # Metric names a directive may name: the active rules plus the relational clone
 # metrics. An inline `dendro-ignore` naming anything else warns.
-metric_names(rules) = Symbol[(r.name for r in rules)..., RELATIONAL_METRICS...]
+#
+# `rules` is typed because the walk over it happens here rather than inside Base's
+# collection machinery: an untyped parameter leaves the sound gate analysing the
+# comprehension and the append against `Any`, and reading the result widens
+# `suppressions` in turn.
+function metric_names(rules::Vector{Rule})
+    names = Symbol[r.name for r in rules]
+    append!(names, RELATIONAL_METRICS)
+    return names
+end

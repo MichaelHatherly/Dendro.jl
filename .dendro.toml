@@ -1,9 +1,63 @@
 # Dendro's own configuration. The bands stay at their defaults: they are the standard the
 # package ships, and retuning them here would leave the shipped opinion untested.
+#
+# Most rules below are guards. A lint rule earns its place by naming something that is
+# wrong whatever the intent, and this source is hand-maintained, so the rules worth having
+# are the ones with nothing to say about it. `guard = true` declares that silence is the
+# result wanted, keeping the zero-match report for the rule that is merely broken.
 
 [patterns.empty_catch_binding]
 message  = "`catch` with no exception binding discards the error"
 severity = "high"
+
+[patterns.swallowed_error]
+message  = "`catch` whose body only returns discards the error it bound"
+severity = "high"
+guard    = true
+
+[patterns.nan_comparison]
+message  = "`NaN` is equal to nothing, itself included; use `isnan`"
+severity = "high"
+guard    = true
+
+[patterns.nothing_equality]
+message = "`== nothing` compares where `=== nothing` identifies"
+guard   = true
+
+[patterns.type_equality]
+message = "`typeof(x) == T` asks for the exact type where `isa` asks the question meant"
+guard   = true
+
+[patterns.unchecked_match]
+message = "`match` returns `nothing` when it fails, so reaching into it throws"
+guard   = true
+
+[patterns.length_index_range]
+message = "`1:length(x)` assumes the first index is 1; `eachindex` reads it off `x`"
+guard   = true
+
+[patterns.redundant_collect]
+message = "`collect` materialises a vector the surrounding call would have iterated"
+guard   = true
+
+[patterns.untyped_container]
+message = "a container built with no element type holds `Any`"
+guard   = true
+
+[patterns.eval_in_function]
+message = "`eval` inside a function runs in the world age the call started in"
+guard   = true
+
+[patterns.global_in_function]
+message = "a function reaching for a global depends on state it was not handed"
+guard   = true
+
+[patterns.abstract_field]
+message = "an abstractly typed field is loaded through a pointer, not read inline"
+
+[patterns.splat_concatenation]
+message = "`[a..., b...]` builds a vector by splatting where `[a; b]` says it directly"
+guard   = true
 
 [patterns.magic_number]
 message = "unnamed numeric literals in one function"

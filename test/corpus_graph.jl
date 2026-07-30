@@ -204,7 +204,11 @@ end
 
 @testitem "corpus graph resolves a real cross-file edge in Dendro's own source" tags = [:corpus_graph] begin
     src = joinpath(pkgdir(Dendro), "src")
-    files = Dendro.parse_corpus(Dendro.source_files(src))
+    # The repo's own rules, so the pattern-rule names in its `dendro-ignore` directives
+    # resolve. Parsing with the built-in set alone reports each of them as an unknown
+    # metric, which is correct of the parser and only noise here.
+    rules = Dendro.resolve_rules(Dendro.discover_config([src]))
+    files = Dendro.parse_corpus(Dendro.source_files(src); rules)
     table = Dendro.corpus_symbols(files)
     graph = Dendro.build_corpus_graph(files, table)
 

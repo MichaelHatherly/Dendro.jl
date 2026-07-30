@@ -47,8 +47,25 @@ detection, but none of the passes built on cross-file references: `:misplaced`,
 `:scattered`, `:unreferenced`, `:split_audience`, `:back_edge`, `:dependency_cycle`,
 `:hub`, `:incoherent_package`, or `:divisible_package`.
 
-`examples/languages/` in the repository carries a worked Zig query, both files, along with
-the reasoning behind the choices a query has to make.
+### Choices a query has to make
+
+The concept vocabulary is closed and a grammar's node types are not, so writing a query
+means deciding which of a language's constructs answer to each concept. Three of those
+decisions recur, stated here against Zig, where each one came up.
+
+Not every error construct is a decision point. Zig's `try` forwards an error rather than
+choosing between paths, and idiomatic code writes it on nearly every fallible call, so
+counting it would swamp the metric. `catch` and `orelse` do count, since each names an
+alternative value or block. The shipped Rust query makes the same call for `?`.
+
+Compile-time builtins are not calls. Zig's `@import` and `@intCast` do not call into the
+program, and `@import` alone would dominate every file's callee vocabulary, which is what
+the reimplementation pass reads.
+
+A scopes query binds a declaration, not an assignment. Zig's grammar leaves the `const` or
+`var` keyword optional, so a bare `total = 9;` parses as a `variable_declaration` too, and
+matching every one of those reads a rebinding as a fresh definition and stops the assigned
+name from counting as a use. Julia's scopes query makes the same split for the same reason.
 
 ## What cross-file resolution reaches per language
 

@@ -51,6 +51,24 @@ end
     @test isempty(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
 end
 
+@testitem "a comment about the directive is not a directive" setup = [Fixtures] tags = [:suppress] begin
+    # A directive is what a comment says first, so prose naming the mechanism does not
+    # suppress the code under it. Documentation of the tool is the common case: without
+    # this, the line below every such comment is silently exempt.
+    src = "# An inline `dendro-ignore` naming an unknown metric warns\nfunction f()\nend\n"
+    @test isempty(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
+
+    # Prose first and directive second in one comment reads as a directive to a human and
+    # is rejected all the same: the alternative is a rule about which prose counts.
+    src = "# only the suite reads this. dendro-ignore: unused_local\nfunction f()\nend\n"
+    @test isempty(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
+
+    # Comment punctuation may precede it, so a block comment carries one as its first word.
+    src = "#= dendro-ignore: cyclomatic =#\nfunction f()\nend\n"
+    d = only(Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl"))
+    @test d.metrics == Set([:cyclomatic])
+end
+
 @testitem "reimplementation directive validates" setup = [Fixtures] tags = [:suppress] begin
     # The metric is emitted by a corpus pass, so its name must be in the
     # directive-validated set even though no Rule carries it.
