@@ -215,10 +215,14 @@ Run `query` over `tree` once and collect every capture into a [`QueryIndex`](@re
 `@function` captures become [`FunctionUnit`](@ref)s; every other capture is filed
 under its concept. When `scopes_query` is given, a second pass resolves each
 reference to its in-file definition into `index.bindings`.
+
+`bindings = false` collects the scope captures but skips that resolution, for a corpus
+read and never scored: nothing asks a reference corpus what it binds, and the resolution
+is the expensive half of the scopes pass.
 """
 function build_index(
         tree::TreeSitter.Tree, language::Symbol, source::String, query::TreeSitter.Query,
-        scopes_query::Union{TreeSitter.Query, Nothing} = nothing
+        scopes_query::Union{TreeSitter.Query, Nothing} = nothing; bindings::Bool = true
     )
     caps = ScopeCaptures()
     if scopes_query !== nothing
@@ -244,7 +248,7 @@ function build_index(
         ep = TreeSitter.end_point(n)
         Base.push!(idx.functions, FunctionUnit(n, Int(sp.row) + 1, Int(ep.row) + 1))
     end
-    isempty(caps.scopes) || resolve_bindings!(idx.bindings, caps, source)
+    (!bindings || isempty(caps.scopes)) || resolve_bindings!(idx.bindings, caps, source)
     return idx
 end
 

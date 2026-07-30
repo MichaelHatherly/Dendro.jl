@@ -70,9 +70,13 @@ A function's near-miss features from a single subtree walk: its pre-order subtre
 function clone_features(unit::FunctionUnit, index::QueryIndex)
     st = subtrees(unit, index)
     root = st[end]
-    sequence = [s.hash for s in sort(st; by = s -> preorder_key(s.node))]
-    return sequence, histogram_of(st), root.hash, root.size
+    return preorder_hashes(st), histogram_of(st), root.hash, root.size
 end
+
+# A subtree set's hashes in source order, the order-aware form the LCS compares. Read off a
+# walk the caller already has, so a pass building other readings from the same subtrees
+# pays for one walk.
+preorder_hashes(st::Vector{Subtree}) = UInt64[s.hash for s in sort(st; by = s -> preorder_key(s.node))]
 
 # Cap on the sequence length an LCS compares, bounding its O(n*m) cost. Beyond it the
 # comparison reads only the first `LCS_CAP` nodes, so a clone among very large
@@ -260,6 +264,24 @@ function rank_clones!(findings::Vector{Finding}, placement::ModulePlacement)
     return permute!(findings, sortperm(distances; rev = true, alg = Base.Sort.MergeSort))
 end
 
+"""
+    nearest_anchor(lookup, node) -> Any
+
+What `lookup` reports for the nearest ancestor of `node` it recognises, or `nothing` when
+no ancestor does. The step every maximality filter shares: an anchor is redundant when the
+anchor enclosing it most closely already covers it, so each walks up until an anchor
+answers. `lookup` returns `nothing` for a node it does not index.
+"""
+function nearest_anchor(lookup::F, node::TreeSitter.Node) where {F}
+    p = TreeSitter.parent(node)
+    while !TreeSitter.is_null(p)
+        answer = lookup(p)
+        answer === nothing || return answer
+        p = TreeSitter.parent(p)
+    end
+    return nothing
+end
+
 # An anchor is subsumed when its nearest enclosing anchor is a clone of at least the
 # same multiplicity: the larger clone already covers it. Multiplicity never rises
 # going up the tree, so the nearest anchor ancestor is the one to check.
@@ -270,16 +292,13 @@ function subsumed(
     )
     e = entries[i]
     k = length(buckets[(e.language, e.hash)])
-    p = TreeSitter.parent(e.node)
-    while !TreeSitter.is_null(p)
-        j = get(anchor_at, (e.file, nodeid(p)...), 0)
-        if j != 0
-            a = entries[j]
-            return length(buckets[(a.language, a.hash)]) >= k
-        end
-        p = TreeSitter.parent(p)
+    j = nearest_anchor(e.node) do p
+        hit = get(anchor_at, (e.file, nodeid(p)...), 0)
+        hit == 0 ? nothing : hit
     end
-    return false
+    j === nothing && return false
+    a = entries[j]
+    return length(buckets[(a.language, a.hash)]) >= k
 end
 
 # Default similarity cutoff for a near-miss, the LCS fraction `|LCS| / max(|a|, |b|)`

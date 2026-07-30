@@ -98,6 +98,25 @@ function clone_clusters(files::Vector{ParsedFile}, cfg::Config, scope, placement
     return findings
 end
 
+# The two cross-corpus passes, scoped, each gated by `[rules]` like any other metric and on
+# by default, since pointing at no library already turns the feature off. They sit beside
+# the clone passes rather than inside `clone_clusters` because `rank_clones!` has nothing to
+# say about them: a library finding carries one location, so its module distance is always
+# zero.
+function library_clusters(
+        files::Vector{ParsedFile}, cfg::Config, scope, references::Vector{ReferenceIndex}
+    )
+    findings = Finding[]
+    isempty(references) && return findings
+    if get(cfg.rules, RELATIONAL.library_duplicate, true)
+        exact = cluster_library_duplicates(
+            files, references; min_size = cfg.min_size, gate_coverage = cfg.library_gate_coverage
+        )
+        append!(findings, scope_clusters(exact, scope))
+    end
+    return findings
+end
+
 # A corpus pass a `[rules]` key gates, appended only when the config enables it. `pass` is a
 # thunk so a disabled rule costs the lookup and nothing else.
 function append_gated!(findings::Vector{Finding}, cfg::Config, metric::Symbol, scope, pass)
@@ -140,7 +159,7 @@ function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res:
 end
 
 """
-    analyze(path; base=nothing, cut=nothing, min_size=nothing, threshold=nothing, radius_factor=nothing, language=nothing, rules=nothing, ignore=String[], config=nothing) -> Findings
+    analyze(path; base=nothing, cut=nothing, min_size=nothing, threshold=nothing, radius_factor=nothing, language=nothing, rules=nothing, ignore=String[], config=nothing, libraries=nothing) -> Findings
     analyze(paths::AbstractVector; ...) -> Findings
 
 Analyze the file or folder at `path`. Every function gets scalar and flag metrics;
@@ -176,6 +195,13 @@ config's resolution of [`BUILTIN_RULES`](@ref) and the enabled [`OPTIONAL_RULES`
 Pass your own to lint for a project's structural conventions:
 `analyze(path; rules = [BUILTIN_RULES; my_rule])`.
 
+`libraries` names reference corpora to compare the project against, source Dendro reads
+and never scores: a [`Library`](@ref) each, or a bare path taken as one root. Project code
+a library already implements is reported as `:library_duplicate` and
+`:library_near_duplicate` at the site in the project, with the library symbol to import
+named in the label. The keyword overrides whatever the config's `[libraries]` tables
+resolved. Absent both, neither pass runs and the scan costs nothing.
+
 `ignore` is a list of gitignore-style patterns, matched against each path relative
 to a scanned folder. Matching files are dropped before parsing, so vendored or
 generated source is neither flagged nor counted in the baseline:
@@ -188,15 +214,17 @@ function analyze(
         paths::Union{AbstractString, AbstractVector{<:AbstractString}};
         base = nothing, cut = nothing,
         min_size = nothing, threshold = nothing, radius_factor = nothing,
-        language = nothing, rules = nothing, ignore = String[], config = nothing
+        language = nothing, rules = nothing, ignore = String[], config = nothing,
+        libraries = nothing
     )
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
     discovered::Config = config === nothing ? discover_config(roots) : config
-    cfg = override_config(discovered; cut, min_size, threshold, radius_factor)
+    cfg = override_config(discovered; cut, min_size, threshold, radius_factor, libraries)
     active_rules = rules === nothing ? resolve_rules(cfg) : collect(Rule, rules)
 
     profiles = resolve_profiles(cfg)
     corpus = collect_corpus(roots, ignore, language; profiles)
+    references = reference_indices(cfg.libraries, corpus; min_size = cfg.min_size, profiles)
     files = parse_corpus(
         corpus; language, rules = active_rules, profiles,
         patterns = cfg.patterns, pattern_dirs = pattern_dirs(cfg, roots)
@@ -230,6 +258,7 @@ function analyze(
 
     res = resolve_corpus(files)
     append!(findings, clone_clusters(files, cfg, scope, ModulePlacement(res.file_graph)))
+    append!(findings, library_clusters(files, cfg, scope, references))
     append!(findings, relational_clusters(files, cfg, scope, res))
     return Findings(findings, unmatched_patterns(files, cfg.patterns))
 end

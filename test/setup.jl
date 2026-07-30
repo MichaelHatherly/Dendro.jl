@@ -51,8 +51,9 @@
     end
 
     # Findings of one relational metric, the filters the clone and corpus items share.
-    duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :duplicate, findings))
-    near_duplicates(findings) = Dendro.Findings(filter(f -> f.metric == :near_duplicate, findings))
+    of_metric(findings, metric) = Dendro.Findings(filter(f -> f.metric == metric, findings))
+    duplicates(findings) = of_metric(findings, :duplicate)
+    near_duplicates(findings) = of_metric(findings, :near_duplicate)
 
     # The (file, unit) sites the dead-code pass flags over a corpus, the readable form the
     # unreferenced items assert on.
@@ -126,6 +127,42 @@
         join("    $name$i = $name$(i - 1) + $i\n" for i in 1:n),
         "    return $name$n\n"
     )
+
+    # `chain`'s body behind a guard, so the inner block has the same shape as a whole
+    # `chain` function's body while the enclosing function is larger. The fixture for
+    # partial duplication: a block of one function matching a block of another.
+    nested_chain(name, n) = string(
+        "function $name($(name)0)\n",
+        "    $(name)x = $(name)0 + 0\n",
+        "    if $(name)0 > 0\n",
+        join("        $name$i = $name$(i - 1) + $i\n" for i in 1:n),
+        "        return $name$n\n",
+        "    end\n",
+        "    return $(name)x\nend\n"
+    )
+
+    # --- Library fixtures -----------------------------------------------------
+    # A project root and a reference-library root under `dir`, each written from
+    # `name => source` pairs. The project root comes back first. Two sibling directories
+    # rather than one, so the library is outside the corpus the project scans.
+    function library_corpus(dir; project, library)
+        proj = joinpath(dir, "proj", "src")
+        lib = joinpath(dir, "dep", "src")
+        mkpath(proj)
+        mkpath(lib)
+        for (name, src) in project
+            write(joinpath(proj, name), src)
+        end
+        for (name, src) in library
+            write(joinpath(lib, name), src)
+        end
+        return proj, lib
+    end
+
+    # A single-file Julia library module whose `exports` name its public API, the reference
+    # corpus the publicness half of a cross-corpus finding is read against.
+    libmod(exports, defs) =
+        string("module Dep\n", join("export $e\n" for e in exports), "\n", defs, "\nend\n")
 
     # --- Ratchet fixtures -----------------------------------------------------
     # The gate ratchet (`errors(; since)`) is exercised against throwaway git repos.

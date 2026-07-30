@@ -8,6 +8,7 @@ import TreeSitter
 public analyze, active, errors, github_annotations, mermaid
 public Finding, Findings, Location
 public Rule, BUILTIN_RULES, OPTIONAL_RULES, PatternSpec
+public Library
 public check_patterns, PatternTestFailure
 public Config
 
@@ -33,6 +34,7 @@ include("resolution.jl")
 include("corpus_graph.jl")
 include("file_graph.jl")
 include("clones.jl")
+include("libraries.jl")
 include("reimplementation.jl")
 include("back_edge.jl")
 include("dependency_cycle.jl")
