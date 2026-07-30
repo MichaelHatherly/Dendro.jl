@@ -311,6 +311,57 @@ end
     end
 end
 
+@testitem "anchor grain finds an edited copy of a library function inside a larger one" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            # Padded far enough that the enclosing function lands two size bands above the
+            # library function, so the unit-grain query never proposes the pair.
+            project = ["parse.jl" => Fixtures.nested_chain("read_header", 9; pad = 40)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 8))],
+        )
+
+        # At unit grain the two are compared whole, and a block inside a much larger
+        # function is not a near-miss of it.
+        plain = Fixtures.of_metric(Dendro.analyze(proj; libraries = [lib]), :library_near_duplicate)
+        @test isempty(plain)
+
+        write(joinpath(dir, "proj", ".dendro.toml"), "[clones]\nlibrary_anchor_grain = true\n")
+        cfg = Fixtures.isolated_config([proj], joinpath(dir, "proj", ".dendro.toml"))
+        @test cfg.library_anchor_grain
+
+        hit = only(Fixtures.of_metric(Dendro.analyze(proj; config = cfg, libraries = [lib]), :library_near_duplicate))
+        # The coverage denominator stays the project's whole enclosing unit, so a block
+        # match scores what the edit would actually remove.
+        @test 0 < hit.value < 100
+        @test hit.absolute == :warn
+        @test occursin("dep.partition public", only(hit.locations).label)
+    end
+end
+
+@testitem "anchor grain keys the reference cache apart from unit grain" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        _, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+        library = Dendro.Library("Dep", lib)
+
+        mktempdir() do cache
+            withenv("XDG_CACHE_HOME" => cache) do
+                units = Dendro.reference_index(library; min_size = 10, grain = :unit)
+                anchors = Dendro.reference_index(library; min_size = 10, grain = :anchor)
+                # A unit-grain index carries no features on its block anchors, so serving one
+                # to the anchor-grain pass would silently under-report.
+                @test length(readdir(joinpath(cache, "dendro", "references"))) == 2
+                @test all(isempty(a.sequence) for a in units.anchors if !a.whole_unit)
+                @test all(!isempty(a.sequence) for a in anchors.anchors)
+            end
+        end
+    end
+end
+
 @testitem "a dissimilar project function matches no library function" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         proj, lib = Fixtures.library_corpus(

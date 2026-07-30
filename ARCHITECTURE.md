@@ -366,11 +366,13 @@ Reporting:
   definition through `unreferenced.jl`'s `enclosing_def`, and returns a `ReferenceIndex`.
   `cluster_library_duplicates` is the hash join, near-linear in the project's anchor count
   and independent of library size, with `subsumed_match` as the maximality filter;
-  `cluster_library_near_duplicates` is the banded radius query over
+  `cluster_library_near_duplicates` reads `project_regions` (whole units through
+  `clone_units`, or every anchor at the wider grain) against the banded radius query over
   `clones.jl`'s `banded_candidates`, confirmed by LCS. `library_finding` is the emission
   both share: the band from publicness and granularity, the evidence in the label through
   `evidence_label`. A library whose language has no `LINKAGES` entry reads as private,
   the inverse of `:unreferenced`'s default, since public is what reaches the gate.
+  `reference_key`, `load_reference` and `store_reference` are the disk memoization.
   Included after `clones.jl`, whose subtree and banding primitives it reuses, and after
   `resolution.jl`; before `config.jl`, which names `Library` in a `Config` field.
 - `reimplementation.jl` defines the opt-in vocabulary pass. `subtokens` splits an
@@ -694,11 +696,14 @@ floor.
 
 `Library` and `ReferenceIndex` (`libraries.jl`). A reference corpus and what indexing it
 produced: the display name, every anchor with its structural hash, size, enclosing symbol
-and that symbol's publicness in the library, the `by_hash` map the exact join reads, and
-the whole-unit indices the near pass compares. `RefAnchor` carries the near-miss features
-for whole units only, since a block takes part in the exact join where the hash is the
-whole verdict. `RefMatch` is one library anchor a project anchor matched, the evidence a
-label is built from and the reason a cross-corpus finding needs no second `Location`.
+and that symbol's publicness in the library, the `by_hash` map the exact join reads, the
+whole-unit indices, and the grain it was built at. `RefAnchor` carries the near-miss
+features for whole units at `:unit` grain and for every anchor at `:anchor`, since a block
+takes part in the exact join whatever the grain, where the hash is the whole verdict.
+`ProjectRegion` is the project side of the near pass, carrying `unit_size` beside its own
+sequence so the match test reads the region and the coverage score reads the enclosing unit.
+`RefMatch` is one library anchor a project region matched, the evidence a label is built
+from and the reason a cross-corpus finding needs no second `Location`.
 
 `ModulePlacement` (`clones.jl`). Where each corpus file sits in the module graph: the
 file-to-module-node map and the community label per module node. `analyze` resolves one and
@@ -888,6 +893,41 @@ half a function cannot be imported however public the function holding it, so bo
 A library whose language has no `LINKAGES` entry reads as private throughout, the inverse
 of `:unreferenced`'s default: there the safe direction is not calling an unverifiable
 definition dead, here it is not gating on a guess.
+
+Publicness is attributed through `enclosing_def` over `table.defs`, which is where it has a
+ceiling. `file_symbols!` indexes a definition only when its owning scope is a namespace, so
+in a language whose methods live inside an `impl` or class body most functions are not
+top-level definitions and an anchor inside one attributes to nothing. Measured on four Rust
+crates, every cross-corpus finding read as private for that reason: globset carries 45
+top-level definitions against 147 function units. The gate goes silent rather than wrong,
+which is the direction to fail in, and widening `file_symbols!` would move `:unreferenced`
+with it.
+
+Only the exact pass reaches the gate. `library_finding` takes `gate_coverage` as
+`Union{Integer, Nothing}` and the near pass passes `nothing`, which is measured rather than
+cautious: over ten Julia projects against their declared dependencies, hand classification
+put precision on its would-be `:high` findings at 11% against the exact pass's 33%, and at
+the band it would have shipped with it put some eight gate errors into a healthy project.
+Raising the cutoff does not recover it, since the true positives sit below the coincidences.
+`DEFAULT_LIBRARY_THRESHOLD` is 0.90 on the same evidence, not a gap in the distribution
+(there is none) but the last cutoff that keeps the measured signal.
+
+The near pass runs at one of two grains, and the reference index has to be built at the
+same one, which is why `ReferenceIndex` carries it as a field and `reference_key` folds it
+into the cache key: serving a `:unit` index to the `:anchor` pass would leave every block
+without features and silently under-report. `:unit` compares whole functions on both sides.
+`:anchor` compares every anchor, which is what proposes approximate partial containment, a
+library function's shape appearing edited inside a much larger function of the project's,
+where the two sit in size bands the banded query would never pair. Measured over five
+projects it proposes three to four times the candidate pairs for three and a half to five
+times the LCS work, and yields four to twenty percent more findings in a pass that never
+gates, so it is off by default behind `[clones] library_anchor_grain`.
+
+`reference_index` memoizes to disk under `$XDG_CACHE_HOME/dendro/references` (`xdg_path`,
+`config.jl`, which the user-global config path also reads). Indexing is the dominant cost of
+a cross-corpus scan, measured at 0.3 to 1.5 seconds cold against 0.06 to 0.15 warm, and a
+dependency set changes rarely. Every load failure is a miss and a rebuild, never an error: a
+cache is an optimisation and must not be able to break a scan.
 
 ## Within-file cohesion
 

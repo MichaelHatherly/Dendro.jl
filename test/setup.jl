@@ -130,10 +130,13 @@
 
     # `chain`'s body behind a guard, so the inner block has the same shape as a whole
     # `chain` function's body while the enclosing function is larger. The fixture for
-    # partial duplication: a block of one function matching a block of another.
-    nested_chain(name, n) = string(
+    # partial duplication: a block of one function matching a block of another. `pad`
+    # prepends that many further statements, which is how a test pushes the enclosing
+    # function into a size band the inner block's would never be searched against.
+    nested_chain(name, n; pad = 0) = string(
         "function $name($(name)0)\n",
         "    $(name)x = $(name)0 + 0\n",
+        join("    $(name)p$i = $(name)x + $i\n" for i in 1:pad),
         "    if $(name)0 > 0\n",
         join("        $name$i = $name$(i - 1) + $i\n" for i in 1:n),
         "        return $name$n\n",

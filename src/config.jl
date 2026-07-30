@@ -54,7 +54,8 @@ ships, each a `LanguageProfile` naming where to load its grammar and queries fro
 [`PatternSpec`](@ref), sorted by name so a report reads in a stable order, and
 `patterns_dir` overrides where their queries are read from (empty for the default,
 `.dendro/patterns` beside the config); `library_threshold` and `library_gate_coverage`
-are the cross-corpus duplication thresholds, and `libraries` the reference corpora a
+are the cross-corpus duplication thresholds and `library_anchor_grain` widens the near pass
+to compare blocks as well as whole functions; `libraries` holds the reference corpora a
 `[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name.
 Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
@@ -78,6 +79,7 @@ struct Config
     reimpl_threshold::Float64
     library_threshold::Float64
     library_gate_coverage::Int
+    library_anchor_grain::Bool
     languages::Dict{Symbol, LanguageProfile}
     patterns::Vector{PatternSpec}
     patterns_dir::String
@@ -251,6 +253,8 @@ function apply_clones(scalars, table, source)
             scalars = merge(scalars, (library_threshold = config_float(value, key, source),))
         elseif key == "library_gate_coverage"
             scalars = merge(scalars, (library_gate_coverage = config_int(value, key, source),))
+        elseif key == "library_anchor_grain"
+            scalars = merge(scalars, (library_anchor_grain = config_bool(value, key, source),))
         else
             @warn "Dendro: unknown clones key in $source, ignored" key
         end
@@ -505,6 +509,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         radius_factor = DEFAULT_RADIUS_FACTOR, reimpl_threshold = DEFAULT_REIMPL_THRESHOLD,
         library_threshold = DEFAULT_LIBRARY_THRESHOLD,
         library_gate_coverage = DEFAULT_LIBRARY_GATE_COVERAGE,
+        library_anchor_grain = false,
         patterns_dir = "",
     )
     if use_files
@@ -527,7 +532,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
         scalars.reimpl_threshold, scalars.library_threshold, scalars.library_gate_coverage,
-        acc.languages,
+        scalars.library_anchor_grain, acc.languages,
         sort!(collect(values(acc.patterns)); by = s -> s.name), scalars.patterns_dir,
         sort!(collect(values(acc.libraries)); by = l -> l.name),
     )
@@ -558,7 +563,7 @@ function override_config(
         threshold === nothing ? config.threshold : Float64(threshold),
         radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
         config.reimpl_threshold, config.library_threshold, config.library_gate_coverage,
-        config.languages, config.patterns, config.patterns_dir,
+        config.library_anchor_grain, config.languages, config.patterns, config.patterns_dir,
         libraries === nothing ? config.libraries : as_libraries(libraries),
     )
 end

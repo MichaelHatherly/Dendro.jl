@@ -120,8 +120,9 @@ const LIBRARY_EVIDENCE_MAX = 3
 
 # One indexed subtree of a library: what the join needs, what a label names, and nothing
 # that could turn a library site into a `Location`. `sequence` and `histogram` carry the
-# near-miss features and are filled for whole units only: a block takes part in the exact
-# join, where the hash is the whole verdict, and the near pass compares functions.
+# near-miss features, filled for whole units at `:unit` grain and for every anchor at
+# `:anchor`: a block always takes part in the exact join, where the hash is the whole
+# verdict, and only the wider grain compares one approximately.
 struct RefAnchor
     language::Symbol
     hash::UInt64
@@ -139,18 +140,34 @@ end
     ReferenceIndex
 
 One [`Library`](@ref) parsed and indexed: its display `library` name, every anchor it
-holds, `by_hash` for the exact join, and `units`, the indices of the whole-unit anchors
-the near pass compares. Built by [`reference_index`](@ref), read and never scored.
+holds, `by_hash` for the exact join, `units`, the indices of the whole-unit anchors, and
+the `grain` it was built at, which decides how many of those anchors carry near-miss
+features. Built by [`reference_index`](@ref), read and never scored.
+
+The grain is a field so a cached index describes itself: serving a `:unit` index to the
+`:anchor` pass would leave every block without features and silently under-report.
 """
 struct ReferenceIndex
     library::String
     by_hash::Dict{Tuple{Symbol, UInt64}, Vector{Int}}
     anchors::Vector{RefAnchor}
     units::Vector{Int}
+    grain::Symbol
 end
+
+# The anchors the near pass compares: whole units, or every anchor at the wider grain.
+near_candidates(ref::ReferenceIndex) = ref.grain === :anchor ? eachindex(ref.anchors) : ref.units
 
 # The lookup miss, shared so a project anchor that matches nothing allocates nothing.
 const NO_ANCHORS = Int[]
+
+# The granularities the near pass runs at. `:unit` compares whole functions on both sides;
+# `:anchor` compares every anchor, which is what finds a library function's shape appearing,
+# edited, inside a larger function of the project's. Measured over five projects, the wider
+# grain proposes three to four times as many candidate pairs and costs three and a half to
+# five times the LCS work, for four to twenty percent more findings in a population that
+# never gates, so it is off by default and a project opts in.
+const LIBRARY_GRAINS = (:unit, :anchor)
 
 # Whether each library definition is part of that library's public API, and the top-level
 # function ranges an anchor attributes through. Only as much of the corpus resolution as
@@ -192,7 +209,7 @@ function root_relative(file::String, roots::Vector{String})
 end
 
 """
-    reference_index(library; min_size, profiles, exclude) -> ReferenceIndex
+    reference_index(library; min_size, grain, profiles, exclude, cache) -> ReferenceIndex
 
 Parse `library`'s roots and index every anchor in them: whole function units and the
 blocks inside them, at the floors [`anchor_floor`](@ref) already sets, each attributed to
@@ -207,24 +224,31 @@ resolution, no pattern queries, and no suppression directives. A file whose `rea
 in `exclude`, the corpus being scanned, is dropped before indexing, since pointing a
 library at the project's own source would report every function as a duplicate of itself.
 
+`grain` decides which anchors carry the near pass's features: `:unit` stores them for whole
+functions only, `:anchor` for every anchor, which roughly doubles the index and is what the
+opt-in wider near pass reads.
+
 The result memoizes to disk under `\$XDG_CACHE_HOME/dendro/references`, keyed by the format
-and version of the index, `min_size`, and the size and mtime of every file it indexed.
-Indexing is the dominant cost of a cross-corpus scan and a dependency set changes rarely, so
-this is what keeps the pass usable on every CI run. `cache = false` skips it.
+and version of the index, `min_size`, the grain, and the size and mtime of every file it
+indexed. Indexing is the dominant cost of a cross-corpus scan and a dependency set changes
+rarely, so this is what keeps the pass usable on every CI run. `cache = false` skips it.
 """
 function reference_index(
-        library::Library; min_size::Integer,
+        library::Library; min_size::Integer, grain::Symbol = :unit,
         profiles::Dict{Symbol, LanguageProfile} = PROFILES, exclude::Set{String} = Set{String}(),
         cache::Bool = true
     )
+    grain in LIBRARY_GRAINS || error("Dendro: unknown library grain $grain")
     paths = collect_corpus(library.roots, library.ignore, nothing; profiles)
     filter!(p -> !(realpath(p) in exclude), paths)
-    key = cache ? reference_key(library, paths, min_size) : ""
+    key = cache ? reference_key(library, paths, min_size, grain) : ""
     if cache
         hit = load_reference(key)
-        hit === nothing || return hit
+        # The key already covers the grain; the field is checked too, since a wrong index
+        # here reports nothing rather than failing, which is the failure mode to refuse.
+        hit === nothing || hit.grain === grain && return hit
     end
-    index = build_reference_index(library, paths, min_size, profiles)
+    index = build_reference_index(library, paths, min_size, grain, profiles)
     cache && store_reference(key, index)
     return index
 end
@@ -238,14 +262,15 @@ const REFERENCE_FORMAT = 1
 
 # What a cached index is keyed by: everything that could change the anchors it holds. The
 # format and the two versions cover the serialized shape, `min_size` the floors an anchor
-# had to clear, and the size and mtime of every indexed file the content itself. Paths go in
-# in `collect_corpus` order, which is deterministic, so the same library keys the same way
-# on every scan.
-function reference_key(library::Library, paths::Vector{String}, min_size::Integer)
+# had to clear, `grain` which anchors carry near-miss features, and the size and mtime of
+# every indexed file the content itself. Paths go in in `collect_corpus` order, which is
+# deterministic, so the same library keys the same way on every scan.
+function reference_key(library::Library, paths::Vector{String}, min_size::Integer, grain::Symbol)
     h = hash(REFERENCE_FORMAT)
     h = hash(something(pkgversion(@__MODULE__), v"0"), h)
     h = hash(VERSION, h)
     h = hash(min_size, h)
+    h = hash(grain, h)
     h = hash(library.name, h)
     for p in paths
         info = stat(p)
@@ -292,7 +317,7 @@ function store_reference(key::String, index::ReferenceIndex)
 end
 
 function build_reference_index(
-        library::Library, paths::Vector{String}, min_size::Integer,
+        library::Library, paths::Vector{String}, min_size::Integer, grain::Symbol,
         profiles::Dict{Symbol, LanguageProfile}
     )
     files = parse_corpus(paths; profiles, bindings = false, directives = false)
@@ -307,18 +332,16 @@ function build_reference_index(
         topfns = get(ranges, f.file, empty_ranges)
         for unit in functions(f.index)
             st = subtrees(unit, f.index)
-            sequence = preorder_hashes(st)
-            histogram = histogram_of(st)
             for s in st
                 floor = anchor_floor(s.node, f.index, min_size)
                 (floor === nothing || s.size < floor) && continue
                 whole = is_function(s.node, f.index)
+                sequence, histogram = near_features(s, st, f, grain)
                 from, to = TreeSitter.byte_range(s.node)
                 di = enclosing_def(topfns, from, to)
                 push!(
                     anchors, RefAnchor(
-                        f.language, s.hash, s.size,
-                        whole ? sequence : UInt64[], whole ? histogram : Dict{String, Int}(),
+                        f.language, s.hash, s.size, sequence, histogram,
                         whole, di == 0 ? "" : table.defs[di].name, di != 0 && public[di],
                         shown, Int(TreeSitter.start_point(s.node).row) + 1,
                     )
@@ -328,8 +351,28 @@ function build_reference_index(
             end
         end
     end
-    return ReferenceIndex(library.name, by_hash, anchors, units)
+    return ReferenceIndex(library.name, by_hash, anchors, units, grain)
 end
+
+# The near-miss features one anchor carries: the pre-order hash sequence the LCS compares
+# and the histogram the radius query reads. A whole unit reuses the walk `st` already holds;
+# a block below one needs the same walk from its own node, cheap beside the parse and only
+# paid at the wider grain. At `:unit` grain a block carries neither, since the exact hash is
+# the whole verdict there.
+function near_features(s::Subtree, st::Vector{Subtree}, f::ParsedFile, grain::Symbol)
+    if is_function(s.node, f.index)
+        return preorder_hashes(st), histogram_of(st)
+    elseif grain === :anchor
+        sub = anchor_subtrees(s.node, f.index)
+        return preorder_hashes(sub), histogram_of(sub)
+    end
+    return UInt64[], Dict{String, Int}()
+end
+
+# The subtrees of one anchor below a whole unit, the same bottom-up walk `subtrees` runs
+# from a unit's node.
+anchor_subtrees(node::TreeSitter.Node, index::QueryIndex) =
+    (acc = Subtree[]; collect_subtrees!(acc, node, index); acc)
 
 """
     reference_indices(libraries, corpus; min_size, profiles) -> Vector{ReferenceIndex}
@@ -341,11 +384,12 @@ and an unconfigured scan pays nothing.
 """
 function reference_indices(
         libraries::Vector{Library}, corpus::Vector{String};
-        min_size::Integer, profiles::Dict{Symbol, LanguageProfile} = PROFILES
+        min_size::Integer, grain::Symbol = :unit,
+        profiles::Dict{Symbol, LanguageProfile} = PROFILES
     )
     isempty(libraries) && return ReferenceIndex[]
     exclude = Set{String}(realpath(p) for p in corpus)
-    return ReferenceIndex[reference_index(l; min_size, profiles, exclude) for l in libraries]
+    return ReferenceIndex[reference_index(l; min_size, grain, profiles, exclude) for l in libraries]
 end
 
 # One library anchor a project anchor matched, and what that match costs the project. The
@@ -499,13 +543,14 @@ function cluster_library_duplicates(
     return sort_library_findings!(findings)
 end
 
-# Every whole-unit anchor across the reference indices, grouped by language and paired with
-# the library it came from. The near pass compares functions, so it reads only these; the
-# blocks stay in the exact join, where the hash is the whole verdict.
+# The anchors the near pass compares, grouped by language and paired with the library each
+# came from. At `:unit` grain that is the whole functions and the blocks stay in the exact
+# join, where the hash is the whole verdict; at `:anchor` it is everything the index holds
+# features for.
 function reference_units(references::Vector{ReferenceIndex})
     out = Dict{Symbol, Vector{Tuple{String, RefAnchor}}}()
     for ref in references
-        for i in ref.units
+        for i in near_candidates(ref)
             a = ref.anchors[i]
             push!(get!(() -> Tuple{String, RefAnchor}[], out, a.language), (ref.library, a))
         end
@@ -514,20 +559,92 @@ function reference_units(references::Vector{ReferenceIndex})
 end
 
 """
-    cluster_library_near_duplicates(files, references; min_size, threshold, radius_factor, gate_coverage) -> Vector{Finding}
+    ProjectRegion
 
-Project functions a library implements approximately, reported as
-`:library_near_duplicate`, one finding per project unit. Whole units on both sides, within
-one language, the copy-paste-then-edit the exact join cannot see: adding one guard clause
-changes the shape and the hash with it.
+One region of the project the near pass compares: the `location` to report it at, the
+near-miss features, the `digest` that tells an exact match apart, whether it is a `whole`
+function unit, and `unit_size`, the size of the unit enclosing it.
 
-The reference units are indexed and the project's queried against them, size-banded as
+`unit_size` is the coverage denominator and stays the whole unit even when the region is a
+block inside one, because the question the score answers is how much of *this function of
+mine* is already in a library. The match test reads the region's own sequence instead, so
+whether there is a finding and what it costs stay separate readings.
+"""
+struct ProjectRegion
+    language::Symbol
+    location::Location
+    suppressed::Bool
+    sequence::Vector{UInt64}
+    histogram::Dict{String, Int}
+    digest::UInt64
+    whole::Bool
+    unit_size::Int
+end
+
+ProjectRegion(u::CloneUnit) =
+    ProjectRegion(u.language, u.location, u.suppressed, u.sequence, u.histogram, u.digest, true, u.size)
+
+"""
+    project_regions(files, min_size, grain) -> Vector{ProjectRegion}
+
+The regions of `files` the near pass compares. At `:unit` grain that is
+[`clone_units`](@ref), the whole functions the within-corpus pass reads. At `:anchor` it is
+every anchor, so a library function's shape appearing edited inside a larger function of the
+project's is proposed, which the unit grain cannot see: a block and the function containing
+it land in different size bands, and the banding is what keeps the query off a full pairwise
+comparison.
+"""
+function project_regions(files::Vector{ParsedFile}, min_size::Integer, grain::Symbol)
+    metric = RELATIONAL.library_near_duplicate
+    grain === :anchor ||
+        return ProjectRegion[ProjectRegion(u) for u in clone_units(files, min_size, metric)]
+
+    regions = ProjectRegion[]
+    for f in files
+        for unit in functions(f.index)
+            st = subtrees(unit, f.index)
+            name = unit_name(unit, f.index)
+            total = st[end].size
+            for s in st
+                floor = anchor_floor(s.node, f.index, min_size)
+                (floor === nothing || s.size < floor) && continue
+                whole = is_function(s.node, f.index)
+                sub = whole ? st : anchor_subtrees(s.node, f.index)
+                line = Int(TreeSitter.start_point(s.node).row) + 1
+                push!(
+                    regions, ProjectRegion(
+                        f.language, Location(f.file, line, name),
+                        is_suppressed(f.directives, line, metric),
+                        preorder_hashes(sub), histogram_of(sub), s.hash, whole, total,
+                    )
+                )
+            end
+        end
+    end
+    return regions
+end
+
+"""
+    cluster_library_near_duplicates(files, references; min_size, threshold, radius_factor, grain) -> Vector{Finding}
+
+Project code a library implements approximately, reported as `:library_near_duplicate`, one
+finding per project region. Within one language, the copy-paste-then-edit the exact join
+cannot see: adding one guard clause changes the shape and the hash with it.
+
+The reference side is indexed and the project's queried against it, size-banded as
 [`banded_candidates`](@ref) proposes and confirmed by an LCS. A pair matches when either
 side is substantially covered, `max(|LCS|/|a|, |LCS|/|r|)` at or above `threshold`, since a
 library function almost wholly contained in a project function is the finding as much as
-the other way round. The value is coverage against the project's own unit, so the match
-test says whether there is a finding and the score says what it costs. Pairs with equal
-digests are dropped: the exact pass already has them.
+the other way round. The value is coverage against the project's enclosing unit, so the
+match test says whether there is a finding and the score says what it costs. Pairs with
+equal digests are dropped: the exact pass already has them.
+
+`grain` decides what is compared. `:unit` reads whole functions on both sides. `:anchor`
+reads every anchor, which is what proposes approximate partial containment, a library
+function's shape appearing edited inside a much larger function of the project's; a region
+whose enclosing unit matched is dropped, so the larger redundant region is the finding. It
+needs a reference index built at the same grain, costs three to four times the candidate
+pairs, and is off by default.
 
 Every finding reports at `:warn`, so this pass never reaches [`errors`](@ref). That is
 measured, not cautious: over ten Julia projects against their declared dependencies, hand
@@ -541,11 +658,11 @@ a violation to gate on.
 function cluster_library_near_duplicates(
         files::Vector{ParsedFile}, references::Vector{ReferenceIndex};
         min_size::Integer = DEFAULT_MIN_SIZE, threshold::Real = DEFAULT_LIBRARY_THRESHOLD,
-        radius_factor::Real = DEFAULT_RADIUS_FACTOR
+        radius_factor::Real = DEFAULT_RADIUS_FACTOR, grain::Symbol = :unit
     )
-    units = clone_units(files, min_size, RELATIONAL.library_near_duplicate)
+    regions = project_regions(files, min_size, grain)
     pools = reference_units(references)
-    bylang = units_by_language(units)
+    bylang = by_language(regions)
 
     matches = Dict{Int, Vector{RefMatch}}()
     thr = Float64(threshold)
@@ -553,36 +670,52 @@ function cluster_library_near_duplicates(
         idxs = bylang[language]
         pool = get(pools, language, NO_REF_UNITS)
         isempty(pool) && continue
-        library_pairs!(matches, units, idxs, pool, thr, Float64(radius_factor))
+        library_pairs!(matches, regions, idxs, pool, thr, Float64(radius_factor))
     end
 
     findings = Finding[]
+    covered = matched_units(regions, matches)
     for i in sort!(collect(keys(matches)))
+        r = regions[i]
+        (!r.whole && (r.location.file, r.location.unit) in covered) && continue
         push!(
             findings, library_finding(
-                RELATIONAL.library_near_duplicate, units[i].location, matches[i],
-                units[i].suppressed, nothing
+                RELATIONAL.library_near_duplicate, r.location, matches[i], r.suppressed, nothing
             )
         )
     end
     return sort_library_findings!(findings)
 end
 
+# The units that matched, keyed by file and name. A region below one of them is inside a
+# redundancy already reported whole, and the larger region is the finding. Only the wider
+# grain produces regions below a unit at all. Approximate matching is not monotone the way
+# exact matching is, so this is a reporting choice rather than a soundness one: a block whose
+# enclosing function already matched names no separate edit.
+function matched_units(regions::Vector{ProjectRegion}, matches::Dict{Int, Vector{RefMatch}})
+    covered = Set{Tuple{String, String}}()
+    for i in keys(matches)
+        r = regions[i]
+        r.whole && push!(covered, (r.location.file, r.location.unit))
+    end
+    return covered
+end
+
 # The reference-unit lookup miss, shared so a language with no library units allocates
 # nothing.
 const NO_REF_UNITS = Tuple{String, RefAnchor}[]
 
-# Confirm one language's proposed pairs and record each project unit's evidence. The LCS is
-# the dominant cost, so it runs in parallel over the proposed pairs, written to a
+# Confirm one language's proposed pairs and record each project region's evidence. The LCS
+# is the dominant cost, so it runs in parallel over the proposed pairs, written to a
 # preallocated vector and read back in pair order, so the evidence is identical to the
 # serial path at any thread count.
 function library_pairs!(
-        matches::Dict{Int, Vector{RefMatch}}, units::Vector{CloneUnit}, idxs::Vector{Int},
+        matches::Dict{Int, Vector{RefMatch}}, regions::Vector{ProjectRegion}, idxs::Vector{Int},
         pool::Vector{Tuple{String, RefAnchor}}, threshold::Float64, radius_factor::Float64
     )
     query = BandedSide(
-        Dict{String, Int}[units[i].histogram for i in idxs],
-        Int[units[i].size for i in idxs],
+        Dict{String, Int}[regions[i].histogram for i in idxs],
+        Int[length(regions[i].sequence) for i in idxs],
     )
     search = BandedSide(
         Dict{String, Int}[a.histogram for (_, a) in pool],
@@ -591,13 +724,13 @@ function library_pairs!(
     pairs = banded_candidates(query, search, radius_factor, CROSS_BANDS)
     lengths = Vector{Int}(undef, length(pairs))
     parallel_map!(lengths) do k
-        lcs_length(units[idxs[pairs[k][1]]].sequence, pool[pairs[k][2]][2].sequence)
+        lcs_length(regions[idxs[pairs[k][1]]].sequence, pool[pairs[k][2]][2].sequence)
     end
     for k in eachindex(pairs)
         i = idxs[pairs[k][1]]
         library, anchor = pool[pairs[k][2]]
-        units[i].digest == anchor.hash && continue
-        mine = min(length(units[i].sequence), LCS_CAP)
+        regions[i].digest == anchor.hash && continue
+        mine = min(length(regions[i].sequence), LCS_CAP)
         theirs = min(length(anchor.sequence), LCS_CAP)
         (mine == 0 || theirs == 0) && continue
         max(lengths[k] / mine, lengths[k] / theirs) >= threshold || continue
@@ -605,7 +738,7 @@ function library_pairs!(
             get!(() -> RefMatch[], matches, i),
             RefMatch(
                 library, anchor.symbol, anchor.public, anchor.whole_unit,
-                anchor.file, anchor.line, coverage_percent(lengths[k], mine),
+                anchor.file, anchor.line, coverage_percent(lengths[k], regions[i].unit_size),
             )
         )
     end

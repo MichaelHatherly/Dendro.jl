@@ -505,11 +505,16 @@ function clone_units(files::Vector{ParsedFile}, min_size::Integer, metric::Symbo
     return units
 end
 
-# Clone units grouped by language, so a shape is never compared across grammars.
-function units_by_language(units::Vector{CloneUnit})
+"""
+    by_language(items) -> Dict{Symbol, Vector{Int}}
+
+Indices into `items` grouped by each one's `language`, so a shape is never compared across
+grammars. Every pass that proposes pairs starts here, whatever record it carries.
+"""
+function by_language(items)
     bylang = Dict{Symbol, Vector{Int}}()
-    for (i, u) in enumerate(units)
-        push!(get!(() -> Int[], bylang, u.language), i)
+    for (i, x) in enumerate(items)
+        push!(get!(() -> Int[], bylang, x.language), i)
     end
     return bylang
 end
@@ -524,7 +529,7 @@ function cluster_near_duplicates(
         radius_factor::Real = DEFAULT_RADIUS_FACTOR
     )
     units = clone_units(files, min_size, RELATIONAL.near_duplicate)
-    bylang = units_by_language(units)
+    bylang = by_language(units)
     edges = Tuple{Int, Int, Float64}[]
     thr = Float64(threshold)
     rf = Float64(radius_factor)

@@ -114,8 +114,12 @@ percentile nor fills the findings with code nobody can edit. The value is how mu
 function the match covers. Only a match against a public whole library function, at or
 above half coverage, reaches the `errors` floor, since that is the one case with a name to
 call instead. `:library_near_duplicate` catches the copy-paste-then-edit the exact join
-misses. See [the docs](https://michaelhatherly.github.io/Dendro.jl/dev/libraries/) for
-configuration, the CI recipe, and the false positives worth recognising.
+misses, and always reports at `:warn`: measured over ten projects against their real
+dependency sets, its precision was a third of the exact pass's, so it proposes rather than
+gates. Indexing a dependency set is cached to disk, so a warm CI run pays about a tenth of
+the cold cost. See
+[the docs](https://michaelhatherly.github.io/Dendro.jl/dev/libraries/) for configuration,
+the CI recipe, how the defaults were measured, and the false positives worth recognising.
 
 To see the structure rather than read it, `mermaid(io, paths; graph, granularity, focus)`
 renders one of the graphs Dendro builds as a mermaid `flowchart`. `graph` picks the
@@ -203,8 +207,9 @@ divisible_package = true   # enable the opt-in directory-division pass
 min_size = 12              # min named-node subtree to count as a clone
 threshold = 0.9           # near-miss similarity cutoff
 radius_factor = 0.5       # candidate-search radius, as a fraction of function size
-library_threshold = 0.85   # cross-corpus near-miss cutoff
+library_threshold = 0.90   # cross-corpus near-miss cutoff
 library_gate_coverage = 50 # coverage a public whole-unit library match needs for :high
+library_anchor_grain = true # compare blocks against libraries too, not just whole functions
 
 [reimplementation]
 threshold = 0.6            # vocabulary overlap a candidate pair must reach

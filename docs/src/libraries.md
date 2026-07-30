@@ -21,7 +21,7 @@ analyze("src"; libraries = [Library("IterTools", "~/.julia/packages/IterTools/A1
 analyze("src"; libraries = ["../shared/src"])   # a bare path is one root, named after it
 ```
 
-A library is a **reference corpus**: source Dendro reads and never scores. It stays out of
+A library is a reference corpus: source Dendro reads and never scores. It stays out of
 the baseline, out of the symbol resolution of your code, out of both graphs, out of the
 per-file rules, and out of the corpus a diff scope is built over. So a dependency ten times
 the size of your project neither moves your percentile scores nor fills the report with
@@ -49,13 +49,13 @@ The label names the library-qualified symbol, whether it is part of that library
 API, and where it sits relative to the library's own root. Up to three references are
 named, best first, with a count for the rest.
 
-Evidence lives in the label rather than in a second location, and that is load-bearing
-twice over. A `Location` pointing outside the scanned corpus would throw under
+Evidence lives in the label rather than in a second location, and two things break if it
+does not. A `Location` pointing outside the scanned corpus would throw under
 `analyze(; base)`, the diff-scoped view. And the gate's ratchet keys a finding by its
 locations, so a library path, version slug and all, would rewrite that key on every
 dependency upgrade. Neither happens.
 
-The value is **coverage**: how much of your enclosing function the matched region is, as a
+The value is coverage: how much of your enclosing function the matched region is, as a
 percent. Your whole 30-node function matching a library's 200-node function scores 100, the
 strongest reading, because all of what you wrote is already there. A 30-node block inside
 your 200-node function scores 15, a real finding ranked below it. One number, monotone in
@@ -70,7 +70,10 @@ how much code the edit deletes.
 | private whole function | any | `:warn` |
 | a block inside a function | any | `:warn` |
 
-Only the first row reaches [`errors`](@ref) and the CI ratchet, and the two facts in it are
+That table is the exact pass. `:library_near_duplicate` always reports `:warn`, so it
+never reaches [`errors`](@ref); see "How the defaults were set" below for why.
+
+Only the first row reaches the gate and the CI ratchet, and the two facts in it are
 only actionable together. A match against a public whole function is importable: there is a
 name to call instead. A private one is not, though it still says the library solved this and
 you solved it again, which usually means the abstraction belongs somewhere neither corpus
@@ -82,10 +85,19 @@ a function you keep rather than a deletion, which is a suggestion and not a viol
 
 Publicness is read per language from declared exports or a visibility modifier, the same
 reading `:unreferenced` uses, with one default inverted. A library in a language Dendro has
-no linkage model for reads as **private**, so every match from it warns and nothing gates.
+no linkage model for reads as private, so every match from it warns and nothing gates.
 `:unreferenced` reads the same case as public, because there the safe direction is not
 calling an unverifiable definition dead; here public is what promotes a finding into the
 gate, so the safe direction is the other one.
+
+A match is attributed to the top-level definition enclosing it, and that is where the
+publicness reading has a real ceiling. In a language whose methods live inside an `impl` or
+class body, most functions are not top-level definitions, so a match inside one attributes
+to nothing and reads as private. Measured on four Rust crates against their registry
+sources, every finding came back `:warn` for exactly this reason: globset declares 45
+top-level definitions against 147 function units. The gate is silent there rather than
+wrong, which is the direction to fail in, but do not read a clean `errors` run on such a
+project as evidence that the exact pass found nothing.
 
 ## Partial duplication
 
@@ -101,6 +113,57 @@ control-free function and a block clear twice that. Genuinely useful small helpe
 (`isblank(c) = c == ' ' || c == '\t'`) sit below the floor and will not be found. That is
 the same bargain the clone passes make: a short control-free shape coincides across
 unrelated code, and reporting it is noise.
+
+The near pass compares whole functions on both sides by default, so a library function that
+appears inside a much larger function of yours, edited, is not proposed: the two land in
+size bands too far apart for the candidate query to pair them. `library_anchor_grain`
+widens it to compare every anchor, which finds that case. It costs three to four times the
+candidate pairs and three and a half to five times the confirmation work, measured across
+five projects, for four to twenty percent more findings in a pass that never gates, so it
+is off by default.
+
+## How the defaults were set
+
+None of these numbers is a guess. Ten Julia projects were scanned against their declared
+direct dependencies at `min_size` 10: 7,208 project units against 559 to 6,067 library
+units each.
+
+The exact pass produced 74 findings, 3 of them `:high`. Hand classification of those three:
+one true positive (`Documenter._escapeuri` against `URIs.escapeuri`, a genuine vendoring),
+and two false positives, both short-form one-liners whose type annotations pushed them over
+the control-free size floor. Zero to two gate findings per project is a satisfiable gate,
+and the false positives take one suppression line each.
+
+The near pass is where the interesting result is. At the originally proposed cutoff it
+produced 618 findings, 84 of which would have gated: eight gate errors in a healthy
+project, which is not a gate. Hand classification at its best cutoff put precision on those
+findings at 11%, against the exact pass's 33%. Raising the cutoff does not help: it thins
+the population and discards the true positives before the coincidences. So the near pass is
+capped at `:warn` and never gates.
+
+The mechanism behind that gap is worth knowing, because it is a consequence of the design
+rather than a bug. The cross-corpus match test is `max(|LCS|/|a|, |LCS|/|r|)`, which is
+`|LCS|` measured against the *shorter* side, where the within-corpus near pass measures
+against the longer. That is deliberate, since a library function almost wholly contained in
+one of yours is the finding as much as the other way round, but it is a far weaker test,
+and it runs against a pool of thousands of library units rather than hundreds of your own.
+Weaker test, more candidates, more coincidences.
+
+`library_threshold` moved from the proposed 0.85 to 0.90 on the same evidence. There is no
+measured gap to sit in: the population decays smoothly, 618 findings at 0.85, 207 at 0.90,
+51 at 0.95, none at 0.98. 0.90 is a stated trade, the last cutoff that keeps the measured
+true positives while cutting the noise by two thirds.
+
+`library_gate_coverage` stayed at 50. It demotes five exact findings that would otherwise
+gate, four of them false positives, which lifts precision on the gated population from
+about 20% to 33%.
+
+Four Rust crates were scanned against their registry sources as a check on the other
+publicness path, a `pub` modifier rather than an export list. Nothing gated, for the
+attribution reason above rather than anything about the predicate. What the Rust run did
+confirm is the interface-boilerplate class: ripgrep's `printer` reports six exact matches
+at full coverage against `termcolor`, every one a trait method (`set_color`, `reset`,
+`flush`) implemented the way the trait says to.
 
 ## Configuration
 
@@ -118,8 +181,9 @@ ignore = ["precompile.jl"]
 paths = ["../shared/src", "../shared/ext"]
 
 [clones]
-library_threshold     = 0.85   # near-miss match cutoff
+library_threshold     = 0.90   # near-miss match cutoff
 library_gate_coverage = 50     # coverage a public whole-unit match needs for :high
+library_anchor_grain  = true   # compare blocks too, not just whole functions
 
 [rules]
 library_near_duplicate = false  # keep the exact pass, drop the near one
@@ -144,6 +208,21 @@ warns and is dropped.
 
 Absent `libraries` in both the config and the keyword, neither pass runs and the scan costs
 nothing. There is nothing to switch on, only something to point at.
+
+## Cost
+
+Indexing the libraries is the dominant term and scales with their source size, not with
+your project's. Measured cold on six projects with 40 to 360 dependency source files:
+0.3 to 1.5 seconds to index, and 0.8 to 3.8 seconds for a whole scan. The exact join is one
+dictionary lookup per project anchor, so it is independent of how large the libraries are,
+which is what lets it gate.
+
+Indexing memoizes to disk under `$XDG_CACHE_HOME/dendro/references`, keyed by the index
+format, the Dendro and Julia versions, `min_size`, the grain, and the size and mtime of
+every file indexed. A dependency set changes rarely, so a warm cache turns that 0.3–1.5
+seconds into 0.06–0.15. Any load failure at all (a stale format, a truncated write, a file
+another tool left there) is a miss and a rebuild. A cache is an optimisation and must not
+be able to break a scan, so there is no error path from it.
 
 ## From the command line
 
@@ -238,8 +317,10 @@ bargain the rest of Dendro makes. A helper rewritten with a different shape shar
 subtrees with the library function it duplicates and neither pass sees it; that is what
 `:reimplementation` reads within one corpus, and it does not port across corpora as-is.
 
-Approximate partial containment, a library function's shape appearing edited inside a much
-larger function of yours, is found when it is exact and not otherwise. The size banding is
-what keeps the near pass off a full pairwise comparison, and lifting it needs the near pass
-run at anchor granularity on both sides. The mechanism is known; the cost on a real
-dependency set is not, so it is not shipped.
+A rewrite that also renames the domain vocabulary is invisible to everything here, as it is
+to `:reimplementation`.
+
+And the gate rests on a publicness reading that is narrower than importability. Julia reads
+the `export`/`public` lists, so a function reachable as `Foo.bar` but never exported counts
+as internal and lands at `:warn`. The pass under-promotes on Julia rather than
+over-promoting, which is the right direction for something a build fails on.

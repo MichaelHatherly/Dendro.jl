@@ -98,6 +98,10 @@ function clone_clusters(files::Vector{ParsedFile}, cfg::Config, scope, placement
     return findings
 end
 
+# The grain the near pass and the reference index it reads have to agree on, resolved in one
+# place so a config that widens one cannot leave the other narrow.
+library_grain(cfg::Config) = cfg.library_anchor_grain ? :anchor : :unit
+
 # The two cross-corpus passes, scoped, each gated by `[rules]` like any other metric and on
 # by default, since pointing at no library already turns the feature off. They sit beside
 # the clone passes rather than inside `clone_clusters` because `rank_clones!` has nothing to
@@ -117,7 +121,7 @@ function library_clusters(
     if get(cfg.rules, RELATIONAL.library_near_duplicate, true)
         near = cluster_library_near_duplicates(
             files, references; min_size = cfg.min_size, threshold = cfg.library_threshold,
-            radius_factor = cfg.radius_factor
+            radius_factor = cfg.radius_factor, grain = library_grain(cfg)
         )
         append!(findings, scope_clusters(near, scope))
     end
@@ -231,7 +235,9 @@ function analyze(
 
     profiles = resolve_profiles(cfg)
     corpus = collect_corpus(roots, ignore, language; profiles)
-    references = reference_indices(cfg.libraries, corpus; min_size = cfg.min_size, profiles)
+    references = reference_indices(
+        cfg.libraries, corpus; min_size = cfg.min_size, profiles, grain = library_grain(cfg)
+    )
     files = parse_corpus(
         corpus; language, rules = active_rules, profiles,
         patterns = cfg.patterns, pattern_dirs = pattern_dirs(cfg, roots)

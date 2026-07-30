@@ -109,6 +109,19 @@ the inverse of `:unreferenced`'s default, since public is what promotes a findin
 gate and nothing should gate on a guess. Keep it within one language, keep it reading
 subtree hashes and shape, and answer a legitimate re-implementation with a suppression.
 
+Only the exact join gates, and that is measured. Ten Julia projects against their declared
+dependencies put the near pass's precision at a third of the exact pass's, and at the cutoff
+first proposed it would have filled a healthy project's gate with eight errors. So the near
+pass reports at `:warn` and proposes; raising its cutoff does not rescue it, because the
+true positives sit below the coincidences. The mechanism is worth holding on to, since it
+follows from the design rather than from a bug: the cross-corpus match test reads `|LCS|`
+against the shorter side where the within-corpus one reads the longer, deliberately, so
+that a library function almost wholly inside one of yours still counts, and that weaker test
+runs against thousands of library units rather than hundreds of your own. A rule reading a
+larger population needs stronger evidence, not the same evidence. Retune these numbers
+against new measurement, never against intuition, and never let the near pass into the gate
+without new evidence that its precision has changed.
+
 Reimplementation candidates are vocabulary, still not meaning. A helper rewritten
 with a different shape shares no subtrees with the original, so the clone passes miss
 it; what survives a rewrite is the vocabulary, the callee names and identifier words,

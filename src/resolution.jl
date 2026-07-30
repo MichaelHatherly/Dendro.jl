@@ -22,6 +22,11 @@ table a cross-file reference resolves against: each file contributes the functio
 types, macros, and consts visible at its module scope, skipping locals and languages
 with no scopes query.
 """
+# Every name this fan-out touches (`SymbolTable`, `CorpusDef`, `file_symbols!`) is the
+# registry's by design, so its coupling sits at the `:misplaced` band. Moving it to
+# `linkage.jl` would put a corpus-wide fan-out inside the table of independent per-language
+# rules, which is the split resolution and registry exist to keep.
+# dendro-ignore: misplaced -- fanning `file_symbols!` over the corpus is resolution's job
 function corpus_symbols(files::Vector{ParsedFile})
     table = SymbolTable()
     append!(
