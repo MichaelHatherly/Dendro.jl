@@ -444,11 +444,19 @@ function apply_key!(acc, scalars, key, value, source)
     return scalars
 end
 
-# The user-global config path, XDG-respecting, the layer above the built-in defaults.
-function global_config_path()
-    base = get(ENV, "XDG_CONFIG_HOME", joinpath(homedir(), ".config"))
-    return joinpath(base, "dendro", "config.toml")
-end
+"""
+    xdg_path(var, default, parts...) -> String
+
+A Dendro path under an XDG base directory: `\$<var>/dendro/<parts...>`, falling back to the
+specification's default under the home directory when the variable is unset. The config
+cascade's user-global layer and the reference-index cache are both this, so the two agree on
+where Dendro keeps things and a test that redirects one redirects the other the same way.
+"""
+xdg_path(var::String, default::String, parts::String...) =
+    joinpath(get(ENV, var, joinpath(homedir(), default)), "dendro", parts...)
+
+# The user-global config path, the layer above the built-in defaults.
+global_config_path() = xdg_path("XDG_CONFIG_HOME", ".config", "config.toml")
 
 # The directory a discovered `.dendro.toml` is looked for in: the git toplevel of the
 # roots when they are in a repo, else the first root's own directory. Mirrors how the

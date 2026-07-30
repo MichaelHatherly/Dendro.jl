@@ -116,8 +116,9 @@ both rely on it, and the benchmark suite pins itself to one thread.
 The bands a finding is judged against are tunable, the cascade resolved in
 `config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
 one band field per relational metric, in `RELATIONAL_BANDS` order since the constructor is
-positional and every band shares a type, a rule on/off override dict, and the three
-clone-detection thresholds. `discover_config(roots)` accumulates each layer's overrides
+positional and every band shares a type, a rule on/off override dict, the five
+clone-detection thresholds (three within-corpus, two cross-corpus), and the `Library` list
+a `[libraries.<name>]` table declares. `discover_config(roots)` accumulates each layer's overrides
 starting from the built-in defaults (the relational band consts, `DEFAULT_CUT`, the
 clone consts, empty override dicts), overlaying a user-global
 `~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`,
@@ -143,7 +144,10 @@ with a `.dendro.toml` gets its bands with no flags passed.
 result is never empty: the worst-N% always exists. A CI gate needs the opposite, a
 pass/fail signal that is satisfiable and stable. `errors` (`gate.jl`) is that view:
 the deterministic floor, every finding at the `:high` absolute band, which is
-high-band scalars plus all flags (flags are always `:high`). Percentile-only
+high-band scalars plus the flags that carry `:high`. That is every built-in flag and the
+default for a user-authored pattern rule's `severity`, but not an invariant: a pattern rule
+may declare `:warn`, and the two cross-corpus metrics band per finding, so only a match
+against a public whole library function reaches the floor. Percentile-only
 findings carry `:ok`/`:warn` and drop out, so the floor never fails on rank alone.
 Inline `dendro-ignore` directives apply first, so a suppressed finding lifts the
 gate. Assert `isempty(errors(path))` in a test and every package's `Pkg.test()`
@@ -175,6 +179,18 @@ two or more, a whole duplicated function or one block copied between functions,
 keeping only the maximal clone. Near-miss detection (`cluster_near_duplicates`)
 catches functions that are close but not identical, the copy-paste-then-edit, and
 emits `:near_duplicate`.
+
+A fourth family, in `libraries.jl`, asks the same question of code the project does not
+own. A `Library` is a named set of roots parsed into a `ReferenceIndex` and nothing else:
+it never enters the baseline, the symbol resolution of the scanned corpus, either graph,
+the per-file rules, the existing clone passes, or the corpus a `Scope` is built over.
+`cluster_library_duplicates` joins the project's anchors against every reference index by
+`(language, hash)`, and `cluster_library_near_duplicates` queries the project's units
+against the libraries' size-banded, confirmed by LCS. Both emit one finding at one
+location, in the project, with every library fact in the label: `Scope.rels` holds corpus
+files alone, so a library site as a second `Location` would throw under diff scoping, and
+`fkey` reads locations, so it would put a version slug into the ratchet key. Still
+name-based and syntactic, within one language, no resolution across the corpus boundary.
 
 A third pass, opt-in and in `reimplementation.jl`, reads vocabulary where the other
 two read structure: a helper rewritten with a different shape shares no subtrees
@@ -340,6 +356,23 @@ Reporting:
   `rank_clones!` sorts a pass's findings by `clone_distance`. Included after
   `file_graph.jl`, whose `ModuleGraph` the ranking reads, and before `analyze.jl`, which
   calls it.
+- `libraries.jl` defines the cross-corpus pair, the one family that reads code the project
+  does not own. `Library` is a named set of roots with an `ignore` list, resolved absolute
+  on construction; `reference_index` parses one through a lighter `parse_corpus` path (no
+  binding resolution, no pattern queries, no directives, since a corpus that is never
+  scored needs none of them), reads publicness through `corpus_symbols`, `DeclaredLinkage`
+  and `public_surface` (skipping `visible_defs` and `corpus_references`, the two expensive
+  halves of `resolve_linkage`), attributes every anchor to its enclosing top-level
+  definition through `unreferenced.jl`'s `enclosing_def`, and returns a `ReferenceIndex`.
+  `cluster_library_duplicates` is the hash join, near-linear in the project's anchor count
+  and independent of library size, with `subsumed_match` as the maximality filter;
+  `cluster_library_near_duplicates` is the banded radius query over
+  `clones.jl`'s `banded_candidates`, confirmed by LCS. `library_finding` is the emission
+  both share: the band from publicness and granularity, the evidence in the label through
+  `evidence_label`. A library whose language has no `LINKAGES` entry reads as private,
+  the inverse of `:unreferenced`'s default, since public is what reaches the gate.
+  Included after `clones.jl`, whose subtree and banding primitives it reuses, and after
+  `resolution.jl`; before `config.jl`, which names `Library` in a `Config` field.
 - `reimplementation.jl` defines the opt-in vocabulary pass. `subtokens` splits an
   identifier into lowercase word fragments; `reimpl_units` fingerprints each
   function (callee names via `callees_by_unit` from `graph_edges.jl`, identifier
@@ -546,7 +579,10 @@ Reporting:
   the unique set of file paths to parse, the shared front of `analyze` and `mermaid`),
   `parse_corpus` (parse each path once and build its query index into a
   `Vector{ParsedFile}`), and `parse_chunk!` (one chunk of that fan-out, with its own
-  parser pool). Parsing is the one boundary that turns a file away: tree-sitter takes the
+  parser pool). `ParseOptions` carries what a parse does beyond the query index, the
+  rules, the pattern queries, whether to resolve bindings and whether to read directives,
+  so a reference corpus opts out of every optional walk and `parse_chunk!` takes one value
+  rather than four more parameters. Parsing is the one boundary that turns a file away: tree-sitter takes the
   source as a C string, so a file carrying an embedded NUL cannot be parsed at all.
   `parse_chunk!` warns with the path and leaves the slot unassigned, and `parse_corpus`
   compacts in index order, so one such file, a fuzzer test case checked in beside real
@@ -561,7 +597,9 @@ Reporting:
   the symbol table, the `ResolvedLinkage` over it, and both graphs, built once),
   `clone_clusters`
   (exact and near duplicates plus the config-gated reimplementation pass, each ranked
-  against the `ModulePlacement`), `relational_clusters` (naturalness, low cohesion,
+  against the `ModulePlacement`), `library_clusters` (the two cross-corpus passes, beside
+  the clone family rather than inside it, since a one-location finding has no module
+  distance for `rank_clones!` to read), `relational_clusters` (naturalness, low cohesion,
   cross-file placement, scattering, unreferenced definitions, the audience pass over the
   symbol table, the two config-gated directory passes, and the three passes over the
   file graph, in the order a report reads them), and the diff scope, `Scope` and
@@ -654,6 +692,14 @@ visibility map used to, so widening what is shared cost no pass a parameter, whi
 because `parameter_count` at its `:high` band would put a rule into Dendro's own error
 floor.
 
+`Library` and `ReferenceIndex` (`libraries.jl`). A reference corpus and what indexing it
+produced: the display name, every anchor with its structural hash, size, enclosing symbol
+and that symbol's publicness in the library, the `by_hash` map the exact join reads, and
+the whole-unit indices the near pass compares. `RefAnchor` carries the near-miss features
+for whole units only, since a block takes part in the exact join where the hash is the
+whole verdict. `RefMatch` is one library anchor a project anchor matched, the evidence a
+label is built from and the reason a cross-corpus finding needs no second `Location`.
+
 `ModulePlacement` (`clones.jl`). Where each corpus file sits in the module graph: the
 file-to-module-node map and the community label per module node. `analyze` resolves one and
 hands it to every clone pass, so a corpus with three of them pays for one community
@@ -689,7 +735,11 @@ relation and reports only its own side leaves the reader to rebuild the graph: `
 labels each unit with the file its community is anchored in, and `:split_audience` and
 `:hub` label each representative with the files consuming its audience (`label_path` in
 `placement.jl` renders the path, `audience_location` in `split_audience.jl` the consumer
-list, capped at `AUDIENCE_CONSUMERS_MAX` with a count for the rest). A label is evidence,
+list, capped at `AUDIENCE_CONSUMERS_MAX` with a count for the rest). The cross-corpus pair
+goes furthest: the label is the *only* place a library appears, since a `Location` outside
+the scanned corpus would throw under diff scoping, so `evidence_label` carries the
+library-qualified symbol, its publicness, and its path relative to the library root, capped
+at `LIBRARY_EVIDENCE_MAX`. A label is evidence,
 not identity, so `fkey` reads file and unit alone and labelling a site never moves a ratchet
 key. Where the label *is* the identity, `:dependency_cycle`'s choice of which edge to cut,
 it goes in the unit field instead and does enter the key. `:misplaced` needs no label: its
@@ -732,8 +782,12 @@ either trips.
   lands at or above the cut (default 0.95). `nothing` when the corpus holds no
   sample for that metric to rank against.
 
-Flag metrics have no distribution. Presence is the finding, always reported at
-`:high`.
+Flag metrics have no distribution. Presence is the finding, reported at `:high` by
+default. That default is not an invariant: `flag_findings!` takes a `severity`, so a
+user-authored pattern rule may declare `:warn`, and `:library_duplicate` and
+`:library_near_duplicate` decide their band per finding, since only a match against a
+public whole library function names an import to make. The gate reads the band, not the
+kind.
 
 ## Duplicate detection
 
@@ -807,6 +861,33 @@ returns, and the ratchet keys a finding by `(metric, sorted location set)`. A re
 touched a band would move that floor under every package gating on Dendro, so the invariant
 is asserted rather than assumed, against the pass output on a fixture corpus and against
 Dendro's own source.
+
+## Duplication against a library
+
+`cluster_library_duplicates` and `cluster_library_near_duplicates` (`libraries.jl`) ask the
+same structural question of a corpus the project does not own. Both sides are walked the
+way the within-corpus passes walk one: the reference side indexes every anchor at the
+floors `anchor_floor` sets, whole units and the blocks inside them, so partial duplication
+falls out of the exact join with no further mechanism. That is also what makes the
+project-side maximality filter sound. Exact matching is monotone downward, so every anchor
+descendant of a matched anchor matches too, and checking the nearest enclosing anchor
+answers "did any enclosing anchor match". Index only whole units on the reference side and
+that shortcut becomes wrong, silently.
+
+The score is directional where `clone_similarity` is symmetric, and deliberately. Coverage
+is `|matched| / |the project's enclosing unit|`, because the question is how much of this
+function of mine is already in a library, which is monotone in how much code the edit
+deletes. The near pass's match test is separate and reads both sides,
+`max(|LCS|/|a|, |LCS|/|r|)`, since a library function almost wholly contained in a large
+project function is the finding as much as the other way round.
+
+Publicness and granularity decide the band, and combine in one place. A match against a
+public whole library function is importable, so at or above `library_gate_coverage` it
+reports `:high` and reaches the gate. A private whole function has no name to call, and
+half a function cannot be imported however public the function holding it, so both warn.
+A library whose language has no `LINKAGES` entry reads as private throughout, the inverse
+of `:unreferenced`'s default: there the safe direction is not calling an unverifiable
+definition dead, here it is not gating on a guess.
 
 ## Within-file cohesion
 

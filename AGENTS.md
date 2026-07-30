@@ -36,9 +36,12 @@ percentile score is for. A project retunes them in a `.dendro.toml` at its root,
 the cascade resolved in `config.jl`: built-in defaults, then a user-global config,
 then the repo file, then explicit `analyze` keywords, merged key by key. Only the
 flagging opinions are configurable: the bands, the percentile cut, the clone-detection
-thresholds, and which rules are active. The corpus floors and the model internals are
+thresholds, which rules are active, and which libraries a scan compares against. The corpus
+floors and the model internals are
 not. An unknown key warns rather than failing, the same honest-over-silent stance as a
-typo'd `dendro-ignore`.
+typo'd `dendro-ignore`. A configured library path that matches nothing is the one
+exception and errors instead, since a library resolving to nothing would silently turn its
+gate off, which is the failure that whole reading exists to prevent.
 
 Syntactic and shallow, on purpose. Dendro reads tree shape and resolves names
 lexically, never types. It matches a reference to the definition it lexically names,
@@ -86,6 +89,25 @@ copies either side of a boundary are a missing abstraction where two copies in o
 are a tidy-up. That is a ranking and nothing more: it never moves a finding's value, its
 band, or its membership of the floor `errors` gates on, since a package downstream gates
 its own tests on that floor.
+
+A library is a corpus read and never judged. Every reading above is one corpus against
+itself; `:library_duplicate` and `:library_near_duplicate` ask whether the author wrote
+something a dependency already does for them. A `Library` is parsed into a `ReferenceIndex`
+and enters nothing else: not the baseline, not the symbol resolution of the scanned corpus,
+not either graph, not the per-file rules, not the corpus a `Scope` is built over. Folding a
+dependency in as an extra root instead would move the percentile, fill the report with code
+nobody can edit, resolve names across a package boundary neither corpus declares, and key
+the ratchet on a version slug. `Scope.rels` holds corpus files alone, so a library site
+cannot be a `Location` at all: every library fact goes in the label, which is where evidence
+belongs and which `fkey` ignores, so a dependency upgrade never re-reports an unchanged
+finding. The score is directional where the clone passes are symmetric, coverage against
+the project's own unit, because the question is how much of this function of mine already
+exists elsewhere. Publicness and granularity combine in one place and one place only, the
+band: only a match against a public whole library function names an import to make, so only
+that reaches the gate. A library in a language with no `LINKAGES` entry reads as private,
+the inverse of `:unreferenced`'s default, since public is what promotes a finding into the
+gate and nothing should gate on a guess. Keep it within one language, keep it reading
+subtree hashes and shape, and answer a legitimate re-implementation with a suppression.
 
 Reimplementation candidates are vocabulary, still not meaning. A helper rewritten
 with a different shape shares no subtrees with the original, so the clone passes miss

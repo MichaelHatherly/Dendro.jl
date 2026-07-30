@@ -284,11 +284,16 @@ end
 
         hit = only(Fixtures.of_metric(findings, :library_near_duplicate))
         @test hit.kind == :flag
-        @test hit.absolute == :high
+        # Never `:high`, whatever the evidence: measured precision on this pass's would-be
+        # gate findings was a third of the exact pass's, so it proposes and never gates.
+        @test hit.absolute == :warn
         # Coverage is the LCS against the project's own unit, so the statement the copy
         # added is what it falls short of 100 by.
         @test 80 <= hit.value < 100
         @test occursin("dep.partition public", only(hit.locations).label)
+        # So nothing this pass reports ever reaches the gate.
+        errs = Dendro.errors(proj; libraries = [lib])
+        @test isempty(Fixtures.of_metric(errs, :library_near_duplicate))
     end
 end
 
@@ -384,6 +389,66 @@ end
                 # A library resolving to nothing turns the gate off and reports a clean
                 # run, which is the one failure this feature must not have.
                 @test Dendro.main(["--library=$(joinpath(dir, "gone"))", src]) == 1
+            end
+        end
+    end
+end
+
+@testitem "a reference index is cached and reused until the library changes" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        _, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+        library = Dendro.Library("Dep", lib)
+
+        mktempdir() do cache
+            withenv("XDG_CACHE_HOME" => cache) do
+                entries() = (d = joinpath(cache, "dendro", "references"); isdir(d) ? readdir(d) : String[])
+
+                first_pass = Dendro.reference_index(library; min_size = 10)
+                @test length(entries()) == 1
+                # A second read of an unchanged library comes back byte-identical off disk.
+                second = Dendro.reference_index(library; min_size = 10)
+                @test length(entries()) == 1
+                @test [a.hash for a in second.anchors] == [a.hash for a in first_pass.anchors]
+
+                # A different clone floor indexes different anchors, so it keys differently.
+                Dendro.reference_index(library; min_size = 4)
+                @test length(entries()) == 2
+
+                # Editing the library changes a file's size and mtime, so the key moves and
+                # the stale entry is never served.
+                write(joinpath(lib, "Dep.jl"), Fixtures.libmod(["partition"], Fixtures.chain("partition", 7)))
+                edited = Dendro.reference_index(library; min_size = 10)
+                @test length(entries()) == 3
+                @test [a.hash for a in edited.anchors] != [a.hash for a in first_pass.anchors]
+            end
+        end
+    end
+end
+
+@testitem "an unreadable cache entry is a miss, never an error" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        _, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+        library = Dendro.Library("Dep", lib)
+
+        mktempdir() do cache
+            withenv("XDG_CACHE_HOME" => cache) do
+                built = Dendro.reference_index(library; min_size = 10)
+                entries = joinpath(cache, "dendro", "references")
+                # A cache is an optimisation and must not be able to break a scan, whatever
+                # a stale format, a truncated write, or another tool left behind.
+                for e in readdir(entries)
+                    write(joinpath(entries, e), "not a serialized index")
+                end
+                again = Dendro.reference_index(library; min_size = 10)
+                @test [a.hash for a in again.anchors] == [a.hash for a in built.anchors]
             end
         end
     end

@@ -2,6 +2,7 @@ module Dendro
 
 import NearestNeighbors
 import RelocatableFolders
+import Serialization
 import TOML
 import TreeSitter
 

@@ -50,4 +50,5 @@ PatternTestFailure
 
 ```@docs
 Config
+Library
 ```

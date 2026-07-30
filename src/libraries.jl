@@ -98,7 +98,15 @@ as_libraries(libraries)::Vector{Library} =
 # Default near-miss cutoff for a cross-corpus match, `max(|LCS|/|a|, |LCS|/|r|)`. Either
 # side being substantially covered is a match; the coverage score then says what it costs
 # the project.
-const DEFAULT_LIBRARY_THRESHOLD = 0.85
+#
+# Higher than the within-corpus `DEFAULT_THRESHOLD`, and measured rather than inherited.
+# Across ten Julia projects against their declared dependencies the population decays
+# smoothly, 618 findings at 0.85, 207 at 0.90, 51 at 0.95, none at 0.98, so there is no gap
+# to sit in and this is a stated noise-against-recall trade instead. 0.85 reports some sixty
+# findings per project, too many to read; 0.95 reports five and loses both of the true
+# positives the sample turned up, whose similarity sits between the two. 0.90 is the last
+# cutoff that keeps the signal.
+const DEFAULT_LIBRARY_THRESHOLD = 0.9
 
 # The coverage percent a match against a public whole library function needs before it
 # reports at `:high` and reaches the gate. Below half, "import this instead" is an edit
@@ -198,13 +206,95 @@ Parsing takes a lighter path than a scan: a file that is never scored needs no b
 resolution, no pattern queries, and no suppression directives. A file whose `realpath` is
 in `exclude`, the corpus being scanned, is dropped before indexing, since pointing a
 library at the project's own source would report every function as a duplicate of itself.
+
+The result memoizes to disk under `\$XDG_CACHE_HOME/dendro/references`, keyed by the format
+and version of the index, `min_size`, and the size and mtime of every file it indexed.
+Indexing is the dominant cost of a cross-corpus scan and a dependency set changes rarely, so
+this is what keeps the pass usable on every CI run. `cache = false` skips it.
 """
 function reference_index(
         library::Library; min_size::Integer,
-        profiles::Dict{Symbol, LanguageProfile} = PROFILES, exclude::Set{String} = Set{String}()
+        profiles::Dict{Symbol, LanguageProfile} = PROFILES, exclude::Set{String} = Set{String}(),
+        cache::Bool = true
     )
     paths = collect_corpus(library.roots, library.ignore, nothing; profiles)
     filter!(p -> !(realpath(p) in exclude), paths)
+    key = cache ? reference_key(library, paths, min_size) : ""
+    if cache
+        hit = load_reference(key)
+        hit === nothing || return hit
+    end
+    index = build_reference_index(library, paths, min_size, profiles)
+    cache && store_reference(key, index)
+    return index
+end
+
+# The cache directory, resolved the way the user-global config path is.
+reference_cache_dir() = xdg_path("XDG_CACHE_HOME", ".cache", "references")
+
+# The on-disk layout of a serialized index. Bumped whenever `RefAnchor` or `ReferenceIndex`
+# changes shape, so an entry written by an older Dendro is a miss rather than a wrong answer.
+const REFERENCE_FORMAT = 1
+
+# What a cached index is keyed by: everything that could change the anchors it holds. The
+# format and the two versions cover the serialized shape, `min_size` the floors an anchor
+# had to clear, and the size and mtime of every indexed file the content itself. Paths go in
+# in `collect_corpus` order, which is deterministic, so the same library keys the same way
+# on every scan.
+function reference_key(library::Library, paths::Vector{String}, min_size::Integer)
+    h = hash(REFERENCE_FORMAT)
+    h = hash(something(pkgversion(@__MODULE__), v"0"), h)
+    h = hash(VERSION, h)
+    h = hash(min_size, h)
+    h = hash(library.name, h)
+    for p in paths
+        info = stat(p)
+        h = hash((p, info.size, info.mtime), h)
+    end
+    return string(h; base = 16)
+end
+
+# A cached index, or `nothing` when the cache cannot answer. Every failure is a miss: a
+# missing entry, a truncated write, an entry another version of Julia serialized, a file
+# something else left in the directory. A cache is an optimisation and must not be able to
+# break a scan.
+function load_reference(key::String)
+    path = joinpath(reference_cache_dir(), key)
+    isfile(path) || return nothing
+    try
+        loaded = open(Serialization.deserialize, path)
+        return loaded isa ReferenceIndex ? loaded : nothing
+    catch err
+        @debug "Dendro: unreadable reference cache entry, rebuilding" path exception = err
+        return nothing
+    end
+end
+
+# Write one index to the cache, best effort. Serialized to a temporary file in the same
+# directory and renamed, so a concurrent scan reads a whole entry or none. A read-only or
+# full cache directory silently writes nothing, for the same reason a failed load is a miss.
+function store_reference(key::String, index::ReferenceIndex)
+    dir = reference_cache_dir()
+    try
+        mkpath(dir)
+        tmp, io = mktemp(dir)
+        try
+            Serialization.serialize(io, index)
+            close(io)
+            mv(tmp, joinpath(dir, key); force = true)
+        finally
+            rm(tmp; force = true)
+        end
+    catch err
+        @debug "Dendro: could not write the reference cache" dir exception = err
+    end
+    return nothing
+end
+
+function build_reference_index(
+        library::Library, paths::Vector{String}, min_size::Integer,
+        profiles::Dict{Symbol, LanguageProfile}
+    )
     files = parse_corpus(paths; profiles, bindings = false, directives = false)
     table, public, ranges = reference_publicness(files)
 
@@ -318,13 +408,19 @@ end
 # instead, so it reports `:high` and reaches the gate. Everything else warns. Half a
 # function cannot be imported however public the function holding it, and a private one has
 # no name to call, though it still says the library solved this and you solved it again.
+#
+# `gate_coverage` is `nothing` for a pass that never gates, which is how the near pass says
+# so: measured precision on its `:high` findings was 11% against the exact pass's 33%, and
+# at the band it would have shipped with it put some eight gate errors into a healthy
+# project, which is an unsatisfiable gate rather than a signal.
 function library_finding(
         metric::Symbol, site::Location, matches::Vector{RefMatch},
-        suppressed::Bool, gate_coverage::Integer
+        suppressed::Bool, gate_coverage::Union{Integer, Nothing}
     )
     sort!(matches; by = m -> (!m.public, !m.whole_unit, -m.coverage, m.library, m.file, m.line))
     best = first(matches)
-    band = best.public && best.whole_unit && best.coverage >= gate_coverage ? :high : :warn
+    band = gate_coverage !== nothing && best.public && best.whole_unit &&
+        best.coverage >= gate_coverage ? :high : :warn
     labelled = Location(site.file, site.line, site.unit, evidence_label(matches))
     return Finding(metric, [labelled], best.coverage, band, nothing, :flag, suppressed)
 end
@@ -432,12 +528,20 @@ library function almost wholly contained in a project function is the finding as
 the other way round. The value is coverage against the project's own unit, so the match
 test says whether there is a finding and the score says what it costs. Pairs with equal
 digests are dropped: the exact pass already has them.
+
+Every finding reports at `:warn`, so this pass never reaches [`errors`](@ref). That is
+measured, not cautious: over ten Julia projects against their declared dependencies, hand
+classification put precision on its would-be `:high` findings at 11% against the exact
+pass's 33%, and it does not improve with a higher cutoff, which discards the true positives
+before the coincidences. A weaker match test (`|LCS|` against the *shorter* side, where the
+within-corpus pass reads the longer) against a pool of thousands of library units is what
+separates the two. Vocabulary this pass reads as similar shape is a proposal to check, not
+a violation to gate on.
 """
 function cluster_library_near_duplicates(
         files::Vector{ParsedFile}, references::Vector{ReferenceIndex};
         min_size::Integer = DEFAULT_MIN_SIZE, threshold::Real = DEFAULT_LIBRARY_THRESHOLD,
-        radius_factor::Real = DEFAULT_RADIUS_FACTOR,
-        gate_coverage::Integer = DEFAULT_LIBRARY_GATE_COVERAGE
+        radius_factor::Real = DEFAULT_RADIUS_FACTOR
     )
     units = clone_units(files, min_size, RELATIONAL.library_near_duplicate)
     pools = reference_units(references)
@@ -457,7 +561,7 @@ function cluster_library_near_duplicates(
         push!(
             findings, library_finding(
                 RELATIONAL.library_near_duplicate, units[i].location, matches[i],
-                units[i].suppressed, gate_coverage
+                units[i].suppressed, nothing
             )
         )
     end
