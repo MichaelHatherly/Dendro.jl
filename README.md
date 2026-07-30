@@ -300,8 +300,9 @@ queries = "/path/to/my-queries"        # holds zig.scm
 ```
 
 Such a language gets the per-file metrics, the structural flags, and duplicate detection.
-The cross-file passes need a linkage entry in the package, so they skip it. See
-[`examples/languages`](examples/languages), which carries a worked Zig query.
+The cross-file passes need a linkage entry in the package, so they skip it. The
+[languages documentation](https://MichaelHatherly.github.io/Dendro.jl/stable/languages/)
+covers the decisions a new query has to make.
 
 ## Documentation
 

@@ -1,6 +1,16 @@
+#! format: off
+#
 # Fixtures for Dendro's own pattern rules. A line marked `dendro-expect` must be reported
 # by that rule, and an unmarked line must not: a rule matching everything would pass a
 # fixture that only checked for a match.
+#
+# Formatting is off for the whole file because the spelling is the assertion: `bt!==nothing`
+# below tests a rule against how the grammar tokenises it, and a formatter adding the spaces
+# would silently retire the case.
+#
+# Most of these rules are guards, so this file is the only place they ever fire. That makes
+# the negative cases the load-bearing half: a guard nobody exercises against code it must
+# stay quiet on is a guard nobody has tested.
 
 function bare_handler(x)
     try
@@ -25,6 +35,192 @@ function bound_handler(x)
         return err
     end
 end
+
+# A bound exception discarded anyway, in each of the three shapes that discard it. The
+# marker sits on the `catch`, which is the node the rule reports.
+function discards_bare(x)
+    try
+        risky(x)
+    catch err    # dendro-expect: swallowed_error
+        return
+    end
+end
+
+function discards_nothing(x)
+    try
+        risky(x)
+    catch err    # dendro-expect: swallowed_error
+        return nothing
+    end
+end
+
+function discards_bare_value(x)
+    try
+        risky(x)
+    catch err    # dendro-expect: swallowed_error
+        nothing
+    end
+end
+
+# Handling is not discarding. A body that logs, rethrows, or returns something derived from
+# the error has done something with it.
+function logs(x)
+    try
+        risky(x)
+    catch err
+        @warn "failed" err
+    end
+end
+
+function rethrows(x)
+    try
+        risky(x)
+    catch err
+        rethrow()
+    end
+end
+
+function converts(x)
+    try
+        risky(x)
+    catch err
+        return err
+    end
+end
+
+# `NaN` compares unequal to everything, so every one of these branches is dead.
+is_missing_value(x) = x == NaN       # dendro-expect: nan_comparison
+is_present(x) = x !== NaN            # dendro-expect: nan_comparison
+nan_reversed(x) = NaN == x           # dendro-expect: nan_comparison
+is_missing_properly(x) = isnan(x)
+
+# Identity against `nothing`, not equality. `!==` and `===` are the correct spellings and
+# must stay quiet.
+absent(x) = x == nothing             # dendro-expect: nothing_equality
+present(x) = x != nothing            # dendro-expect: nothing_equality
+reversed(x) = nothing == x           # dendro-expect: nothing_equality
+absent_ok(x) = x === nothing
+present_ok(x) = x !== nothing
+absent_best(x) = isnothing(x)
+# Written without spaces the grammar reads `bt!` and `==`, so the correct spelling would
+# report as the wrong one.
+unspaced_ok(bt) = bt!==nothing
+
+# An exact-type test where a subtype question was meant, in both operand orders.
+exactly_int(x) = typeof(x) == Int    # dendro-expect: type_equality
+int_exactly(x) = Int != typeof(x)    # dendro-expect: type_equality
+an_int(x) = x isa Integer
+# Comparing two types that both arrived as values is a question `==` answers correctly.
+same_type(x, y) = typeof(x) === typeof(y)
+matches_stored(stored, x) = stored == typeof(x)
+from_call(io, x) = get(io, :typeinfo, Any) == typeof(x)
+
+# Reaching into a `match` result that may be `nothing`.
+first_capture(re, s) = match(re, s).captures    # dendro-expect: unchecked_match
+first_group(re, s) = match(re, s)[1]            # dendro-expect: unchecked_match
+
+function checked(re, s)
+    m = match(re, s)
+    return m === nothing ? nothing : m.captures
+end
+
+# A loop range that writes down where the container starts.
+function summed(v)
+    total = 0
+    for i in 1:length(v)    # dendro-expect: length_index_range
+        total += v[i]
+    end
+    return total
+end
+
+function summed_ok(v)
+    total = 0
+    for i in eachindex(v)
+        total += v[i]
+    end
+    return total
+end
+
+function summed_also_ok(v, n)
+    total = 0
+    for i in 1:n
+        total += v[i]
+    end
+    return total
+end
+
+# `collect` where the surrounding call would have iterated the lazy sequence.
+function counted(itr)
+    n = length(collect(itr))    # dendro-expect: redundant_collect
+    for x in collect(itr)       # dendro-expect: redundant_collect
+        use(x)
+    end
+    return n
+end
+
+function counted_ok(itr)
+    n = count(_ -> true, itr)
+    materialised = collect(itr)
+    return n, materialised
+end
+
+# A container with no element type holds `Any`.
+empty_vector() = []                 # dendro-expect: untyped_container
+empty_dict() = Dict()               # dendro-expect: untyped_container
+empty_set() = Set()                 # dendro-expect: untyped_container
+typed_vector() = Int[]
+typed_dict() = Dict{String, Int}()
+typed_set() = Set{Symbol}()
+indexing(v, i) = v[i]
+deref(r) = r[]
+# `BitSet` takes no parameters: its elements are always `Int`.
+empty_bitset() = BitSet()
+
+# `eval` inside a function body, as a call and as a macro. At module scope it is ordinary
+# metaprogramming and must stay quiet.
+function defines(name)
+    return eval(:(const $name = 1))    # dendro-expect: eval_in_function
+end
+
+function defines_by_macro(name)
+    @eval const $name = 1              # dendro-expect: eval_in_function
+    return name
+end
+
+@eval const MODULE_SCOPE = 1
+
+# A function reaching for a global.
+function bump()
+    global counter    # dendro-expect: global_in_function
+    counter += 1
+    return counter
+end
+
+const COUNTER = Ref(0)
+bump_ok() = COUNTER[] += 1
+
+# Abstractly typed struct fields, against the parametric form that keeps them concrete.
+struct Handler
+    fn::Function        # dendro-expect: abstract_field
+    label::Any          # dendro-expect: abstract_field
+    entries::Dict       # dendro-expect: abstract_field
+end
+
+struct Concrete{F}
+    fn::F
+    label::String
+    entries::Dict{String, Int}
+end
+
+# Splatting two operands to build a vector, against the concatenation that says it, and
+# against a call that splats its arguments.
+joined(a, b) = [a..., b...]    # dendro-expect: splat_concatenation
+typed_join(a, b) = Symbol[a..., b...]    # dendro-expect: splat_concatenation
+direct(a, b) = [a; b]
+forwarded(a, b) = f(a..., b...)
+# Spreading dimensions into an index builds no vector, and parses as the same node the
+# typed literal above does.
+sliced(out, before, i, after) = out[before..., i, after...]
 
 # A fixture pins what the query matches, not what the score comes to: the band and the
 # percentile are Dendro's and are tested elsewhere. So a scalar rule marks the line its
@@ -58,47 +254,3 @@ function compound(x)
     span = 7 + 13    # dendro-expect: magic_number
     return x + span
 end
-
-# A ternary reached from another ternary's branch is a chain. One inside a call is not:
-# the call is where the reader stops.
-chained(v, hi, lo) = v >= hi ? :high : v >= lo ? :warn : :ok    # dendro-expect: nested_ternary
-single(v, hi) = v >= hi ? :high : :ok
-guarded(v, hi) = wrap(v >= hi ? :high : :ok)
-
-# A parameter narrowed to a sized numeric type, positionally and as a keyword default.
-scaled(x::Float64) = x                    # dendro-expect: concrete_numeric_parameter
-counted(n::UInt32) = n                    # dendro-expect: concrete_numeric_parameter
-weighted(x; w::Float64 = 0.5) = x * w     # dendro-expect: concrete_numeric_parameter
-
-# The wider type dispatches the same, and `Int` is what a literal already is.
-widened(x::Real, n::Integer) = x + n
-indexed(i::Int) = i
-
-# A return annotation asserts an inference result rather than narrowing dispatch, and a
-# struct field is where a concrete type earns its keep. Neither is the rule's business.
-asserted(x)::Float64 = x
-
-struct Sized
-    cut::Float64
-end
-
-# Splatting two operands to build a vector, against the concatenation that says it, and
-# against a call that splats its arguments.
-joined(a, b) = [a..., b...]    # dendro-expect: splat_concatenation
-direct(a, b) = [a; b]
-forwarded(a, b) = f(a..., b...)
-
-# An inlining hint, either direction. A macro's name in a string is not a macro call.
-@inline hinted(x) = x      # dendro-expect: manual_inline
-@noinline blocked(x) = x   # dendro-expect: manual_inline
-const HINTS = Set{String}(["@inline", "@noinline"])
-
-# A `const` container built empty exists to be filled. One built with its entries is a
-# lookup table, and one bound to an immutable value is an ordinary constant.
-const CACHE = Dict{Symbol, Int}()    # dendro-expect: mutable_global
-const TABLE = Dict{Symbol, Int}(:a => 1)
-const BAND = (1, 2)
-
-# A field access reaching through another field access. One step is how a record is read.
-reaching(f) = f.index.functions    # dendro-expect: field_chain
-shallow(f) = f.index

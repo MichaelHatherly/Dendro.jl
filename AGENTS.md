@@ -222,6 +222,17 @@ finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment
 suppression hides things silently, it stops being worth trusting.
 
+A pattern rule's silence is that same question asked of a rule instead of a finding. A
+rule that matched nothing anywhere in the corpus is reported, since a query naming a node
+type the grammar never produces would otherwise read as a clean codebase. But a lint rule
+earns its place by naming something wrong whatever the intent, so the rules worth having
+over a hand-maintained source are largely the ones with nothing to say about it, and that
+silence is the result they were written for. `guard = true` declares which of the two a
+rule is. A guard is never reported as unmatched and is an ordinary rule in every other
+way: write the shape and the finding arrives at its severity. Nothing in a query separates
+the broken rule from the working one, so the declaration has to come from the author, and
+Dendro's own `.dendro.toml` is mostly guards for that reason.
+
 Dendro eats its own cooking. `test/dogfood.jl` asserts `isempty(Dendro.errors(src))`,
 the deterministic error floor: every finding at the `:high` absolute band, high-band
 scalars and all flags, percentile-free. This is a superset of the old hand-listed

@@ -35,6 +35,7 @@ band    = [5, 10]
 | `severity` | `"warn"` (default) or `"high"`, for a flag rule |
 | `kind` | `"flag"` (default) or `"scalar"` |
 | `band` | required by a scalar, rejected on a flag; must start at 1 or higher |
+| `guard` | `false` (default); `true` when matching nothing is the wanted state |
 
 `severity` defaults to `warn` because [`errors`](@ref) gates on the `:high` band. A rule
 that fires across a corpus would otherwise make the gate unsatisfiable the day it is
@@ -123,6 +124,41 @@ Expansion is one level: a reference inside a fragment is left alone rather than 
 recursively. A fragment cannot share a name with a declared rule, since a capture cannot
 be both a shape to splice and a rule to report.
 
+### One rule in two grammars
+
+A rule declared once and realised twice is what the split between the declaration and the
+queries is for. `optional_equality` catches `x == nothing` in Julia and `x == None` in
+Python, and the two queries look nothing alike:
+
+```scheme
+; julia.patterns.scm
+((binary_expression (operator) @_op (identifier) @_n) @optional_equality
+ (#eq? @_op "==") (#eq? @_n "nothing"))
+((binary_expression (identifier) @_n (operator) @_op) @optional_equality
+ (#eq? @_op "==") (#eq? @_n "nothing"))
+```
+
+```scheme
+; python.patterns.scm
+((comparison_operator "==" (none)) @optional_equality)
+```
+
+Python keeps the operator in `comparison_operator` as an anonymous token, so one pattern
+covers both operand orders. Julia makes it a named child, and sibling patterns match in
+source order, so each order needs its own pattern. The message the finding carries is
+declared once for both.
+
+Where a query cannot resolve a name it reads convention instead, and both languages need
+the same carve-out for it: `typeof(x) == typeof(y)` and `type(x) == type(y)` compare two
+types that arrived as values, which `==` answers correctly. A capitalised right operand is
+what separates those from a comparison against a type written down.
+
+Fixtures are where a query's disagreements with a grammar get recorded, and a rule written
+against an operator has one waiting: `x!==nothing` without spaces parses as the identifier
+`x!` and the operator `==`, so correct Julia reads as the shape the rule looks for. A `.not`
+pattern reading the left operand is what excludes it, and a fixture line is what keeps the
+exclusion from being deleted later as dead weight.
+
 ## Flag rules and scalar rules
 
 A flag rule reports one finding per matched node, carrying its declared severity as the
@@ -168,6 +204,23 @@ occurs. A rule that matched nothing anywhere in the corpus is reported after the
 ```
 warning: pattern rule(s) matched nothing: no_such_shape
 ```
+
+### Guard rules
+
+Most rules worth writing are silent on a codebase that is already clean, and that silence is
+the result they were written for. It reads identically to the broken rule above, so the
+declaration is what tells them apart:
+
+```toml
+[patterns.nothing_equality]
+message = "`== nothing` compares where `=== nothing` identifies"
+guard   = true
+```
+
+A guard is never reported as unmatched. It is not switched off: write the shape and the
+finding arrives as it would from any other rule. Reach for it when the rule names something
+the project has decided never to write, and leave it off when the rule is meant to find
+something and you want to hear that it did not.
 
 ## Testing a rule
 

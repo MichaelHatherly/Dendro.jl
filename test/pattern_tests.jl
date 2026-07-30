@@ -89,6 +89,34 @@ end
     end
 end
 
+@testitem "a fixture comment about the marker is not a marker" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: check_patterns
+
+    root, srcdir = Fixtures.gitrepo()
+    pdir = joinpath(root, ".dendro", "patterns")
+    mkpath(joinpath(pdir, "tests"))
+    write(joinpath(pdir, "julia.patterns.scm"), "(while_statement) @loop_rule\n")
+    write(joinpath(root, ".dendro.toml"), "[patterns.loop_rule]\nmessage = \"m\"\n")
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+    # A fixture explaining itself names its own rules, and a marker is read from the start
+    # of a comment for the reason a `dendro-ignore` is: prose about the mechanism would
+    # otherwise expect a match on the line under it.
+    write(
+        joinpath(pdir, "tests", "julia.jl"), """
+        # This file marks a line with `dendro-expect: loop_rule` where the rule must fire.
+        function ok(x)
+            while x    # dendro-expect: loop_rule
+            end
+        end
+        """
+    )
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            @test isempty(check_patterns(srcdir))
+        end
+    end
+end
+
 @testitem "a rule with no fixture is not a failure" setup = [Fixtures] tags = [:patterns] begin
     using Dendro: check_patterns
 

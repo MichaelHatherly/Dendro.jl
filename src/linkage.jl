@@ -289,13 +289,18 @@ end
 # definition is consumed by a wrapping construct the analyzer cannot expand (a macro,
 # decorator, annotation, attribute), a second source of reachability roots alongside
 # `is_public`; a language without such a construct uses `no_external_root`.
+#
+# The callables stay abstractly typed, so each is a pointer load and each call through one
+# is a dynamic dispatch. A type parameter per callable would make every language's linkage a
+# distinct type, and `LINKAGES` is a `Dict{Symbol, Linkage}` resolved by language at run
+# time, which needs one. The dispatch is paid once per file per question, never per node.
 struct Linkage
     model::Symbol
-    resolve_target::Function
-    is_exported::Function
-    is_public::Function
-    visibility::Function
-    external_root::Function
+    resolve_target::Function    # dendro-ignore: abstract_field
+    is_exported::Function       # dendro-ignore: abstract_field
+    is_public::Function         # dendro-ignore: abstract_field
+    visibility::Function        # dendro-ignore: abstract_field
+    external_root::Function     # dendro-ignore: abstract_field
 end
 Linkage(model, resolve_target, is_exported, is_public, visibility) =
     Linkage(model, resolve_target, is_exported, is_public, visibility, no_external_root)

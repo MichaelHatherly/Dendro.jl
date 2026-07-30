@@ -11,8 +11,10 @@
 # asserting only that a rule matched something would pass for a rule matching everything.
 
 # An expectation marker in a fixture comment: `dendro-expect: rule[, rule]`. Parallels
-# `DIRECTIVE_RE` in `suppress.jl`, which is the same idea pointed the other way.
-const EXPECT_RE = r"\bdendro-expect\b(?:\s*:\s*([\w,\s]+))?"
+# `DIRECTIVE_RE` in `suppress.jl`, which is the same idea pointed the other way, and read
+# from the start of a comment for the same reason: a fixture that explains what it marks
+# names its own rules in prose, and prose is not a marker.
+const EXPECT_RE = r"^[\s#/*;=!<>-]*dendro-expect\b(?:\s*:\s*([\w,\s]+))?"m
 
 """
     PatternTestFailure

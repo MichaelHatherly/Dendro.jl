@@ -13,6 +13,9 @@ The mechanism reads comment nodes, so it works in every supported language.
 - `dendro-ignore: cyclomatic, parameter_count` suppresses only the named metrics.
 - `dendro-ignore-file` (or `dendro-ignore-file: cyclomatic`) suppresses the whole
   file, for generated or vendored code.
+- A directive opens the comment it sits in: only comment punctuation and whitespace
+  may precede it. A comment discussing the mechanism is therefore not one, so a
+  project can document its own suppressions without exempting the code underneath.
 
 ```julia
 # dendro-ignore: parameter_count

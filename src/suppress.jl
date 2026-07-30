@@ -15,9 +15,15 @@ struct Directive
 end
 
 # `dendro-ignore` or `dendro-ignore-file`, with an optional `: metric, metric`
-# list and an optional ` -- reason` the metric capture stops before. Case-
-# insensitive, matched anywhere in a comment's text.
-const DIRECTIVE_RE = r"\bdendro-ignore(-file)?\b(?:\s*:\s*([\w,\s]+))?"i
+# list and an optional ` -- reason` the metric capture stops before. Case-insensitive.
+#
+# A directive is what a comment says first: only comment punctuation and whitespace may
+# precede it, which is what keeps a comment *about* the mechanism from acting as one, and
+# a project documenting its own suppressions is common enough to matter. The leading class
+# is an allowlist rather than "anything non-word", since a backtick or a quote is what a
+# prose mention puts in front of the token. Multi-line, so a block comment carries a
+# directive on any of its lines.
+const DIRECTIVE_RE = r"^[\s#/*;=!<>-]*dendro-ignore(-file)?\b(?:\s*:\s*([\w,\s]+))?"mi
 
 # 1-based source line of a node's first character.
 line_of(node) = Int(TreeSitter.start_point(node).row) + 1
@@ -44,7 +50,8 @@ end
     suppressions(index; file) -> Vector{Directive}
 
 Scan every comment node for `dendro-ignore` directives and return one
-`Directive` per match. A `-file` directive carries `:file` scope, others carry
+`Directive` per match. A directive opens the comment it sits in, so prose naming
+the mechanism is not one. A `-file` directive carries `:file` scope, others carry
 the comment's line. Named metrics are validated against the active `rules`; an
 unknown name warns and is dropped.
 """

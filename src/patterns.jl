@@ -21,14 +21,15 @@ function pattern_symbol(value, allowed::Tuple{Vararg{Symbol}}, key::String, rule
     return config_error("`$key` for pattern `$rule` in $source must be one of $names, got `$value`")
 end
 
-# Apply one `[patterns.<name>]` table. Only `message` is required; `severity` and `kind`
-# default, and `band` is required by a scalar and rejected on a flag. An unknown key warns
-# and is dropped, as a band does.
+# Apply one `[patterns.<name>]` table. Only `message` is required; `severity`, `kind`, and
+# `guard` default, and `band` is required by a scalar and rejected on a flag. An unknown key
+# warns and is dropped, as a band does.
 function apply_pattern!(acc, name::String, table::Dict{String, Any}, source)
     message = ""
     severity = :warn
     kind = :flag
     band = nothing
+    guard = false
     for (key, value) in table
         if key == "message"
             message = config_string(value, "patterns.$name.$key", source)
@@ -38,13 +39,15 @@ function apply_pattern!(acc, name::String, table::Dict{String, Any}, source)
             kind = pattern_symbol(value, PATTERN_KINDS, key, name, source)
         elseif key == "band"
             band = band_tuple(value, "patterns.$name.$key", source)
+        elseif key == "guard"
+            guard = config_bool(value, "patterns.$name.$key", source)
         else
             @warn "Dendro: unknown pattern key in $source, ignored" pattern = name key
         end
     end
     isempty(message) && config_error("pattern `$name` in $source needs a `message`")
     validate_pattern_band(name, kind, band, source)
-    acc.patterns[Symbol(name)] = PatternSpec(Symbol(name), message, severity, kind, band)
+    acc.patterns[Symbol(name)] = PatternSpec(Symbol(name), message, severity, kind, band, guard)
     return nothing
 end
 
@@ -477,6 +480,11 @@ simply never occurs. This does.
 A rule is only reported when the corpus actually holds a file of a language it has a query
 for: a Python-only rule scanned over a Julia repo has not failed, it just had nothing to
 say.
+
+A rule declaring `guard = true` is never reported. The two silences are different things: a
+rule naming a shape the grammar never produces is broken, and a rule catching what a project
+has decided never to write is working. Nothing in the query tells them apart, so the
+declaration does.
 """
 function unmatched_patterns(files::Vector{ParsedFile}, specs::Vector{PatternSpec})
     isempty(specs) && return Symbol[]
@@ -485,7 +493,12 @@ function unmatched_patterns(files::Vector{ParsedFile}, specs::Vector{PatternSpec
         isempty(bucket.hits.nodes) || push!(matched, name)
     end
     reachable = reachable_pattern_rules(files)
-    return sort!(Symbol[s.name for s in specs if s.name in reachable && !(s.name in matched)])
+    return sort!(
+        Symbol[
+            s.name for s in specs
+                if !s.guard && s.name in reachable && !(s.name in matched)
+        ]
+    )
 end
 
 # The rules that had a query to run against at least one file in the corpus. A rule with no

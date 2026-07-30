@@ -157,7 +157,7 @@ reband(r::Rule, config::Config) =
     value isa Integer ? Int(value) : config_error("`$key` in $source must be an integer, got $value")
 
 @inline config_bool(value, key, source)::Bool =
-    value isa Bool ? value : config_error("rule `$key` in $source must be true or false, got $value")
+    value isa Bool ? value : config_error("`$key` in $source must be true or false, got $value")
 
 @inline config_table(value, key, source)::Dict{String, Any} =
     value isa AbstractDict ? Dict{String, Any}(value) : config_error("`$key` in $source must be a table")

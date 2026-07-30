@@ -50,6 +50,8 @@ end
         ("[patterns.a]\nmessage = \"m\"\nkind = \"scalar\"\n", "band"),
         # ADR line 50: a band starting below 1 lets a unit with no matches score.
         ("[patterns.a]\nmessage = \"m\"\nkind = \"scalar\"\nband = [0, 2]\n", "1"),
+        # `guard` says whether silence is wanted, so a non-boolean is not a guess to make.
+        ("[patterns.a]\nmessage = \"m\"\nguard = \"yes\"\n", "guard"),
     ]
     for (toml, needle) in bad
         mktempdir() do dir
@@ -425,6 +427,62 @@ end
     end
 end
 
+@testitem "a guard rule matching nothing is not reported" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: analyze
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(root, ".dendro", "patterns"))
+    # Both rules are silent on this corpus for the same reason. Only the declaration says
+    # which silence was wanted.
+    write(
+        joinpath(root, ".dendro", "patterns", "julia.patterns.scm"),
+        "(macro_definition) @never_fires\n(while_statement) @no_loops\n"
+    )
+    write(
+        joinpath(root, ".dendro.toml"),
+        """
+        [patterns.never_fires]
+        message = "m"
+
+        [patterns.no_loops]
+        message = "m"
+        guard   = true
+        """
+    )
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            found = analyze(srcdir)
+            @test found.unmatched == [:never_fires]
+            @test !occursin("no_loops", sprint(show, MIME"text/plain"(), found))
+        end
+    end
+end
+
+@testitem "a guard rule still reports what it matches" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: analyze
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(root, ".dendro", "patterns"))
+    # `guard` says silence is the wanted state, never that the rule is off. A project that
+    # writes the shape anyway gets the finding.
+    write(joinpath(root, ".dendro", "patterns", "julia.patterns.scm"), "(while_statement) @no_loops\n")
+    write(
+        joinpath(root, ".dendro.toml"),
+        "[patterns.no_loops]\nmessage = \"m\"\nguard = true\n"
+    )
+    write(joinpath(srcdir, "f.jl"), "function f(x)\n    while x\n        g()\n    end\nend\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            found = analyze(srcdir)
+            @test isempty(found.unmatched)
+            @test any(f -> f.metric === :no_loops, found)
+        end
+    end
+end
+
 @testitem "a rule with no query for the corpus is not reported" setup = [Fixtures] tags = [:patterns] begin
     using Dendro: analyze
 
@@ -453,4 +511,60 @@ end
     # Relative to the declaring config, never the process working directory, so a scan
     # started from a subdirectory still finds the queries.
     @test realpath(cfg.languages[:zig].queries) == realpath(qdir)
+end
+
+@testitem "one rule name realised in two grammars" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: check_patterns
+
+    root, srcdir = Fixtures.gitrepo()
+    pdir = joinpath(root, ".dendro", "patterns")
+    mkpath(joinpath(pdir, "tests"))
+
+    # One declaration and two realisations, which is what keeps a rule's message
+    # language-independent. Python holds the operator in `comparison_operator` as an
+    # anonymous token, so one pattern covers both operand orders; Julia makes it a named
+    # child, and sibling patterns match in source order, so each order needs its own.
+    write(
+        joinpath(pdir, "julia.patterns.scm"), """
+        ((binary_expression (operator) @_op (identifier) @_n) @optional_equality
+         (#eq? @_op "==") (#eq? @_n "nothing"))
+        ((binary_expression (identifier) @_n (operator) @_op) @optional_equality
+         (#eq? @_op "==") (#eq? @_n "nothing"))
+        """
+    )
+    write(joinpath(pdir, "python.patterns.scm"), """((comparison_operator "==" (none)) @optional_equality)\n""")
+    write(joinpath(root, ".dendro.toml"), "[patterns.optional_equality]\nmessage = \"identity is the question\"\n")
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+
+    # Each fixture marks the rule and leaves the identity spelling unmarked, so a rule
+    # realised in one grammar and not the other fails as a missed expectation.
+    write(
+        joinpath(pdir, "tests", "julia.jl"), """
+        function f(x)
+            if x == nothing    # dendro-expect: optional_equality
+                return 0
+            end
+            if x === nothing
+                return 1
+            end
+            return 2
+        end
+        """
+    )
+    write(
+        joinpath(pdir, "tests", "python.py"), """
+        def f(x):
+            if x == None:    # dendro-expect: optional_equality
+                return 0
+            if x is None:
+                return 1
+            return 2
+        """
+    )
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            @test isempty(check_patterns(srcdir))
+        end
+    end
 end
