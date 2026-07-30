@@ -186,6 +186,20 @@
 # method match, so the reports move into `config.jl` instead of going away. The passes that
 # recovered 52 and 79 did it by typing internal parameters that were bare, and this one has
 # none: what the library code threads is typed already.
+#
+# Moving the reference cache into a scratch space and collecting stale entries raised sound
+# from 1687 to 1711, all of it in `libraries.jl`. Fourteen sit on the new lines themselves:
+# five at `sweep_references`' signature and one at the `rm` inside it, two at `best_effort`'s
+# and four at its `@debug`, one at the `touch` guarding a hit and one at the sweep's call
+# site. The other ten are `store_reference`'s existing body read through a closure now that
+# it passes a `do` block to `best_effort` rather than opening `try` inline.
+#
+# That last ten is the price of the extraction, and it buys the invariant being stated once
+# instead of five times: a cache is an optimisation and must not be able to break a scan.
+# Writing the `try`/`catch`/`@debug` out at each of the five sites would read lower here and
+# leave Dendro's own duplicate pass with something to say. `best_effort`'s callback is
+# already `::F where {F}`, so this is the shape rather than inference to recover, the same
+# finding the two narrowing attempts above reached.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -193,7 +207,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1687  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1711  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
