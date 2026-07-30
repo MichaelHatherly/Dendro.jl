@@ -114,6 +114,13 @@ function library_clusters(
         )
         append!(findings, scope_clusters(exact, scope))
     end
+    if get(cfg.rules, RELATIONAL.library_near_duplicate, true)
+        near = cluster_library_near_duplicates(
+            files, references; min_size = cfg.min_size, threshold = cfg.library_threshold,
+            radius_factor = cfg.radius_factor, gate_coverage = cfg.library_gate_coverage
+        )
+        append!(findings, scope_clusters(near, scope))
+    end
     return findings
 end
 

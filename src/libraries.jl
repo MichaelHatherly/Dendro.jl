@@ -320,15 +320,19 @@ end
 # no name to call, though it still says the library solved this and you solved it again.
 function library_finding(
         metric::Symbol, site::Location, matches::Vector{RefMatch},
-        directives::Vector{Directive}, gate_coverage::Integer
+        suppressed::Bool, gate_coverage::Integer
     )
     sort!(matches; by = m -> (!m.public, !m.whole_unit, -m.coverage, m.library, m.file, m.line))
     best = first(matches)
     band = best.public && best.whole_unit && best.coverage >= gate_coverage ? :high : :warn
     labelled = Location(site.file, site.line, site.unit, evidence_label(matches))
-    sup = is_suppressed(directives, site.line, metric)
-    return Finding(metric, [labelled], best.coverage, band, nothing, :flag, sup)
+    return Finding(metric, [labelled], best.coverage, band, nothing, :flag, suppressed)
 end
+
+# Findings sorted the way both cross-corpus passes report: the costliest redundancy first,
+# then by site so the order is fixed whatever the corpus traversal produced.
+sort_library_findings!(findings::Vector{Finding}) =
+    sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
 
 # Whether a matched anchor's nearest enclosing anchor also matched, in which case the
 # larger redundant region is the finding and this one sits inside it.
@@ -386,15 +390,120 @@ function cluster_library_duplicates(
                 id in matched || continue
                 subsumed_match(s.node, indexed, matched) && continue
                 line = Int(TreeSitter.start_point(s.node).row) + 1
+                sup = is_suppressed(f.directives, line, RELATIONAL.library_duplicate)
                 push!(
                     findings, library_finding(
                         RELATIONAL.library_duplicate, Location(f.file, line, name),
-                        hits[id], f.directives, gate_coverage
+                        hits[id], sup, gate_coverage
                     )
                 )
             end
         end
     end
-    sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
-    return findings
+    return sort_library_findings!(findings)
+end
+
+# Every whole-unit anchor across the reference indices, grouped by language and paired with
+# the library it came from. The near pass compares functions, so it reads only these; the
+# blocks stay in the exact join, where the hash is the whole verdict.
+function reference_units(references::Vector{ReferenceIndex})
+    out = Dict{Symbol, Vector{Tuple{String, RefAnchor}}}()
+    for ref in references
+        for i in ref.units
+            a = ref.anchors[i]
+            push!(get!(() -> Tuple{String, RefAnchor}[], out, a.language), (ref.library, a))
+        end
+    end
+    return out
+end
+
+"""
+    cluster_library_near_duplicates(files, references; min_size, threshold, radius_factor, gate_coverage) -> Vector{Finding}
+
+Project functions a library implements approximately, reported as
+`:library_near_duplicate`, one finding per project unit. Whole units on both sides, within
+one language, the copy-paste-then-edit the exact join cannot see: adding one guard clause
+changes the shape and the hash with it.
+
+The reference units are indexed and the project's queried against them, size-banded as
+[`banded_candidates`](@ref) proposes and confirmed by an LCS. A pair matches when either
+side is substantially covered, `max(|LCS|/|a|, |LCS|/|r|)` at or above `threshold`, since a
+library function almost wholly contained in a project function is the finding as much as
+the other way round. The value is coverage against the project's own unit, so the match
+test says whether there is a finding and the score says what it costs. Pairs with equal
+digests are dropped: the exact pass already has them.
+"""
+function cluster_library_near_duplicates(
+        files::Vector{ParsedFile}, references::Vector{ReferenceIndex};
+        min_size::Integer = DEFAULT_MIN_SIZE, threshold::Real = DEFAULT_LIBRARY_THRESHOLD,
+        radius_factor::Real = DEFAULT_RADIUS_FACTOR,
+        gate_coverage::Integer = DEFAULT_LIBRARY_GATE_COVERAGE
+    )
+    units = clone_units(files, min_size, RELATIONAL.library_near_duplicate)
+    pools = reference_units(references)
+    bylang = units_by_language(units)
+
+    matches = Dict{Int, Vector{RefMatch}}()
+    thr = Float64(threshold)
+    for language in sort!(collect(keys(bylang)))
+        idxs = bylang[language]
+        pool = get(pools, language, NO_REF_UNITS)
+        isempty(pool) && continue
+        library_pairs!(matches, units, idxs, pool, thr, Float64(radius_factor))
+    end
+
+    findings = Finding[]
+    for i in sort!(collect(keys(matches)))
+        push!(
+            findings, library_finding(
+                RELATIONAL.library_near_duplicate, units[i].location, matches[i],
+                units[i].suppressed, gate_coverage
+            )
+        )
+    end
+    return sort_library_findings!(findings)
+end
+
+# The reference-unit lookup miss, shared so a language with no library units allocates
+# nothing.
+const NO_REF_UNITS = Tuple{String, RefAnchor}[]
+
+# Confirm one language's proposed pairs and record each project unit's evidence. The LCS is
+# the dominant cost, so it runs in parallel over the proposed pairs, written to a
+# preallocated vector and read back in pair order, so the evidence is identical to the
+# serial path at any thread count.
+function library_pairs!(
+        matches::Dict{Int, Vector{RefMatch}}, units::Vector{CloneUnit}, idxs::Vector{Int},
+        pool::Vector{Tuple{String, RefAnchor}}, threshold::Float64, radius_factor::Float64
+    )
+    query = BandedSide(
+        Dict{String, Int}[units[i].histogram for i in idxs],
+        Int[units[i].size for i in idxs],
+    )
+    search = BandedSide(
+        Dict{String, Int}[a.histogram for (_, a) in pool],
+        Int[a.size for (_, a) in pool],
+    )
+    pairs = banded_candidates(query, search, radius_factor, CROSS_BANDS)
+    lengths = Vector{Int}(undef, length(pairs))
+    parallel_map!(lengths) do k
+        lcs_length(units[idxs[pairs[k][1]]].sequence, pool[pairs[k][2]][2].sequence)
+    end
+    for k in eachindex(pairs)
+        i = idxs[pairs[k][1]]
+        library, anchor = pool[pairs[k][2]]
+        units[i].digest == anchor.hash && continue
+        mine = min(length(units[i].sequence), LCS_CAP)
+        theirs = min(length(anchor.sequence), LCS_CAP)
+        (mine == 0 || theirs == 0) && continue
+        max(lengths[k] / mine, lengths[k] / theirs) >= threshold || continue
+        push!(
+            get!(() -> RefMatch[], matches, i),
+            RefMatch(
+                library, anchor.symbol, anchor.public, anchor.whole_unit,
+                anchor.file, anchor.line, coverage_percent(lengths[k], mine),
+            )
+        )
+    end
+    return matches
 end

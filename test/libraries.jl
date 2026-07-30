@@ -270,6 +270,125 @@ end
     end
 end
 
+@testitem "an edited copy of a library function is a near duplicate" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 9)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 8))],
+        )
+
+        findings = Dendro.analyze(proj; libraries = [lib])
+        # One added statement changes the shape, so the exact join misses it entirely.
+        @test isempty(Fixtures.of_metric(findings, :library_duplicate))
+
+        hit = only(Fixtures.of_metric(findings, :library_near_duplicate))
+        @test hit.kind == :flag
+        @test hit.absolute == :high
+        # Coverage is the LCS against the project's own unit, so the statement the copy
+        # added is what it falls short of 100 by.
+        @test 80 <= hit.value < 100
+        @test occursin("dep.partition public", only(hit.locations).label)
+    end
+end
+
+@testitem "an exact library match is not reported again as a near duplicate" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 8)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 8))],
+        )
+
+        findings = Dendro.analyze(proj; libraries = [lib])
+        @test length(Fixtures.of_metric(findings, :library_duplicate)) == 1
+        @test isempty(Fixtures.of_metric(findings, :library_near_duplicate))
+    end
+end
+
+@testitem "a dissimilar project function matches no library function" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.guards("chunk_by", 8)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 8))],
+        )
+
+        findings = Dendro.analyze(proj; libraries = [lib])
+        @test isempty(Fixtures.of_metric(findings, :library_near_duplicate))
+        @test isempty(Fixtures.of_metric(findings, :library_duplicate))
+    end
+end
+
+@testitem "[rules] toggles each cross-corpus pass on its own" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 9)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 8))],
+        )
+        write(
+            joinpath(dir, "proj", ".dendro.toml"), """
+            [rules]
+            library_near_duplicate = false
+            """
+        )
+
+        cfg = Fixtures.isolated_config([proj], joinpath(dir, "proj", ".dendro.toml"))
+        findings = Dendro.analyze(proj; config = cfg, libraries = [lib])
+        @test isempty(Fixtures.of_metric(findings, :library_near_duplicate))
+    end
+end
+
+@testitem "--library indexes a reference corpus and can name it" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+
+        report = mktemp() do path, io
+            rc = redirect_stdout(io) do
+                Dendro.main(["--check", "--library=IterTools=$lib", proj])
+            end
+            # A public whole-unit match at full coverage is a `:high` finding, so the
+            # gate fails on it.
+            @test rc == 1
+            flush(io)
+            read(path, String)
+        end
+        @test occursin("library_duplicate 100 (high)", report)
+        @test occursin("IterTools.partition public", report)
+
+        # Named by the rule, from the root's parent when the root is a source directory.
+        named = mktemp() do path, io
+            redirect_stdout(io) do
+                Dendro.main(["--check", "--library=$lib", proj])
+            end
+            flush(io)
+            read(path, String)
+        end
+        @test occursin("dep.partition public", named)
+    end
+end
+
+@testitem "a --library path that does not exist is a usage error" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        src = joinpath(dir, "src")
+        mkpath(src)
+        write(joinpath(src, "util.jl"), Fixtures.chain("chunk_by", 6))
+
+        redirect_stdout(devnull) do
+            redirect_stderr(devnull) do
+                # A library resolving to nothing turns the gate off and reports a clean
+                # run, which is the one failure this feature must not have.
+                @test Dendro.main(["--library=$(joinpath(dir, "gone"))", src]) == 1
+            end
+        end
+    end
+end
+
 @testitem "[clones] carries the library thresholds" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         write(
