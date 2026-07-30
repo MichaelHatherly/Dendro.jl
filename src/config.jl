@@ -453,8 +453,9 @@ end
 
 A Dendro path under an XDG base directory: `\$<var>/dendro/<parts...>`, falling back to the
 specification's default under the home directory when the variable is unset. The config
-cascade's user-global layer and the reference-index cache are both this, so the two agree on
-where Dendro keeps things and a test that redirects one redirects the other the same way.
+cascade's user-global layer is this, a file a user edits and expects to find where the
+specification says. Cached data is not: the reference-index cache is a scratch space the
+package owns, which `Pkg.gc()` knows how to reclaim.
 """
 xdg_path(var::String, default::String, parts::String...) =
     joinpath(get(ENV, var, joinpath(homedir(), default)), "dendro", parts...)

@@ -162,6 +162,12 @@
         return proj, lib
     end
 
+    # The serialized indices in a reference cache directory, which is every file in it bar
+    # the sweep's stamp. Counting `readdir` directly would fold the stamp into the total and
+    # leave an assertion about how many indices were written saying something else.
+    cache_entries(dir) = isdir(dir) ?
+        filter(!=(Dendro.REFERENCE_SWEEP_STAMP), readdir(dir)) : String[]
+
     # A single-file Julia library module whose `exports` name its public API, the reference
     # corpus the publicness half of a cross-corpus finding is read against.
     libmod(exports, defs) =

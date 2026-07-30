@@ -1,10 +1,11 @@
 using TestItemRunner
 
-# The reference-index cache writes under `$XDG_CACHE_HOME/dendro/references`. Point it at a
-# throwaway directory for the whole run, items and the subprocesses `test/parallel.jl`
-# spawns alike, so a suite run never touches a developer's real cache and no entry survives
-# into the next one.
-ENV["XDG_CACHE_HOME"] = mktempdir(; cleanup = true)
+# The reference-index cache writes into a Dendro scratch space. Point it at a throwaway
+# directory for the whole run, items and the subprocesses `test/parallel.jl` spawns alike,
+# so a suite run never touches a developer's depot and no entry survives into the next one.
+# An environment variable is what reaches those subprocesses; Scratch's own
+# `with_scratch_directory` sets an in-process binding and would not.
+ENV["DENDRO_CACHE_DIR"] = mktempdir(; cleanup = true)
 
 # `@run_package_tests` walks the whole package directory for test items, so a git worktree
 # checked out beneath it (`.claude/worktrees/<branch>`) contributes a second copy of every

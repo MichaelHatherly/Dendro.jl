@@ -923,11 +923,24 @@ projects it proposes three to four times the candidate pairs for three and a hal
 times the LCS work, and yields four to twenty percent more findings in a pass that never
 gates, so it is off by default behind `[clones] library_anchor_grain`.
 
-`reference_index` memoizes to disk under `$XDG_CACHE_HOME/dendro/references` (`xdg_path`,
-`config.jl`, which the user-global config path also reads). Indexing is the dominant cost of
-a cross-corpus scan, measured at 0.3 to 1.5 seconds cold against 0.06 to 0.15 warm, and a
-dependency set changes rarely. Every load failure is a miss and a rebuild, never an error: a
-cache is an optimisation and must not be able to break a scan.
+`reference_index` memoizes to disk in a scratch space namespaced to Dendro
+(`reference_cache_dir`, `Scratch.@get_scratch!`), which `Pkg.gc()` reclaims once the package
+is uninstalled. Indexing is the dominant cost of a cross-corpus scan, measured at 0.3 to 1.5
+seconds cold against 0.06 to 0.15 warm, and a dependency set changes rarely. Every load
+failure is a miss and a rebuild, never an error: a cache is an optimisation and must not be
+able to break a scan, which is what `best_effort` names.
+
+`DENDRO_CACHE_DIR` overrides the location. An environment variable rather than a
+`.dendro.toml` key, since the cascade carries flagging opinions and not paths, and rather
+than Scratch's `with_scratch_directory`, since that sets an in-process binding where the
+suite spawns subprocesses that index libraries and has to reach them too.
+
+`Pkg.gc()` reclaims a whole space and only once its owner is gone, so per-entry expiry is
+`sweep_references`. The key folds in every indexed file's size and mtime, which means a
+dependency bump orphans an entry rather than replacing it, and nothing else would ever
+remove one. Entries are touched on a hit, so the cutoff reads time since last use: a week,
+swept on write and gated by a stamp file to once a day. The sweep runs inline rather than on
+a spawned task, which would die with the CLI process on the path that matters most.
 
 ## Within-file cohesion
 

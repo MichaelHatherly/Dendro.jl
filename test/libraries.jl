@@ -349,12 +349,12 @@ end
         library = Dendro.Library("Dep", lib)
 
         mktempdir() do cache
-            withenv("XDG_CACHE_HOME" => cache) do
+            withenv("DENDRO_CACHE_DIR" => cache) do
                 units = Dendro.reference_index(library; min_size = 10, grain = :unit)
                 anchors = Dendro.reference_index(library; min_size = 10, grain = :anchor)
                 # A unit-grain index carries no features on its block anchors, so serving one
                 # to the anchor-grain pass would silently under-report.
-                @test length(readdir(joinpath(cache, "dendro", "references"))) == 2
+                @test length(Fixtures.cache_entries(cache)) == 2
                 @test all(isempty(a.sequence) for a in units.anchors if !a.whole_unit)
                 @test all(!isempty(a.sequence) for a in anchors.anchors)
             end
@@ -445,6 +445,25 @@ end
     end
 end
 
+@testitem "the reference cache honours DENDRO_CACHE_DIR" tags = [:libraries] begin
+    mktempdir() do cache
+        withenv("DENDRO_CACHE_DIR" => cache) do
+            @test Dendro.reference_cache_dir() == cache
+        end
+    end
+end
+
+@testitem "the reference cache defaults to a Dendro scratch space" tags = [:libraries] begin
+    # The suite points `DENDRO_CACHE_DIR` at a throwaway directory, so this is the one item
+    # that has to look past it to see where a real run would write.
+    withenv("DENDRO_CACHE_DIR" => nothing) do
+        dir = Dendro.reference_cache_dir()
+        @test isdir(dir)
+        @test basename(dir) == "references"
+        @test occursin("scratchspaces", dir)
+    end
+end
+
 @testitem "a reference index is cached and reused until the library changes" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         _, lib = Fixtures.library_corpus(
@@ -455,8 +474,8 @@ end
         library = Dendro.Library("Dep", lib)
 
         mktempdir() do cache
-            withenv("XDG_CACHE_HOME" => cache) do
-                entries() = (d = joinpath(cache, "dendro", "references"); isdir(d) ? readdir(d) : String[])
+            withenv("DENDRO_CACHE_DIR" => cache) do
+                entries() = Fixtures.cache_entries(cache)
 
                 first_pass = Dendro.reference_index(library; min_size = 10)
                 @test length(entries()) == 1
@@ -490,16 +509,94 @@ end
         library = Dendro.Library("Dep", lib)
 
         mktempdir() do cache
-            withenv("XDG_CACHE_HOME" => cache) do
+            withenv("DENDRO_CACHE_DIR" => cache) do
                 built = Dendro.reference_index(library; min_size = 10)
-                entries = joinpath(cache, "dendro", "references")
                 # A cache is an optimisation and must not be able to break a scan, whatever
                 # a stale format, a truncated write, or another tool left behind.
-                for e in readdir(entries)
-                    write(joinpath(entries, e), "not a serialized index")
+                for e in Fixtures.cache_entries(cache)
+                    write(joinpath(cache, e), "not a serialized index")
                 end
                 again = Dendro.reference_index(library; min_size = 10)
                 @test [a.hash for a in again.anchors] == [a.hash for a in built.anchors]
+            end
+        end
+    end
+end
+
+@testitem "an untouched reference cache entry is collected" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        _, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+        library = Dendro.Library("Dep", lib)
+
+        mktempdir() do cache
+            withenv("DENDRO_CACHE_DIR" => cache) do
+                Dendro.reference_index(library; min_size = 10)
+                @test length(Fixtures.cache_entries(cache)) == 1
+                # A cutoff every entry is past, so the sweep collects the lot. The stamp is
+                # what records that a sweep happened, so it survives its own pass.
+                Dendro.sweep_references(cache; max_age = -1, interval = -1)
+                @test isempty(Fixtures.cache_entries(cache))
+                @test isfile(joinpath(cache, Dendro.REFERENCE_SWEEP_STAMP))
+            end
+        end
+    end
+end
+
+@testitem "a fresh reference cache entry survives collection" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        _, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+        library = Dendro.Library("Dep", lib)
+
+        mktempdir() do cache
+            withenv("DENDRO_CACHE_DIR" => cache) do
+                Dendro.reference_index(library; min_size = 10)
+                Dendro.sweep_references(cache; interval = -1)
+                @test length(Fixtures.cache_entries(cache)) == 1
+            end
+        end
+    end
+end
+
+@testitem "the reference cache sweep runs at most once per interval" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do cache
+        # A sweep has just run, so the stamp is fresh.
+        Dendro.sweep_references(cache; max_age = -1, interval = -1)
+        # An entry every cutoff is past, written after that sweep. The next call is inside
+        # the interval, so it must decline to look at all rather than collect it.
+        stale = joinpath(cache, "0123456789abcdef")
+        write(stale, "an index")
+        Dendro.sweep_references(cache; max_age = -1)
+        @test isfile(stale)
+    end
+end
+
+@testitem "a reference cache hit records the entry as used" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        _, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+        library = Dendro.Library("Dep", lib)
+
+        mktempdir() do cache
+            withenv("DENDRO_CACHE_DIR" => cache) do
+                Dendro.reference_index(library; min_size = 10)
+                entry = joinpath(cache, only(Fixtures.cache_entries(cache)))
+                written = mtime(entry)
+                # The sweep reads time since last use, so serving an entry has to record
+                # that it was used. Without this a cache warm for months still expires.
+                sleep(0.02)
+                Dendro.reference_index(library; min_size = 10)
+                @test mtime(entry) > written
             end
         end
     end

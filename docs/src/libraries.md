@@ -217,12 +217,30 @@ your project's. Measured cold on six projects with 40 to 360 dependency source f
 dictionary lookup per project anchor, so it is independent of how large the libraries are,
 which is what lets it gate.
 
-Indexing memoizes to disk under `$XDG_CACHE_HOME/dendro/references`, keyed by the index
-format, the Dendro and Julia versions, `min_size`, the grain, and the size and mtime of
-every file indexed. A dependency set changes rarely, so a warm cache turns that 0.3–1.5
-seconds into 0.06–0.15. Any load failure at all (a stale format, a truncated write, a file
-another tool left there) is a miss and a rebuild. A cache is an optimisation and must not
-be able to break a scan, so there is no error path from it.
+Indexing memoizes to disk in a scratch space Dendro owns, keyed by the index format, the
+Dendro and Julia versions, `min_size`, the grain, and the size and mtime of every file
+indexed. A dependency set changes rarely, so a warm cache turns that 0.3–1.5 seconds into
+0.06–0.15. Any load failure at all (a stale format, a truncated write, a file another tool
+left there) is a miss and a rebuild. A cache is an optimisation and must not be able to
+break a scan, so there is no error path from it.
+
+Set `DENDRO_CACHE_DIR` to put the indices somewhere else, on a machine whose depot sits on
+a disk that cannot hold them. It is an environment variable and not a `.dendro.toml` key
+because the config file carries opinions about your code, not paths on your machine.
+
+An entry no scan has used for a week is deleted, swept when a new index is written and at
+most once a day. This matters more than it sounds: the cache key includes each indexed
+file's size and mtime, so upgrading a dependency does not overwrite its entry, it writes a
+new one beside it. Without collection the space would grow for as long as your dependencies
+keep moving. Scratch spaces are reclaimed by `Pkg.gc()` only once the owning package is
+uninstalled, which is too late to be the answer here.
+
+To clear the lot by hand:
+
+```julia
+using Scratch, Dendro
+Scratch.clear_scratchspaces!(Dendro)
+```
 
 ## From the command line
 
