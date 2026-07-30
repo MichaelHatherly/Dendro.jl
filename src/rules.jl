@@ -155,4 +155,13 @@ const RELATIONAL_METRICS = values(RELATIONAL)
 
 # Metric names a directive may name: the active rules plus the relational clone
 # metrics. An inline `dendro-ignore` naming anything else warns.
-metric_names(rules) = append!(Symbol[r.name for r in rules], RELATIONAL_METRICS)
+#
+# `rules` is typed because the walk over it happens here rather than inside Base's
+# collection machinery: an untyped parameter leaves the sound gate analysing the
+# comprehension and the append against `Any`, and reading the result widens
+# `suppressions` in turn.
+function metric_names(rules::Vector{Rule})
+    names = Symbol[r.name for r in rules]
+    append!(names, RELATIONAL_METRICS)
+    return names
+end

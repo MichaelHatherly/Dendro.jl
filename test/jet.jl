@@ -153,6 +153,17 @@
 # union to `Union{DirectoryReading, Nothing}` moved nothing at all, so the union return was
 # never what the count was reading. The struct stays because it names the thing, not because
 # it bought anything here.
+#
+# Guard declarations and the anchored suppression directive raised sound from 1473 to 1482:
+# `PatternSpec` carries one more declared field and a convenience constructor, two reports of
+# the shape each existing field already has; typing `suppressions`' `rules` keyword puts its
+# keyword-argument lowering on the signature for four more; three land in frames that carry
+# no file. It first measured 1495, where `metric_names` built its result with
+# `append!(::Vector{Symbol}, ::Tuple)`. That reaches Base's generic iterator path, costing
+# fifteen reports at the call and two more where `suppressions` reads the widened result, so
+# the parameter is typed and the walk is over a concrete vector again. Rewriting the append
+# as a `push!` loop over the tuple instead measured 1496, one worse than the splat it
+# replaced: the iteration moves out of Base and into a Dendro frame, where it counts.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -160,7 +171,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1473  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1482  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 27      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

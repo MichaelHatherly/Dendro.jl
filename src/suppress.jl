@@ -55,7 +55,7 @@ the mechanism is not one. A `-file` directive carries `:file` scope, others carr
 the comment's line. Named metrics are validated against the active `rules`; an
 unknown name warns and is dropped.
 """
-function suppressions(index::QueryIndex; file, rules = BUILTIN_RULES)
+function suppressions(index::QueryIndex; file, rules::Vector{Rule} = BUILTIN_RULES)
     valid = metric_names(rules)
     out = Directive[]
     for n in index.comment.nodes
