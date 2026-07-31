@@ -141,6 +141,62 @@ dangling `using` with no module name in an `archives/` directory, and the rest a
 `~` inside a vector literal and a stray quote, which tree-sitter-julia does not
 take. The extracted text matches the source line for line in all four.
 
+## Entering the corpus
+
+A `.qmd` is not a language, so it does not belong in `EXTENSIONS`, which maps an
+extension to exactly one. Its languages are named by its cells, and only its cells
+are code at all. That wants a second registry beside the first: an extension to a
+container format, where a format says how to find the embedded code and nothing
+about what language it is.
+
+The rest follows the path an ordinary file already takes.
+
+- `source_files` keeps a path whose extension resolves to a language *or* to a
+  container, so a directory walk picks documents up with no new traversal.
+- `collect_corpus` stops erroring on a named `.qmd`, since its language can now be
+  inferred, from its content rather than its name.
+- `parse_corpus` reads a container path by extracting its cells, grouping them by
+  the language each fence names, resolving that name through the scan's profile
+  registry, and parsing each group by injection. A cell language with no profile is
+  skipped exactly as an unrecognised extension is.
+
+`ParsedFile` needs no new field. Under injection `source` is the real document text
+and `tree` covers only the cell ranges, so `language`, `profile`, `file` and
+`directives` all mean what they already mean, and nothing downstream has to ask
+whether a record came from a container. One consequence is deliberate: a document's
+Julia cells sample into the Julia baseline alongside every `.jl` file, which is what
+makes the percentile comparable and is the same reason the fixed bands transfer.
+
+Documents are read by default. A `.qmd` in the tree is the project's code, and a
+project that wants it out uses `ignore` as it would for anything else. This does
+change what an existing scan of a mixed repository sees, which is the point.
+
+An inline `dendro-ignore` is found through `index.comment`, so it works inside a
+cell and cannot be written in prose. That is the right boundary: a directive
+accepts a finding, and a finding is on code.
+
+One `ParsedFile` per document, not per language, until file identity becomes
+`(path, language)`. The measurement and the reason are under Deliberately not in
+this.
+
+## Two steps, and what each one buys
+
+Reading a document is worth doing on its own, before cells become units.
+
+A function defined inside a cell is an ordinary definition, so the moment Dendro can
+open a `.qmd` it is a unit like any other, with every rule, both clone passes and
+both library passes over it. More to the point, the cell code that is *not* a
+definition still contributes references, and that is what retires the 429
+`:unreferenced` findings above, 127 of them names a `.qmd` in the same repository
+uses. None of this touches the unit model.
+
+Cells as units is the separate step, and it is what the duplication numbers below
+need. It does not fall out of injection for free. A document parses to one tree, so
+its top-level code already becomes contiguous runs broken at definitions, the same
+construction a script gets; making those runs stop at the fences instead means
+passing the extractor's cell line ranges into unit construction. That is the whole
+of the extra work, and it is why the two steps separate cleanly.
+
 ## Unit model
 
 `FunctionUnit` holds one node. A cell and a script's top level are both a run of
@@ -233,14 +289,17 @@ the answer and not its exact size.
 2. Unit as a node run. Done: pure refactor, no behaviour change, since every
    existing unit is a run of one.
 3. Rule applicability by unit kind, with the `unused_local` fix. Done.
-4. `.qmd` as a container format in the corpus, on injection. Needs a `TreeSitter.jl`
-   release carrying `src/injection.jl`.
+4. `.qmd` as a container format in the corpus, on injection, per Entering the
+   corpus. Needs a `TreeSitter.jl` release carrying `src/injection.jl`. Worth
+   landing on its own, before cells are units: it needs no unit-model change and it
+   is what retires the `:unreferenced` false positives.
 5. Script top-level units. Done, and it is what forced `containing_callable`: making
    top-level code a unit fed it into the passes that ask where a definition belongs,
    and `:low_cohesion` fired on nearly every file in Dendro's own `src`.
+6. Cells as units, by passing the extractor's cell ranges into unit construction.
 
 Steps 2, 3 and 5 landed before 4 so the unit-model change and the new file type
-review apart. Step 4 is now the only part left.
+review apart. Steps 4 and 6 are what is left, and 4 is worth shipping without 6.
 
 ## Deliberately not in this
 
