@@ -200,6 +200,13 @@
 # leave Dendro's own duplicate pass with something to say. `best_effort`'s callback is
 # already `::F where {F}`, so this is the shape rather than inference to recover, the same
 # finding the two narrowing attempts above reached.
+#
+# Replacing `Serialization` with a format Dendro owns raised sound from 1711 to 1722 and left
+# opt at 32. Those eleven are what a hand-written codec costs: `serialize` and `deserialize`
+# were one frame each, where the encoder, the reader and the bounds check every length passes
+# through are frames JET can see and count. The reader doing that checking in Dendro rather
+# than behind a stdlib call is the whole point of the format, so this is the shape rather
+# than inference to recover.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -207,7 +214,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1711  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1722  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
