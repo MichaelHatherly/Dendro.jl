@@ -505,12 +505,17 @@ end
 
 One region of the project the near pass compares: the `location` to report it at, the
 near-miss features, the `digest` that tells an exact match apart, whether it is a `whole`
-function unit, and `unit_size`, the size of the unit enclosing it.
+function unit, and `unit_size` and `unit_line`, the size and first line of the unit
+enclosing it.
 
 `unit_size` is the coverage denominator and stays the whole unit even when the region is a
 block inside one, because the question the score answers is how much of *this function of
 mine* is already in a library. The match test reads the region's own sequence instead, so
 whether there is a finding and what it costs stay separate readings.
+
+`unit_line` is what identifies that enclosing unit. A name does not: Julia puts several
+methods of one name in one file, so keying on the name reads a block inside one method as
+already covered by a match against another.
 """
 struct ProjectRegion
     language::Symbol
@@ -521,10 +526,14 @@ struct ProjectRegion
     digest::UInt64
     whole::Bool
     unit_size::Int
+    unit_line::Int
 end
 
-ProjectRegion(u::CloneUnit) =
-    ProjectRegion(u.language, u.location, u.suppressed, u.sequence, u.histogram, u.digest, true, u.size)
+# A whole function is its own enclosing unit, so its location's line is that unit's line.
+ProjectRegion(u::CloneUnit) = ProjectRegion(
+    u.language, u.location, u.suppressed, u.sequence, u.histogram, u.digest,
+    true, u.size, u.location.line,
+)
 
 """
     project_regions(files, min_size, grain) -> Vector{ProjectRegion}
@@ -558,6 +567,7 @@ function project_regions(files::Vector{ParsedFile}, min_size::Integer, grain::Sy
                         f.language, Location(f.file, line, name),
                         is_suppressed(f.directives, line, metric),
                         preorder_hashes(sub), histogram_of(sub), s.hash, whole, total,
+                        unit.firstline,
                     )
                 )
             end
@@ -619,7 +629,7 @@ function cluster_library_near_duplicates(
     covered = matched_units(regions, matches)
     for i in sort!(collect(keys(matches)))
         r = regions[i]
-        (!r.whole && (r.location.file, r.location.unit) in covered) && continue
+        (!r.whole && (r.location.file, r.unit_line) in covered) && continue
         push!(
             findings, library_finding(
                 RELATIONAL.library_near_duplicate, r.location, matches[i], r.suppressed, nothing
@@ -629,16 +639,19 @@ function cluster_library_near_duplicates(
     return sort_library_findings!(findings)
 end
 
-# The units that matched, keyed by file and name. A region below one of them is inside a
-# redundancy already reported whole, and the larger region is the finding. Only the wider
+# The units that matched, keyed by file and first line. A region below one of them is inside
+# a redundancy already reported whole, and the larger region is the finding. Only the wider
 # grain produces regions below a unit at all. Approximate matching is not monotone the way
 # exact matching is, so this is a reporting choice rather than a soundness one: a block whose
 # enclosing function already matched names no separate edit.
+#
+# By line and not by name, since Julia puts several methods of one name in one file and a
+# name would read a block inside one method as covered by a match against another.
 function matched_units(regions::Vector{ProjectRegion}, matches::Dict{Int, Vector{RefMatch}})
-    covered = Set{Tuple{String, String}}()
+    covered = Set{Tuple{String, Int}}()
     for i in keys(matches)
         r = regions[i]
-        r.whole && push!(covered, (r.location.file, r.location.unit))
+        r.whole && push!(covered, (r.location.file, r.unit_line))
     end
     return covered
 end

@@ -85,12 +85,10 @@ end
 # out, so registering an unrelated language does not orphan every entry in the cache.
 function hash_queries(h::UInt, paths::Vector{String}, profiles::Dict{Symbol, LanguageProfile})
     extensions = extension_map(profiles)
-    languages = Set{Symbol}()
-    for p in paths
-        language = language_for_path(p, extensions)
-        language === nothing || push!(languages, language)
-    end
-    for name in sort!(collect(languages))
+    reached = Set{Symbol}(
+        l for l in (language_for_path(p, extensions) for p in paths) if l !== nothing
+    )
+    for name in sort!(collect(reached))
         haskey(profiles, name) || continue
         profile = profiles[name]
         h = hash(profile, h)

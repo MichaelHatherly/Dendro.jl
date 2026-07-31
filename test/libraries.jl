@@ -339,6 +339,35 @@ end
     end
 end
 
+@testitem "two methods of one name are not confused for each other" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        # Julia puts several methods of one name in one file, so a name does not identify a
+        # unit. The first method matches the library function whole; the second is far larger
+        # and carries a matching block inside it. Keyed by name, the second finding is read
+        # as already covered by the first and dropped.
+        second = replace(
+            Fixtures.nested_chain("decode", 9; pad = 40),
+            "function decode(decode0)" => "function decode(decode0, fallback::Int)";
+            count = 1,
+        )
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("decode", 9) * second],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 8))],
+        )
+        write(joinpath(dir, "proj", ".dendro.toml"), "[clones]\nlibrary_anchor_grain = true\n")
+        cfg = Fixtures.isolated_config([proj], joinpath(dir, "proj", ".dendro.toml"))
+
+        hits = Fixtures.of_metric(
+            Dendro.analyze(proj; config = cfg, libraries = [lib]), :library_near_duplicate
+        )
+        @test length(hits) == 2
+        @test all(f -> only(f.locations).unit == "decode", hits)
+        # Two findings at two places, which is what says they were told apart.
+        @test length(unique(only(f.locations).line for f in hits)) == 2
+    end
+end
+
 @testitem "anchor grain keys the reference cache apart from unit grain" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         _, lib = Fixtures.library_corpus(
