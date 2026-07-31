@@ -218,15 +218,29 @@ dictionary lookup per project anchor, so it is independent of how large the libr
 which is what lets it gate.
 
 Indexing memoizes to disk in a scratch space Dendro owns, keyed by the index format, the
-Dendro and Julia versions, `min_size`, the grain, and the size and mtime of every file
-indexed. A dependency set changes rarely, so a warm cache turns that 0.3–1.5 seconds into
-0.06–0.15. Any load failure at all (a stale format, a truncated write, a file another tool
-left there) is a miss and a rebuild. A cache is an optimisation and must not be able to
-break a scan, so there is no error path from it.
+Dendro and Julia versions, `min_size`, the grain, the size and mtime of every file indexed,
+and the query files of each language among them. A dependency set changes rarely, so a warm
+cache turns that 0.3–1.5 seconds into 0.06–0.15. Any load failure at all (a stale format, a
+truncated write, a file another tool left there) is a miss and a rebuild. A cache is an
+optimisation and must not be able to break a scan, so there is no error path from it.
+
+The queries are in the key because they decide what an anchor is. Retune one with
+`[languages.julia] queries` and the set of files indexed does not change, so without them
+the key would not move and you would be served an index built against the query you
+replaced.
+
+Entries are written in a format Dendro defines rather than through Julia's `Serialization`.
+`Serialization` rebuilds whatever types a stream names, which makes reading an entry someone
+else wrote a way to run their code; the reader here names no type and allocates nothing from
+a length it has not checked against the bytes in front of it. That matters if you share a
+cache directory between CI jobs, which is the usual way to keep one warm.
 
 Set `DENDRO_CACHE_DIR` to put the indices somewhere else, on a machine whose depot sits on
 a disk that cannot hold them. It is an environment variable and not a `.dendro.toml` key
-because the config file carries opinions about your code, not paths on your machine.
+because the config file carries opinions about your code, not paths on your machine. Point
+it at a directory Dendro owns: collection deletes entries by name, and while it only ever
+removes names that look like its own hex digests, a directory you also keep other things in
+is not what it is for.
 
 An entry no scan has used for a week is deleted, swept when a new index is written and at
 most once a day. This matters more than it sounds: the cache key includes each indexed

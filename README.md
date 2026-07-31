@@ -350,7 +350,8 @@ covers the decisions a new query has to make.
 
 The [documentation](https://MichaelHatherly.github.io/Dendro.jl/stable) covers the
 rest: the two-score model and every metric, duplicate and near-duplicate detection,
-duplication against a library the project already depends on, within-file cohesion, cross-file placement and scattering, files serving disjoint
+duplication against a library the project already depends on, within-file cohesion,
+cross-file placement and scattering, files serving disjoint
 audiences, dependencies running against a directory pair's grain, dependency cycles
 reported as the edges that break them (`dependency_cycle`, banded on the number of files
 caught in the cycle at `[5, 10]`), hub files by fan-in and fan-out, dead private code by

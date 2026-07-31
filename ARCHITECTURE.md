@@ -118,8 +118,8 @@ The bands a finding is judged against are tunable, the cascade resolved in
 one band field per relational metric, in `RELATIONAL_BANDS` order since the constructor is
 positional and every band shares a type, a rule on/off override dict, the five
 clone-detection thresholds (three within-corpus, two cross-corpus), and the `Library` list
-a `[libraries.<name>]` table declares. `discover_config(roots)` accumulates each layer's overrides
-starting from the built-in defaults (the relational band consts, `DEFAULT_CUT`, the
+a `[libraries.<name>]` table declares. `discover_config(roots)` accumulates each layer's
+overrides starting from the built-in defaults (the relational band consts, `DEFAULT_CUT`, the
 clone consts, empty override dicts), overlaying a user-global
 `~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`,
 then builds one `Config`. Each layer is `apply_toml!`, which touches only the keys
@@ -372,9 +372,18 @@ Reporting:
   both share: the band from publicness and granularity, the evidence in the label through
   `evidence_label`. A library whose language has no `LINKAGES` entry reads as private,
   the inverse of `:unreferenced`'s default, since public is what reaches the gate.
-  `reference_key`, `load_reference` and `store_reference` are the disk memoization.
   Included after `clones.jl`, whose subtree and banding primitives it reuses, and after
   `resolution.jl`; before `config.jl`, which names `Library` in a `Config` field.
+- `reference_cache.jl` keeps a parsed `ReferenceIndex` between scans, the infrastructure
+  under those two passes rather than one of them. `reference_key` is what an entry is keyed
+  by, `hash_queries` the part of it covering the queries that decided what an anchor is;
+  `encode_index` and `decode_index` are the format Dendro owns, with `string_pool` interning
+  the repeated file, symbol and node-type names and `ByteCursor` bounds-checking every length
+  read off the wire; `load_reference` and `store_reference` are the disk round trip and
+  `sweep_references` the per-entry expiry. `best_effort` names the invariant the whole file
+  keeps: a cache is an optimisation and must not be able to break a scan, so every failure is
+  a miss and a rebuild. Included after `libraries.jl`, whose `ReferenceIndex` it names in a
+  signature.
 - `reimplementation.jl` defines the opt-in vocabulary pass. `subtokens` splits an
   identifier into lowercase word fragments; `reimpl_units` fingerprints each
   function (callee names via `callees_by_unit` from `graph_edges.jl`, identifier
@@ -584,8 +593,9 @@ Reporting:
   parser pool). `ParseOptions` carries what a parse does beyond the query index, the
   rules, the pattern queries, whether to resolve bindings and whether to read directives,
   so a reference corpus opts out of every optional walk and `parse_chunk!` takes one value
-  rather than four more parameters. Parsing is the one boundary that turns a file away: tree-sitter takes the
-  source as a C string, so a file carrying an embedded NUL cannot be parsed at all.
+  rather than four more parameters. Parsing is the one boundary that turns a file away:
+  tree-sitter takes the source as a C string, so a file carrying an embedded NUL cannot be
+  parsed at all.
   `parse_chunk!` warns with the path and leaves the slot unassigned, and `parse_corpus`
   compacts in index order, so one such file, a fuzzer test case checked in beside real
   source, is reported rather than taking the scan down. Gathering and driving are separate
@@ -928,7 +938,31 @@ gates, so it is off by default behind `[clones] library_anchor_grain`.
 is uninstalled. Indexing is the dominant cost of a cross-corpus scan, measured at 0.3 to 1.5
 seconds cold against 0.06 to 0.15 warm, and a dependency set changes rarely. Every load
 failure is a miss and a rebuild, never an error: a cache is an optimisation and must not be
-able to break a scan, which is what `best_effort` names.
+able to break a scan, which is what `best_effort` names. A scan whose `[rules]` turned both
+passes off indexes nothing at all: `active_libraries` hands the indexer an empty list, which
+is the path an unconfigured scan already takes.
+
+An entry is written in a format Dendro owns rather than through `Serialization`, and the
+reason is what the reader promises rather than what the writer produces. `Serialization`
+reconstructs whatever types a stream names, so an entry someone else wrote can execute code,
+and a `try`/`catch` cannot help when the deserialization itself is the vector. A per-user
+scratch space made that theoretical; `DENDRO_CACHE_DIR` exists so the cache can live
+elsewhere, and a directory shared between CI jobs is the documented way to keep one warm.
+`decode_index` names no type from the input and sizes no container from a count it has not
+first checked against the bytes present (`demand`), so a crafted entry is refused rather than
+believed. The layout is a magic, the format version, an interned string pool, the grain, the
+library name and the anchors, all integers little-endian and fixed width so an entry crosses
+machines. `by_hash` and `units` are not written: both are functions of `anchors`, so
+rebuilding them on read leaves no way for an entry to hold a lookup table that disagrees with
+what it indexes.
+
+`reference_key` folds in the format, both versions, `min_size`, `grain`, the library name,
+the size and mtime of every indexed file, and, through `hash_queries`, the profile and query
+files of each language those paths reach. The queries decide what an anchor is, so a project
+retuning `[languages.<name>] queries` keeps the same file set and would otherwise keep the
+key and be served an index built against a different query. A profile's own `hash` covers
+where the queries are read from; the file stats cover what they say, which is what an edit in
+place moves and no version number can see.
 
 `DENDRO_CACHE_DIR` overrides the location. An environment variable rather than a
 `.dendro.toml` key, since the cascade carries flagging opinions and not paths, and rather
@@ -940,7 +974,10 @@ suite spawns subprocesses that index libraries and has to reach them too.
 dependency bump orphans an entry rather than replacing it, and nothing else would ever
 remove one. Entries are touched on a hit, so the cutoff reads time since last use: a week,
 swept on write and gated by a stamp file to once a day. The sweep runs inline rather than on
-a spawned task, which would die with the CLI process on the path that matters most.
+a spawned task, which would die with the CLI process on the path that matters most. It
+collects only names matching a hex digest, since `DENDRO_CACHE_DIR` may point at a directory
+Dendro does not own and a cache that deletes files it did not write has reached outside its
+own bargain.
 
 ## Within-file cohesion
 
