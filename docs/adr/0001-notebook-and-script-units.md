@@ -1,6 +1,8 @@
 # Reading Quarto documents and scripts
 
-Status: proposed
+Status: accepted. The unit model, the rule scoping and the script half are
+implemented; the Quarto half waits on a `TreeSitter.jl` release carrying
+`src/injection.jl`.
 Date: 2026-07-31
 
 ## The problem
@@ -70,8 +72,8 @@ their contents.
 Sub-dividing a script does not rescue it. Splitting at banner comments still fires
 length at 17.2%, and the convention is not there to split on: of 440 analysis
 scripts, 0 use `# %%` cell markers, 99 use `# ---` and 73 use `# ===`, and they
-disagree. Inventing a boundary would be a guess, and it buys nothing the file-level
-unit does not already give.
+disagree. Inventing a boundary would be a guess, where breaking at a definition is
+something the language already says.
 
 ## Extraction
 
@@ -228,16 +230,17 @@ the answer and not its exact size.
 
 1. Fenced-cell extraction and its tests, ported from Runic with the departures
    above. No Dendro integration yet.
-2. Unit as a node run. Pure refactor, existing suite green, no behaviour change,
-   since every existing unit is a run of one.
-3. Rule applicability by unit kind, with the `unused_local` fix. Still no new file
-   types, so the change is visible only as a test.
+2. Unit as a node run. Done: pure refactor, no behaviour change, since every
+   existing unit is a run of one.
+3. Rule applicability by unit kind, with the `unused_local` fix. Done.
 4. `.qmd` as a container format in the corpus, on injection. Needs a `TreeSitter.jl`
    release carrying `src/injection.jl`.
-5. Script top-level units.
+5. Script top-level units. Done, and it is what forced `containing_callable`: making
+   top-level code a unit fed it into the passes that ask where a definition belongs,
+   and `:low_cohesion` fired on nearly every file in Dendro's own `src`.
 
-Steps 2 and 3 are worth landing before 4 and 5 so the unit-model change and the
-new file type are reviewable apart.
+Steps 2, 3 and 5 landed before 4 so the unit-model change and the new file type
+review apart. Step 4 is now the only part left.
 
 ## Deliberately not in this
 
