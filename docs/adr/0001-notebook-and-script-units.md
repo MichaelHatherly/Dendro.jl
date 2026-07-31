@@ -59,6 +59,14 @@ script does not.
 So the rule is: length applies to a unit an author bounded. It does not apply to a
 unit whose extent is "whatever else is in the file".
 
+Top-level code is read as contiguous runs between definitions, not as one unit per
+file. The diff scope reads a unit's line span, so a whole-file unit would report for
+a change on any line in the file, including lines inside the definitions it
+straddles. A module body counts as a container, since a package's main file is
+otherwise one large declaration nothing reads: 24 of 184 package files wrap
+everything that way, and an earlier version of the control below measured none of
+their contents.
+
 Sub-dividing a script does not rescue it. Splitting at banner comments still fires
 length at 17.2%, and the convention is not there to split on: of 440 analysis
 scripts, 0 use `# %%` cell markers, 99 use `# ---` and 73 use `# ===`, and they
@@ -194,7 +202,7 @@ Within-project exact duplication, which today reports nothing for either file ki
 |---|---|---|---|---|
 | Quarto cells, 11 projects, 3,291 cells | 278 | 165 | 241 | 178 |
 | script top-level runs, 12 projects, 1,257 regions | 68 | 68 | 398 | 329 |
-| package top-level runs, 184 files (control) | 2 | - | 2 | - |
+| package top-level runs, 184 files (control) | 6 | - | 2 | - |
 
 The control matters: the mechanism is quiet on package source, so the volume on
 analysis code is the code repeating itself and not a floor set too low. Raising the
