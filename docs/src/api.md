@@ -13,8 +13,9 @@ CurrentModule = Dendro
 analyze
 active
 github_annotations
-mermaid
 ```
+
+[`mermaid`](@ref) is documented with the graphs it draws, under [Diagrams](@ref).
 
 ## Gating
 

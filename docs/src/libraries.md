@@ -258,13 +258,9 @@ Scratch.clear_scratchspaces!(Dendro)
 
 ## From the command line
 
-```
---library=<path>              index <path> as a library, named after its root
---library=<name>=<path>       ... under the display name <name>
-```
-
-Repeatable, and merged with whatever the config declares. The value splits on its first
-`=`, so a Windows path keeps its drive letter.
+`--library`, listed among the flags under [Command line](@ref), is repeatable and merges
+with whatever the config declares. Its value splits on its first `=`, so a Windows path
+keeps its drive letter.
 
 Turning "my dependencies" into a list of source directories is per-ecosystem policy, and a
 tool that reads a dozen grammars should not carry one language's package manager. So the

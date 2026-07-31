@@ -74,28 +74,22 @@ src/parser.jl:1070  predicate  nesting_depth 8 (high; p100)
 src/api.jl:289  stub_marker (high)
 ```
 
-For pull-request review, [`github_annotations`](@ref) emits the same findings as
-GitHub Actions workflow commands. GitHub records each as a pull-request check
-annotation, high-band findings as `::error`, the rest as `::warning`:
-
-```
-::error file=src/parser.jl,line=1070,title=Dendro%3A cyclomatic::predicate: cyclomatic 51 (high; p100)
-```
-
-Pair this with `base` to scope findings to the functions a change touched. An
-annotation renders inline on the diff when its anchored line falls in the change;
-otherwise it shows in the run's Checks tab.
-[`analyze`](@ref) loads each language's parser from the active environment, so the
-workflow adds the `tree_sitter_<lang>_jll` for the languages it analyses. See
-[`.github/workflows/dendro.yml`](https://github.com/MichaelHatherly/Dendro.jl/blob/main/.github/workflows/dendro.yml)
-for a working setup.
+[`errors`](@ref) is the gate companion: only the error-severity findings, so a clean
+codebase returns nothing and a test suite can assert on it. [Gating CI](@ref) covers it,
+the ratchet against a base ref, and the pull-request annotations.
 
 ## Where to read next
 
 - [Scoring and metrics](@ref) explains the two-score model and what each metric measures.
 - [Duplicate detection](@ref) covers exact clones and near-misses across the corpus.
+- [Duplication against a library](@ref) asks whether a dependency already does it.
 - [Cohesion and placement](@ref) covers cohesion, placement, scattering, and back edges.
+- [Diagrams](@ref) renders those graphs as mermaid flowcharts.
+- [Gating CI](@ref) is the error floor, the ratchet, and the GitHub Actions setup.
+- [Command line](@ref) documents `julia -m Dendro`, its flags, and threading.
+- [Configuration file](@ref) is the `.dendro.toml` cascade and every key it takes.
 - [Suppressing findings](@ref) is about the inline directives and path ignores.
 - [Custom rules](@ref) shows how to extend or replace the rule set.
+- [Pattern rules](patterns.md) writes a project's own rule as a tree-sitter query.
 - [Languages and limitations](@ref) lists what is supported and where the bargain shows.
 - [API reference](@ref) documents every public function and type.
