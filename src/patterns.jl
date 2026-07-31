@@ -117,14 +117,17 @@ end
 # match, so a rule using `#not-any-of?` reads as clean code. `PATTERN_PREDICATES` closes
 # it at load.
 
-# The predicates TreeSitter.jl 0.2 implements, read off its `predicate` dispatch. A query
+# The predicates TreeSitter.jl implements, read off its `predicate` dispatch. A query
 # naming anything else compiles and then silently rejects every match, so it is rejected
-# here instead. `not-any-of?` and `not-has-ancestor?` are the two commonly reached for
-# that do not exist; the `.not` capture covers both.
+# here instead. The tree predicates read the nodes a capture bound rather than their text,
+# which is what puts ancestry, descent, and subtree comparison inside a query at all.
 const PATTERN_PREDICATES = Set{String}(
     [
-        "eq?", "not-eq?", "any-of?", "has-ancestor?", "is?", "is-not?", "match?",
+        "eq?", "not-eq?", "any-of?", "not-any-of?", "is?", "is-not?", "match?",
         "not-match?", "any-eq?", "any-not-eq?", "any-match?", "any-not-match?", "set!",
+        "has-ancestor?", "not-has-ancestor?", "nearest-ancestor?", "ancestor-match?",
+        "not-ancestor-match?", "has-descendant?", "not-has-descendant?", "structure-eq?",
+        "not-structure-eq?",
     ]
 )
 

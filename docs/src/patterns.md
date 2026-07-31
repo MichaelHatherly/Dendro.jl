@@ -99,14 +99,38 @@ underscore.
 
 ### Predicates
 
-The predicates available are the ones TreeSitter.jl implements: `#eq?`, `#not-eq?`,
-`#any-of?`, `#match?`, `#not-match?`, `#has-ancestor?`, `#is?`, `#is-not?`, `#any-eq?`,
-`#any-not-eq?`, `#any-match?`, `#any-not-match?`, and `#set!`. Anything else is rejected
+The predicates available are the ones TreeSitter.jl implements. Anything else is rejected
 when the rule loads.
 
-`#not-any-of?` and `#not-has-ancestor?` do not exist; a `.not` capture covers both. Prefer
-`#eq?` and `#any-of?` to `#match?` where either works, since a match's predicates are
-re-evaluated once per capture and a regex rule reruns it each time.
+Reading capture text: `#eq?`, `#not-eq?`, `#any-of?`, `#not-any-of?`, `#match?`,
+`#not-match?`, and the quantified `#any-eq?`, `#any-not-eq?`, `#any-match?`,
+`#any-not-match?`.
+
+Reading the tree around a capture: `#has-ancestor?` and `#not-has-ancestor?` for whether
+some construct encloses the node, `#nearest-ancestor?` for which of several encloses it
+most closely, `#ancestor-match?` and `#not-ancestor-match?` for whether the enclosing
+construct's own text matches a pattern, and `#has-descendant?` and `#not-has-descendant?`
+for whether something sits anywhere below it.
+
+Comparing two captures as code: `#structure-eq?` and `#not-structure-eq?` compare node
+types, child correspondence, and leaf text. Whitespace lives between tokens rather than in
+the tree, so formatting drops out; leaf text is compared, so a renamed operand stays a
+difference. That is the comparison a rule about duplicated code wants, where `#eq?` reads
+raw source and the clone passes fold identifiers out of their hashes entirely.
+
+Node properties and metadata: `#is?`, `#is-not?`, and `#set!`.
+
+A `.not` capture and a negated predicate are different tools. `.not` subtracts a narrower
+*shape* from the same anchor, which is how a rule says "a `catch` binding nothing" or "a
+`using` with no selected names". A negated predicate asks about what encloses the node or
+sits below it, which no shape at a shared anchor reaches. Reach for `.not` when the
+exclusion is a more specific version of the same pattern, and for the predicate otherwise.
+
+Prefer `#eq?` and `#any-of?` to `#match?` where either works, since a match's predicates
+are re-evaluated once per capture and a regex rule reruns it each time. `#has-descendant?`
+walks the subtree under a capture, so it costs the size of that subtree per match where
+the ancestor predicates cost its depth; a broad capture paired with it is the expensive
+shape.
 
 ### Fragments
 
