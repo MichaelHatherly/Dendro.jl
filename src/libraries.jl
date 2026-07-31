@@ -246,7 +246,7 @@ function reference_index(
     grain in LIBRARY_GRAINS || error("Dendro: unknown library grain $grain")
     paths = collect_corpus(library.roots, library.ignore, nothing; profiles)
     filter!(p -> !(realpath(p) in exclude), paths)
-    key = cache ? reference_key(library, paths, min_size, grain) : ""
+    key = cache ? reference_key(library, paths, min_size, grain, profiles) : ""
     if cache
         hit = load_reference(key)
         # The key already covers the grain; the field is checked too, since a wrong index

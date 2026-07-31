@@ -499,6 +499,49 @@ end
     end
 end
 
+@testitem "the reference cache keys on the queries it read" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        _, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 8))],
+        )
+        library = Dendro.Library("Dep", lib)
+
+        # A copy of the shipped Julia queries, which is what a `[languages.julia] queries`
+        # override points at.
+        queries = joinpath(dir, "queries")
+        mkpath(queries)
+        shipped = Dendro.queries_dir(Dendro.PROFILES[:julia])
+        for f in readdir(shipped)
+            startswith(f, "julia.") && cp(joinpath(shipped, f), joinpath(queries, f))
+        end
+        retuned = merge(
+            Dendro.PROFILES, Dict(:julia => Dendro.LanguageProfile(:julia, "julia", queries))
+        )
+
+        mktempdir() do cache
+            withenv("DENDRO_CACHE_DIR" => cache) do
+                Dendro.reference_index(library; min_size = 10)
+                @test length(Fixtures.cache_entries(cache)) == 1
+
+                # The queries decide what an anchor is, so an index built against different
+                # ones must not be served the entry the shipped queries wrote.
+                Dendro.reference_index(library; min_size = 10, profiles = retuned)
+                @test length(Fixtures.cache_entries(cache)) == 2
+
+                # Editing a query in place moves the key too. That is the half a profile's
+                # own hash cannot see, since the directory it names has not changed.
+                open(joinpath(queries, "julia.scm"), "a") do io
+                    println(io, "; a query edited in place")
+                end
+                Dendro.reference_index(library; min_size = 10, profiles = retuned)
+                @test length(Fixtures.cache_entries(cache)) == 3
+            end
+        end
+    end
+end
+
 @testitem "an unreadable cache entry is a miss, never an error" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         _, lib = Fixtures.library_corpus(

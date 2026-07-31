@@ -51,22 +51,58 @@ const REFERENCE_SWEEP_INTERVAL = 24 * 60 * 60
 const REFERENCE_SWEEP_STAMP = "last-sweep"
 
 # What a cached index is keyed by: everything that could change the anchors it holds. The
-# format and the two versions cover the serialized shape, `min_size` the floors an anchor
-# had to clear, `grain` which anchors carry near-miss features, and the size and mtime of
-# every indexed file the content itself. Paths go in in `collect_corpus` order, which is
-# deterministic, so the same library keys the same way on every scan.
-function reference_key(library::Library, paths::Vector{String}, min_size::Integer, grain::Symbol)
+# format and the two versions cover the encoded shape, `min_size` the floors an anchor had to
+# clear, `grain` which anchors carry near-miss features, `hash_queries` the queries that
+# decided what an anchor is at all, and the size and mtime of every indexed file the content
+# itself. Paths go in in `collect_corpus` order, which is deterministic, so the same library
+# keys the same way on every scan.
+function reference_key(
+        library::Library, paths::Vector{String}, min_size::Integer, grain::Symbol,
+        profiles::Dict{Symbol, LanguageProfile}
+    )
     h = hash(REFERENCE_FORMAT)
     h = hash(something(pkgversion(@__MODULE__), v"0"), h)
     h = hash(VERSION, h)
     h = hash(min_size, h)
     h = hash(grain, h)
     h = hash(library.name, h)
+    h = hash_queries(h, paths, profiles)
     for p in paths
         info = stat(p)
         h = hash((p, info.size, info.mtime), h)
     end
     return string(h; base = 16)
+end
+
+# The queries an index was built against. `build_reference_index` reads them and the key did
+# not, so a project retuning `[languages.<name>] queries` kept the same file set, kept the
+# key, and was served an index built against a different query, which is the wrong-answer
+# failure the grain field already refuses. A profile's own `hash` covers where the queries
+# are read from; the stats cover what they say, which is what an edit in place moves and no
+# version number does.
+#
+# Only the languages the indexed paths reach, worked out the way `parse_corpus` works them
+# out, so registering an unrelated language does not orphan every entry in the cache.
+function hash_queries(h::UInt, paths::Vector{String}, profiles::Dict{Symbol, LanguageProfile})
+    extensions = extension_map(profiles)
+    languages = Set{Symbol}()
+    for p in paths
+        language = language_for_path(p, extensions)
+        language === nothing || push!(languages, language)
+    end
+    for name in sort!(collect(languages))
+        haskey(profiles, name) || continue
+        profile = profiles[name]
+        h = hash(profile, h)
+        dir = queries_dir(profile)
+        isdir(dir) || continue
+        for f in sort!(readdir(dir))
+            (startswith(f, "$name.") && endswith(f, ".scm")) || continue
+            info = stat(joinpath(dir, f))
+            h = hash((f, info.size, info.mtime), h)
+        end
+    end
+    return h
 end
 
 # The grain as one byte and back. `LIBRARY_GRAINS` is the enumeration, so its order is the
