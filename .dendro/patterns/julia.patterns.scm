@@ -137,6 +137,31 @@
   . (vector_expression (splat_expression) (splat_expression)) @splat_concatenation.not)
  (#not-match? @_target "^[A-Z]"))
 
+; An `elseif` testing what an earlier branch already tested. The earlier branch takes every
+; value that reaches the later one, so the later body is unreachable and one of the two
+; conditions is not the one the author meant. Both spellings of the pair are needed: the
+; `if` against its first `elseif`, and one `elseif` against another.
+;
+; `#structure-eq?` compares the two conditions as trees, not as text. Whitespace sits
+; between tokens rather than in the tree, so `x > 0` and `x>0` are one condition written
+; twice and are reported; leaf text is compared, so `x > 0` beside `y > 0` is two
+; conditions and is not. Neither reading is available anywhere else: `#eq?` would miss the
+; respelling, and the clone passes fold identifiers out of their hashes and floor a match
+; at ten named nodes, which a three-node condition never reaches.
+((if_statement . (_) @_c (elseif_clause . (_) @_e)) @unreachable_branch
+ (#structure-eq? @_c @_e))
+((if_statement (elseif_clause . (_) @_a) (elseif_clause . (_) @_b)) @unreachable_branch
+ (#structure-eq? @_a @_b))
+
+; An introspection macro in committed source. `@show` prints to stdout from library code
+; that has no business printing, and the `@code_*` family, `@edit` and `@less` answer a
+; question somebody asked once at the REPL. Each is debugging that reached a commit, and
+; the one right answer is to delete it: logging is `@debug` or `@info`, and a value the
+; caller wants is returned rather than printed.
+((macrocall_expression (macro_identifier (identifier) @_m)) @debug_output
+ (#any-of? @_m
+  "show" "code_warntype" "code_llvm" "code_native" "code_typed" "code_lowered" "edit" "less"))
+
 ; An *unnamed* numeric literal. A literal bound to a name is not magic, which is the
 ; whole point of the rule, so a literal standing as the whole right-hand side of an
 ; assignment subtracts: `threshold = 7`, `const LIMIT = 13`, and a keyword default

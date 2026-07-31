@@ -59,6 +59,16 @@ message = "an abstractly typed field is loaded through a pointer, not read inlin
 message = "`[a..., b...]` builds a vector by splatting where `[a; b]` says it directly"
 guard   = true
 
+[patterns.unreachable_branch]
+message  = "an `elseif` repeating an earlier condition can never run"
+severity = "high"
+guard    = true
+
+[patterns.debug_output]
+message  = "an introspection macro left in source is debugging that got committed"
+severity = "high"
+guard    = true
+
 [patterns.magic_number]
 message = "unnamed numeric literals in one function"
 kind    = "scalar"
