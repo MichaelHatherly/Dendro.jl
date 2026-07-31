@@ -90,8 +90,11 @@ function Library(roots::Union{AbstractString, AbstractVector}; ignore = String[]
 end
 
 # A caller's `libraries` keyword read as reference corpora: `Library` values pass through,
-# a bare path becomes a library named after its root. A string is one root rather than a
-# list of roots, the reading a caller pointing at one directory means.
+# a bare path becomes a library named after its root. A string is one root rather than a list
+# of roots, and a bare `Library` is one library rather than something to iterate, both being
+# the reading a caller naming a single thing means.
+as_libraries(library::Library)::Vector{Library} = Library[library]
+
 as_libraries(libraries)::Vector{Library} =
     Library[l isa Library ? l : Library(l) for l in (libraries isa AbstractString ? [libraries] : libraries)]
 
@@ -158,7 +161,9 @@ end
 # The anchors the near pass compares: whole units, or every anchor at the wider grain.
 near_candidates(ref::ReferenceIndex) = ref.grain === :anchor ? eachindex(ref.anchors) : ref.units
 
-# The lookup miss, shared so a project anchor that matches nothing allocates nothing.
+# The lookup miss, shared so an absent `(language, hash)` returns this rather than building
+# an empty vector per lookup. The exact join asks once per project anchor and most anchors
+# match nothing, so the fallback is on the hot path.
 const NO_ANCHORS = Int[]
 
 # The granularities the near pass runs at. `:unit` compares whole functions on both sides;
@@ -399,6 +404,12 @@ end
 # so: measured precision on its `:high` findings was 11% against the exact pass's 33%, and
 # at the band it would have shipped with it put some eight gate errors into a healthy
 # project, which is an unsatisfiable gate rather than a signal.
+#
+# The value is the best-ranked match's coverage, not the site's highest. Where a public match
+# and a private one both cover a site, the ranking puts the public one first and the value
+# follows it, so the number and the band always describe the same match, the one naming an
+# edit. Reading the highest instead would rank a site by how redundant it is while banding it
+# by something else.
 function library_finding(
         metric::Symbol, site::Location, matches::Vector{RefMatch},
         suppressed::Bool, gate_coverage::Union{Integer, Nothing}

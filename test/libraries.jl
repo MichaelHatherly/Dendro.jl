@@ -229,6 +229,25 @@ end
     end
 end
 
+@testitem "a bare Library is one library" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+
+        # A bare path is already read as one root, so a bare `Library` reads as one library
+        # for the same reason, rather than being iterated into its fields.
+        hit = only(
+            Fixtures.of_metric(
+                Dendro.analyze(proj; libraries = Dendro.Library("Dep", lib)), :library_duplicate
+            )
+        )
+        @test occursin("Dep.partition public", only(hit.locations).label)
+    end
+end
+
 @testitem "no libraries leaves the scan unchanged" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         src = joinpath(dir, "src")
