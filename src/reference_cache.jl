@@ -113,9 +113,14 @@ grain_at(code::Integer)::Symbol =
 
 # The strings an index holds, interned, with the map from string to pool position. A `file`
 # repeats once per anchor in that file, a `symbol` once per anchor in that definition, and
-# every histogram key is a node type drawn from a vocabulary of a few dozen, so the pool is
-# where nearly all of an entry's size saving is. Positions are assigned in anchor order,
-# which is deterministic, so one index encodes to the same bytes on every run.
+# every histogram key is a node type drawn from a vocabulary of a few dozen, so writing them
+# where they are used would repeat them thousands of times. Measured against that at
+# dependency-set scale the pool is worth 13% of an entry; the subtree-hash sequences are 88%
+# of what is left, which is why it is not worth more.
+#
+# Positions are assigned in anchor order, which is deterministic, so one index encodes to the
+# same bytes on every run. That is the property the pool is really here for: it also gives
+# every string one range-checked path into the reader.
 function string_pool(index::ReferenceIndex)
     pool = String[]
     ids = Dict{String, Int}()
