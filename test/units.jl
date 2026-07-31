@@ -90,3 +90,62 @@ end
     @test Dendro.nesting_depth(outer, i) == 0
     @test Dendro.cyclomatic(inner, i) == 2
 end
+
+@testitem "a run of several nodes is not a callable unit" setup = [Fixtures] tags = [:units] begin
+    using TreeSitter
+
+    src = "x = 1\nfunction f(y)\n    y\nend\nz = x + 1\n"
+    tree = TreeSitter.parse(Dendro.parser_for(:julia), src)
+    i = Dendro.build_index(tree, :julia, src, Dendro.query_for(:julia), Dendro.scopes_query_for(:julia))
+    top = Dendro.Unit(
+        TreeSitter.Node[
+            c for c in TreeSitter.named_children(TreeSitter.root(tree))
+                if !Dendro.is_function(c, i) && !(c in i.comment)
+        ], 1, 5
+    )
+
+    @test length(top.nodes) == 2
+    @test !Dendro.is_callable(top, i)
+    @test Dendro.is_callable(only(Dendro.units(i)), i)
+end
+
+@testitem "a callable-scoped rule skips top-level code" setup = [Fixtures] tags = [:units] begin
+    using TreeSitter
+
+    # Long enough to breach `function_length`, and branching enough to breach
+    # `cyclomatic`, so a rule that fires says something about scope and not size.
+    body = join(("a$(n) = $(n) > 1 ? $(n) : 0" for n in 1:120), "\n")
+    src = body * "\n"
+    tree = TreeSitter.parse(Dendro.parser_for(:julia), src)
+    i = Dendro.build_index(tree, :julia, src, Dendro.query_for(:julia), Dendro.scopes_query_for(:julia))
+    top = Dendro.Unit(
+        TreeSitter.Node[
+            c for c in TreeSitter.named_children(TreeSitter.root(tree))
+                if !(c in i.comment)
+        ], 1, 120
+    )
+
+    fired(name) = begin
+        rule = only(filter(r -> r.name === name, Dendro.BUILTIN_RULES))
+        out = Dendro.Finding[]
+        Dendro.unit_findings!(out, Dendro.Scan(i, "top.jl"; rules = [rule]), top)
+        !isempty(out)
+    end
+
+    # Length measures the distance to a boundary an author drew, and top-level code
+    # has none; complexity measures the code itself either way.
+    @test !fired(:function_length)
+    @test !fired(:parameter_count)
+    @test fired(:cyclomatic)
+end
+
+@testitem "a callable unit still reads every rule" setup = [Fixtures] tags = [:units] begin
+    src = "function f(a, b, c, d, e, g)\n" * join(("    x$(n) = $(n)" for n in 1:120), "\n") * "\nend\n"
+    i = Fixtures.idx(:julia, src)
+    unit = only(Dendro.units(i))
+    out = Dendro.Finding[]
+    Dendro.unit_findings!(out, Dendro.Scan(i, "f.jl"; rules = Dendro.BUILTIN_RULES), unit)
+    fired = Set(f.metric for f in out)
+    @test :function_length in fired
+    @test :parameter_count in fired
+end

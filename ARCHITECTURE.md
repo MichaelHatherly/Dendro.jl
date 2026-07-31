@@ -303,10 +303,12 @@ Measurement:
   a short-form's right-hand expression), reading a body's real-work count, comparing
   subtrees by normalised text, and collecting the blocks of one conditional chain
   (`branch_blocks`).
-- `rules.jl` defines `Rule` (a metric name, kind, band, and measuring function),
-  `BUILTIN_RULES` (the default set, in report order), `OPTIONAL_RULES` (off by
-  default), `rules_of_kind` (the active rules of one kind), and `metric_names` (the names a directive
-  may name: the active rules plus the relational clone metrics). The built-in rules
+- `rules.jl` defines `Rule` (a metric name, kind, band, measuring function, and
+  the unit `scope` it measures), `BUILTIN_RULES` (the default set, in report
+  order), `OPTIONAL_RULES` (off by default), `rules_of_kind` (the active rules of
+  one kind), `applies` (whether a rule measures a given unit), and `metric_names`
+  (the names a directive may name: the active rules plus the relational clone
+  metrics). The built-in rules
   wrap the metrics.jl/flags.jl functions; a caller's rule wraps their own.
 - `baseline.jl` defines `Baseline` over a corpus, `percentile` scoring, and
   `add_samples!`, which samples the active rule set's scalar rules over one file's
@@ -663,8 +665,15 @@ also carries `bindings`, a `Dict{NodeId, NodeId}` from each reference to the in-
 definition it resolves to, empty unless `build_index` was given a scopes query.
 
 `Rule` (`rules.jl`). One lint check as data: a metric `name`, a `kind` (`:scalar`
-or `:flag`), a `(warn, high)` `band` for scalars, and an `fn` that measures one
-unit (scalar) or the file's index (flag). The active set is a `Vector{Rule}` carried by `Scan`
+or `:flag`), a `(warn, high)` `band` for scalars, an `fn` that measures one
+unit (scalar) or the file's index (flag), and a `scope` naming which units a scalar
+measures. `scope` is `:any` bar the rules that ask about a definition:
+`function_length` measures the distance to a boundary an author drew,
+`parameter_count` reads a signature, and `return_count`/`local_count` count what
+only a body has. Top-level code has none of these, so those rules say nothing there
+instead of reading a number against a band calibrated on definitions. `applies` is
+that test, and both the scoring pass and the baseline read it, so a rule that says
+nothing about a unit does not sample it into the percentile either. The active set is a `Vector{Rule}` carried by `Scan`
 and `analyze`, so checks are a value, not module constants. Built-ins wrap the
 metrics.jl/flags.jl functions; a caller's rule wraps their own.
 

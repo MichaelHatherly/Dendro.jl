@@ -14,6 +14,11 @@ scalar rule carries its `(warn, high)` `band`; a flag rule carries `nothing`.
   percentile.
 - flag `fn(index) -> Vector{TreeSitter.Node}`, one finding per returned node.
 
+`scope` says which units a scalar rule measures: `:any`, or `:callable` for a rule
+that asks about a definition. `function_length` measures the distance to a boundary
+an author drew and `parameter_count` reads a signature, and top-level code has
+neither, so a band calibrated on definitions must not be read there.
+
 `severity` is the absolute band a flag rule's findings carry, and is meaningful
 only for a flag: a scalar reads its band instead. Every built-in flag is `:high`,
 which is what puts it in the [`errors`](@ref) floor. A user-authored pattern rule
@@ -32,11 +37,27 @@ struct Rule
     band::Union{Tuple{Int, Int}, Nothing}
     fn::Function    # dendro-ignore: abstract_field
     severity::Symbol
+    scope::Symbol
 end
 
 # The built-in rules predate the severity field and every one of them is `:high`, so it
-# defaults rather than being repeated fifteen times.
-Rule(name::Symbol, kind::Symbol, band, fn) = Rule(name, kind, band, fn, :high)
+# defaults rather than being repeated fifteen times. Most rules measure any unit, so
+# `scope` defaults the same way.
+Rule(name::Symbol, kind::Symbol, band, fn) = Rule(name, kind, band, fn, :high, :any)
+Rule(name::Symbol, kind::Symbol, band, fn, severity::Symbol) =
+    Rule(name, kind, band, fn, severity, :any)
+
+
+"""
+    applies(rule, unit, index) -> Bool
+
+Whether `rule` measures `unit`. A `:callable` rule asks about a definition, its
+signature or the distance to a boundary an author drew, and top-level code has
+neither, so the rule says nothing there instead of reading a number against a band
+calibrated on definitions.
+"""
+applies(rule::Rule, unit::Unit, index::QueryIndex) =
+    rule.scope === :any || is_callable(unit, index)
 
 """
     PatternSpec
@@ -90,9 +111,9 @@ only its own median. Drawn from common complexity guidance. Pass `rules` to
 const BUILTIN_RULES = Rule[
     Rule(:cyclomatic, :scalar, (11, 21), cyclomatic),
     Rule(:cognitive_complexity, :scalar, (15, 25), cognitive_complexity),
-    Rule(:function_length, :scalar, (50, 100), (u, i) -> function_length(u)),
+    Rule(:function_length, :scalar, (50, 100), (u, i) -> function_length(u), :high, :callable),
     Rule(:nesting_depth, :scalar, (4, 6), nesting_depth),
-    Rule(:parameter_count, :scalar, (5, 8), parameter_count),
+    Rule(:parameter_count, :scalar, (5, 8), parameter_count, :high, :callable),
     Rule(:boolean_complexity, :scalar, (4, 6), boolean_complexity),
     Rule(:identical_operands, :flag, nothing, identical_operands),
     Rule(:duplicate_branches, :flag, nothing, duplicate_branches),
@@ -119,11 +140,11 @@ legitimate orchestrator by any fixed band (idiomatic corpora run p99 from 9 to
 `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 """
 const OPTIONAL_RULES = Rule[
-    Rule(:return_count, :scalar, (4, 8), return_count),
+    Rule(:return_count, :scalar, (4, 8), return_count, :high, :callable),
     Rule(:trivial_wrapper, :flag, nothing, trivial_wrappers),
     Rule(:unreachable_after_jump, :flag, nothing, unreachable_statements),
     Rule(:npath, :scalar, (200, 1000), npath),
-    Rule(:local_count, :scalar, (10, 15), local_count),
+    Rule(:local_count, :scalar, (10, 15), local_count, :high, :callable),
     Rule(:shadowed_variable, :flag, nothing, shadowed_variables),
     Rule(:fan_out, :scalar, (12, 20), fan_out),
 ]

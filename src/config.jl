@@ -147,7 +147,8 @@ end
 
 # A rule with its band replaced by the config override, when the metric carries one.
 reband(r::Rule, config::Config) =
-    haskey(config.bands, r.name) ? Rule(r.name, r.kind, config.bands[r.name], r.fn, r.severity) : r
+    haskey(config.bands, r.name) ?
+    Rule(r.name, r.kind, config.bands[r.name], r.fn, r.severity, r.scope) : r
 
 # Coerce a TOML value to the type a config field reads, erroring on a malformed one so a
 # typo fails loud rather than scoring against garbage. The `isa` guard narrows the `Any` a

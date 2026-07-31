@@ -291,6 +291,11 @@ function used_within(uses::Dict{String, Vector{NodeId}}, name::AbstractString, r
     return any(pos -> r[1] <= pos[1] && pos[2] <= r[2], positions)
 end
 
+# The units that are definitions, in source order. The three rules below read these
+# rather than every unit: a binding at top level is visible across files and is
+# `:unreferenced`'s question, so top-level code must not count as a unit containing it.
+callable_units(index::QueryIndex) = Unit[u for u in units(index) if is_callable(u, index)]
+
 """
     unused_parameters(index) -> Vector{TreeSitter.Node}
 
@@ -309,8 +314,8 @@ function unused_parameters(index::QueryIndex)
     # so every parameter would read as dead. Skip rather than score wrongly, as cohesion
     # does for the same missing query.
     isempty(index.scope_captures.refnodes) && return out
-    units = index.units
-    ranges = unit_ranges(index)
+    units = callable_units(index)
+    ranges = Tuple{Int, Int}[unit_span(u) for u in units]
     uses = reference_positions(index)
     for p in index.parameter_name.nodes
         pid = nodeid(p)
@@ -341,7 +346,7 @@ function unused_locals(index::QueryIndex)
     out = TreeSitter.Node[]
     caps = index.scope_captures
     isempty(caps.defnodes) && return out
-    ranges = unit_ranges(index)
+    ranges = Tuple{Int, Int}[unit_span(u) for u in callable_units(index)]
     uses = reference_positions(index)
     seen = Set{Tuple{Int, String}}()
     for (i, d) in enumerate(caps.defnodes)
@@ -371,7 +376,7 @@ the unused flags because it reads the same binding substrate.
 function local_count(unit::Unit, index::QueryIndex)
     caps = index.scope_captures
     isempty(caps.defnodes) && return 0
-    ranges = unit_ranges(index)
+    ranges = Tuple{Int, Int}[unit_span(u) for u in callable_units(index)]
     span = unit_span(unit)
     names = Set{String}()
     for (i, d) in enumerate(caps.defnodes)

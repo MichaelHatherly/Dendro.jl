@@ -30,6 +30,16 @@ about.
 unit_node(u::Unit) = first(u.nodes)
 
 """
+    is_callable(unit, index) -> Bool
+
+Whether a unit is a definition rather than top-level code. A callable is the run of
+one node the query tagged `@function`; a run of several is a stretch of top-level
+statements, which has no signature and no boundary an author drew.
+"""
+is_callable(u::Unit, index::QueryIndex) =
+    length(u.nodes) == 1 && is_function(only(u.nodes), index)
+
+"""
     is_function(node, index) -> Bool
 
 True when `node` is one of the callable definitions the query tagged: a

@@ -103,6 +103,7 @@ in_scope(scan::Scan, line::Int) = scan.within === nothing || inrange(scan.within
 function unit_findings!(out, scan::Scan, unit::Unit)
     name = unit_name(unit, scan.index)
     for r in rules_of_kind(scan.rules, :scalar)
+        applies(r, unit, scan.index) || continue
         value = r.fn(unit, scan.index)::Int
         band = severity(value, something(r.band))
         pct = ranks(scan, r.name) ?
