@@ -3,7 +3,6 @@ module Dendro
 import NearestNeighbors
 import RelocatableFolders
 import Scratch
-import Serialization
 import TOML
 import TreeSitter
 
