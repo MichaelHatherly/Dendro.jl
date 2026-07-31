@@ -546,6 +546,23 @@ end
     end
 end
 
+@testitem "the sweep collects only what Dendro wrote" tags = [:libraries] begin
+    mktempdir() do cache
+        # `DENDRO_CACHE_DIR` is a path a user chose, so the directory may hold things Dendro
+        # did not put there. Entry names are hex digests, and collecting anything else would
+        # be a cache reaching outside its own bargain to delete a user's files.
+        write(joinpath(cache, "notes.txt"), "a user's file")
+        write(joinpath(cache, "Manifest.toml"), "[deps]")
+        write(joinpath(cache, "0123456789abcdef"), "an entry")
+
+        Dendro.sweep_references(cache; max_age = -1, interval = -1)
+
+        @test !isfile(joinpath(cache, "0123456789abcdef"))
+        @test isfile(joinpath(cache, "notes.txt"))
+        @test isfile(joinpath(cache, "Manifest.toml"))
+    end
+end
+
 @testitem "a fresh reference cache entry survives collection" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         _, lib = Fixtures.library_corpus(

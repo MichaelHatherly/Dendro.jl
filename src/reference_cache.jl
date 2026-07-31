@@ -327,7 +327,11 @@ function sweep_references(
     isfile(stamp) && now - mtime(stamp) < interval && return nothing
     touch(stamp)
     for name in readdir(dir)
-        name == REFERENCE_SWEEP_STAMP && continue
+        # Entry names are hex digests, so anything else in the directory belongs to
+        # something else. `DENDRO_CACHE_DIR` may name a directory Dendro does not own, and a
+        # cache that deletes files it did not write has reached outside its own bargain.
+        # This subsumes skipping the stamp, whose name is not hex.
+        occursin(r"^[0-9a-f]+$", name) || continue
         path = joinpath(dir, name)
         isfile(path) && now - mtime(path) > max_age &&
             best_effort(() -> rm(path; force = true), "removing a stale cache entry")
