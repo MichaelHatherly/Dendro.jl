@@ -102,6 +102,17 @@ end
 # place so a config that widens one cannot leave the other narrow.
 library_grain(cfg::Config) = cfg.library_anchor_grain ? :anchor : :unit
 
+# The libraries a scan indexes: none when `[rules]` turned both cross-corpus passes off,
+# whatever the config points at. Indexing a dependency set is the dominant cost of a
+# cross-corpus scan, so a project running neither pass should pay none of it, and handing the
+# indexer an empty list says so through the path an unconfigured scan already takes rather
+# than adding a second way to do nothing.
+function active_libraries(cfg::Config)
+    running = get(cfg.rules, RELATIONAL.library_duplicate, true) ||
+        get(cfg.rules, RELATIONAL.library_near_duplicate, true)
+    return running ? cfg.libraries : Library[]
+end
+
 # The two cross-corpus passes, scoped, each gated by `[rules]` like any other metric and on
 # by default, since pointing at no library already turns the feature off. They sit beside
 # the clone passes rather than inside `clone_clusters` because `rank_clones!` has nothing to
@@ -236,7 +247,7 @@ function analyze(
     profiles = resolve_profiles(cfg)
     corpus = collect_corpus(roots, ignore, language; profiles)
     references = reference_indices(
-        cfg.libraries, corpus; min_size = cfg.min_size, profiles, grain = library_grain(cfg)
+        active_libraries(cfg), corpus; min_size = cfg.min_size, profiles, grain = library_grain(cfg)
     )
     files = parse_corpus(
         corpus; language, rules = active_rules, profiles,

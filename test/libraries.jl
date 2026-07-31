@@ -396,6 +396,34 @@ end
     end
 end
 
+@testitem "both passes off costs no indexing at all" setup = [Fixtures] tags = [:libraries] begin
+    mktempdir() do dir
+        proj, lib = Fixtures.library_corpus(
+            dir;
+            project = ["util.jl" => Fixtures.chain("chunk_by", 6)],
+            library = ["Dep.jl" => Fixtures.libmod(["partition"], Fixtures.chain("partition", 6))],
+        )
+        write(
+            joinpath(dir, "proj", ".dendro.toml"), """
+            [rules]
+            library_duplicate      = false
+            library_near_duplicate = false
+            """
+        )
+        cfg = Fixtures.isolated_config([proj], joinpath(dir, "proj", ".dendro.toml"))
+
+        mktempdir() do cache
+            withenv("DENDRO_CACHE_DIR" => cache) do
+                Dendro.analyze(proj; config = cfg, libraries = [lib])
+                # Indexing is the dominant cost of a cross-corpus scan, so a project that
+                # turned both passes off should pay none of it. An empty cache is what says
+                # the work did not happen, where an empty report only says it was discarded.
+                @test isempty(Fixtures.cache_entries(cache))
+            end
+        end
+    end
+end
+
 @testitem "--library indexes a reference corpus and can name it" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         proj, lib = Fixtures.library_corpus(
