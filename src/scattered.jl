@@ -46,7 +46,7 @@ function cluster_scattered(
     scored = Tuple{ParsedFile, Int, Vector{Location}}[]
     for f in files
         scopes_query_for(f) === nothing && continue
-        units = functions(f.index)
+        units = f.index.units
         length(units) < MIN_SCATTERED_UNITS && continue
         # The earliest-line representative graph node per elsewhere-anchored community.
         reps = Dict{Int, Int}()

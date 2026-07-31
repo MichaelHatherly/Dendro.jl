@@ -55,7 +55,7 @@ grammar's anonymous tokens, the shape an n-gram model reads.
 """
 # Shares the `collect_unit` entry shape with `subtrees`; the collectors and element
 # types differ, so the one-line wrappers collide with nothing to extract.
-token_stream(unit::FunctionUnit, index::QueryIndex) =
+token_stream(unit::Unit, index::QueryIndex) =
     collect_unit(collect_tokens!, String, unit, index)
 
 function collect_tokens!(tokens::Vector{String}, node::TreeSitter.Node, index::QueryIndex)
@@ -163,14 +163,14 @@ end
 # One file's functions as NaturalnessUnits. Read-only over the file, so it runs per file
 # in parallel from `naturalness_units`.
 function file_naturalness_units(f::ParsedFile)
-    units = NaturalnessUnit[]
-    for unit in functions(f.index)
+    out = NaturalnessUnit[]
+    for unit in units(f.index)
         tokens = token_stream(unit, f.index)
         loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
         sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.unnatural)
-        push!(units, NaturalnessUnit(tokens, loc, sup))
+        push!(out, NaturalnessUnit(tokens, loc, sup))
     end
-    return units
+    return out
 end
 
 # Per-file cache models: a trigram model over the token streams in each file, the

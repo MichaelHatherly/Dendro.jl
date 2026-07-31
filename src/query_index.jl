@@ -6,16 +6,23 @@
 # node was tagged.
 
 """
-    FunctionUnit
+    Unit
 
-A single callable definition: the tree-sitter node plus its 1-based first and
-last source line.
+One measured unit: a run of sibling nodes plus its 1-based first and last source
+line. A callable definition is a run of one node, which is every unit a language
+query produces; a run of several is top-level code, where no single node spans the
+region and the run itself is what the metrics fold over.
+
+`nodes` is never empty, and its members share a parent and are in source order.
 """
-struct FunctionUnit
-    node::TreeSitter.Node
+struct Unit
+    nodes::Vector{TreeSitter.Node}
     firstline::Int
     lastline::Int
 end
+
+Unit(node::TreeSitter.Node, firstline::Integer, lastline::Integer) =
+    Unit(TreeSitter.Node[node], Int(firstline), Int(lastline))
 
 # Nodes captured for one concept: the nodes in capture order, and their ids for
 # O(1) membership. Both are filled together as the query's captures are walked.
@@ -86,7 +93,7 @@ the field declarations rather than at the call site.
 struct QueryIndex
     language::Symbol
     source::String
-    functions::Vector{FunctionUnit}
+    units::Vector{Unit}
     function_ids::Set{NodeId}
     short_function::Concept
     decision::Concept
@@ -179,7 +186,7 @@ struct QueryIndex
             "broad_catch" => broad_catch, "callee" => callee,
         )
         return new(
-            language, source, FunctionUnit[], Set{NodeId}(),
+            language, source, Unit[], Set{NodeId}(),
             short_function, decision, continuation, nesting, short_circuit, parameter,
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
@@ -212,7 +219,7 @@ end
     build_index(tree, language, source, query, scopes_query = nothing) -> QueryIndex
 
 Run `query` over `tree` once and collect every capture into a [`QueryIndex`](@ref).
-`@function` captures become [`FunctionUnit`](@ref)s; every other capture is filed
+`@function` captures become [`Unit`](@ref)s; every other capture is filed
 under its concept. When `scopes_query` is given, a second pass resolves each
 reference to its in-file definition into `index.bindings`.
 
@@ -246,7 +253,7 @@ function build_index(
     for n in funcs
         sp = TreeSitter.start_point(n)
         ep = TreeSitter.end_point(n)
-        Base.push!(idx.functions, FunctionUnit(n, Int(sp.row) + 1, Int(ep.row) + 1))
+        Base.push!(idx.units, Unit(n, Int(sp.row) + 1, Int(ep.row) + 1))
     end
     (!bindings || isempty(caps.scopes)) || resolve_bindings!(idx.bindings, caps, source)
     return idx

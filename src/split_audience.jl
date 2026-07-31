@@ -176,7 +176,7 @@ function cluster_split_audience(
 
     scored = Tuple{ParsedFile, Int, Vector{Location}}[]
     for f in files
-        length(functions(f.index)) < MIN_AUDIENCE_UNITS && continue
+        length(units(f.index)) < MIN_AUDIENCE_UNITS && continue
         defs = get(() -> Dict{Int, Set{String}}(), consumed, f.file)
         audience = Set{String}()
         for consumers in values(defs)

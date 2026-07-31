@@ -17,8 +17,8 @@ end
     base = "function f(x)\n    y = x + 1\n    z = y * 2\n    return z\nend\n"
     near = "function g(t)\n    a = t + 9\n    b = a * 7\n    c = b - 1\n    return c\nend\n"
     ib, inr = Fixtures.idx(:julia, base), Fixtures.idx(:julia, near)
-    sf = first(Dendro.clone_features(only(Dendro.functions(ib)), ib))
-    sg = first(Dendro.clone_features(only(Dendro.functions(inr)), inr))
+    sf = first(Dendro.clone_features(only(Dendro.units(ib)), ib))
+    sg = first(Dendro.clone_features(only(Dendro.units(inr)), inr))
     # `near` adds one statement, so its sequence extends `base`'s: similar, not identical.
     @test 0.5 < Dendro.clone_similarity(sf, sg) < 1.0
 end
@@ -212,10 +212,10 @@ end
 
 @testitem "unit_floor raises the floor for a control-free function" setup = [Fixtures] tags = [:clones] begin
     trivial = Fixtures.idx(:julia, "_normalize_syms(x::Symbol) = [x]\n")
-    @test Dendro.unit_floor(only(Dendro.functions(trivial)).node, trivial, 10) == 20
+    @test Dendro.unit_floor(Dendro.unit_node(only(Dendro.units(trivial))), trivial, 10) == 20
 
     control = Fixtures.idx(:julia, "guard_a(v) = v > 0 ? v : zero(v)\n")
-    @test Dendro.unit_floor(only(Dendro.functions(control)).node, control, 10) == 10
+    @test Dendro.unit_floor(Dendro.unit_node(only(Dendro.units(control))), control, 10) == 10
 end
 
 @testitem "trivial python methods of the same shape are not duplicates" setup = [Fixtures] tags = [:clones] begin

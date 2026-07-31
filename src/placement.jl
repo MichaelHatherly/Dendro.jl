@@ -40,9 +40,9 @@ end
 # distinct indices, so the per-file maps merge without collision. Read-only over the graph.
 function file_own_affinity(f::ParsedFile, graph::CorpusGraph)
     own = Dict{Int, Float64}()
-    units = f.index.functions
+    units = f.index.units
     isempty(units) && return own
-    ranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    ranges = Tuple{Int, Int}[unit_span(u) for u in units]
     for (refid, defid) in f.index.bindings
         ur = containing_unit(ranges, refid[1], refid[2])
         ur == 0 && continue

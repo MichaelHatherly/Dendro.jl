@@ -117,7 +117,7 @@ function build_file_graph(
     index = Dict{String, Int}(p => i for (i, p) in enumerate(paths))
     first_line = fill(1, length(paths))
     for f in files
-        units = f.index.functions
+        units = f.index.units
         isempty(units) || (first_line[index[f.file]] = units[1].firstline)
     end
     if length(files) < 2

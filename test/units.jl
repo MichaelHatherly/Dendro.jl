@@ -2,9 +2,9 @@
     using TreeSitter
 
     src = "function f(x)\n    x + 1\nend\nfunction g()\n    0\nend\n"
-    units = Dendro.functions(Fixtures.idx(:julia, src))
+    units = Dendro.units(Fixtures.idx(:julia, src))
     @test length(units) == 2
-    @test TreeSitter.node_type(units[1].node) == "function_definition"
+    @test TreeSitter.node_type(Dendro.unit_node(units[1])) == "function_definition"
     @test units[1].firstline == 1
     @test units[1].lastline == 3
     @test units[2].firstline == 4
@@ -13,7 +13,7 @@ end
 @testitem "short-form function units (julia)" setup = [Fixtures] tags = [:units] begin
     src = "f(x) = x + 1\ng(x)::Int = x\nh(x) where {T} = x\n"
     i = Fixtures.idx(:julia, src)
-    units = Dendro.functions(i)
+    units = Dendro.units(i)
     @test length(units) == 3
     @test [Dendro.unit_name(u, i) for u in units] == ["f", "g", "h"]
     @test units[1].firstline == 1 && units[1].lastline == 1
@@ -23,11 +23,11 @@ end
 
 @testitem "non-definition assignments are not units (julia)" setup = [Fixtures] tags = [:units] begin
     src = "x = 5\nk::T = nothing\na, b = t\n"
-    @test isempty(Dendro.functions(Fixtures.idx(:julia, src)))
+    @test isempty(Dendro.units(Fixtures.idx(:julia, src)))
 end
 
 @testitem "qualified definitions are named by their final component (julia)" setup = [Fixtures] tags = [:units] begin
-    name(src) = (i = Fixtures.idx(:julia, src); Dendro.unit_name(only(Dendro.functions(i)), i))
+    name(src) = (i = Fixtures.idx(:julia, src); Dendro.unit_name(only(Dendro.units(i)), i))
 
     # A qualified method is labelled by the method, not the module the lexical scan
     # reaches first.
@@ -43,7 +43,7 @@ end
 end
 
 @testitem "units are named by their defining name across languages" setup = [Fixtures] tags = [:units] begin
-    name(lang, src) = (i = Fixtures.idx(lang, src); Dendro.unit_name(only(Dendro.functions(i)), i))
+    name(lang, src) = (i = Fixtures.idx(lang, src); Dendro.unit_name(only(Dendro.units(i)), i))
 
     # Go: a method's receiver variable precedes its name in the lexical scan.
     @test name(:go, "func (r *T) Foo() {}\n") == "Foo"
@@ -81,12 +81,12 @@ end
 @testitem "nested short-form def is its own unit (julia)" setup = [Fixtures] tags = [:units] begin
     src = "function outer(x)\n    inner(y) = y > 0 ? y : -y\n    return inner(x)\nend\n"
     i = Fixtures.idx(:julia, src)
-    units = Dendro.functions(i)
+    units = Dendro.units(i)
     @test length(units) == 2
     outer = units[findfirst(u -> Dendro.unit_name(u, i) == "outer", units)]
     inner = units[findfirst(u -> Dendro.unit_name(u, i) == "inner", units)]
     # The nested def's ternary belongs to inner, so it never inflates outer.
-    @test Dendro.cyclomatic(outer.node, i) == 1
-    @test Dendro.nesting_depth(outer.node, i) == 0
-    @test Dendro.cyclomatic(inner.node, i) == 2
+    @test Dendro.cyclomatic(outer, i) == 1
+    @test Dendro.nesting_depth(outer, i) == 0
+    @test Dendro.cyclomatic(inner, i) == 2
 end

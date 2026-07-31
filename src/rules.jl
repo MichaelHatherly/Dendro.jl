@@ -88,12 +88,12 @@ only its own median. Drawn from common complexity guidance. Pass `rules` to
 [`analyze`](@ref) to extend or replace them.
 """
 const BUILTIN_RULES = Rule[
-    Rule(:cyclomatic, :scalar, (11, 21), (u, i) -> cyclomatic(u.node, i)),
-    Rule(:cognitive_complexity, :scalar, (15, 25), (u, i) -> cognitive_complexity(u.node, i)),
+    Rule(:cyclomatic, :scalar, (11, 21), cyclomatic),
+    Rule(:cognitive_complexity, :scalar, (15, 25), cognitive_complexity),
     Rule(:function_length, :scalar, (50, 100), (u, i) -> function_length(u)),
-    Rule(:nesting_depth, :scalar, (4, 6), (u, i) -> nesting_depth(u.node, i)),
-    Rule(:parameter_count, :scalar, (5, 8), (u, i) -> parameter_count(u.node, i)),
-    Rule(:boolean_complexity, :scalar, (4, 6), (u, i) -> boolean_complexity(u.node, i)),
+    Rule(:nesting_depth, :scalar, (4, 6), nesting_depth),
+    Rule(:parameter_count, :scalar, (5, 8), parameter_count),
+    Rule(:boolean_complexity, :scalar, (4, 6), boolean_complexity),
     Rule(:identical_operands, :flag, nothing, identical_operands),
     Rule(:duplicate_branches, :flag, nothing, duplicate_branches),
     Rule(:empty_body, :flag, nothing, empty_bodies),
@@ -119,13 +119,13 @@ legitimate orchestrator by any fixed band (idiomatic corpora run p99 from 9 to
 `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 """
 const OPTIONAL_RULES = Rule[
-    Rule(:return_count, :scalar, (4, 8), (u, i) -> return_count(u.node, i)),
+    Rule(:return_count, :scalar, (4, 8), return_count),
     Rule(:trivial_wrapper, :flag, nothing, trivial_wrappers),
     Rule(:unreachable_after_jump, :flag, nothing, unreachable_statements),
-    Rule(:npath, :scalar, (200, 1000), (u, i) -> npath(u.node, i)),
-    Rule(:local_count, :scalar, (10, 15), (u, i) -> local_count(u, i)),
+    Rule(:npath, :scalar, (200, 1000), npath),
+    Rule(:local_count, :scalar, (10, 15), local_count),
     Rule(:shadowed_variable, :flag, nothing, shadowed_variables),
-    Rule(:fan_out, :scalar, (12, 20), (u, i) -> fan_out(u, i)),
+    Rule(:fan_out, :scalar, (12, 20), fan_out),
 ]
 
 # The active rules of one kind (`:scalar` or `:flag`), in order.

@@ -446,10 +446,14 @@ pattern_step(node::TreeSitter.Node, _index::QueryIndex, bucket::PatternBucket) =
 How many times rule `name` matched inside `unit`, excluding nested callables. Zero when
 the rule has no query for this language.
 """
-function pattern_count(unit::FunctionUnit, index::QueryIndex, name::Symbol)
+function pattern_count(unit::Unit, index::QueryIndex, name::Symbol)
     bucket = get(index.patterns, name, nothing)
     bucket === nothing && return 0
-    return fold_unit(pattern_step, +, unit.node, index, bucket)
+    total = 0
+    for n in unit.nodes
+        total += fold_unit(pattern_step, +, n, index, bucket)
+    end
+    return total
 end
 
 """

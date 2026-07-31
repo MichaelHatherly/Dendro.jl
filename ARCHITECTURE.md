@@ -15,7 +15,7 @@ source text
   -> tree
   -> build_index(tree, query)        nodes the language query identifies
        (+ scopes query: resolve each reference to its in-file definition)
-  -> functions(index)                units to measure
+  -> units(index)                    units to measure
   -> per unit: scalar rules; per index: flag rules
   -> score each reading (absolute band, optional corpus percentile)
   -> mark suppressed findings from inline directives
@@ -242,7 +242,7 @@ Resolution and configuration:
   that resolved registry rather than on `PROFILES` directly. The built-in table is never
   mutated, so one analysis cannot leak a registration into the next.
 - `query_index.jl` defines `NodeId`/`nodeid`, `Concept` (the nodes a query tagged
-  for one measured construct, plus their ids for O(1) membership), `FunctionUnit`,
+  for one measured construct, plus their ids for O(1) membership), `Unit`,
   `QueryIndex`, `CONCEPT_NAMES` (the capture names a query may use), and
   `build_index`, which runs a language's query over a tree once and files every
   capture under its concept. Identification lives here: metric code asks whether a
@@ -260,9 +260,11 @@ Resolution and configuration:
 
 Measurement:
 
-- `units.jl` exposes the function units the query identified: `functions(index)`
-  returns them (the `index.functions` the query built), and `is_function(node,
-  index)` is the no-descend boundary, a node the query tagged `@function`. Both the
+- `units.jl` exposes the units the query identified: `units(index)` returns them
+  (the `index.units` the query built), `unit_span` is the byte range a unit covers
+  and `unit_node` the definition a callable one is named by, `unit_name` labels it,
+  and `is_function(node, index)` is the no-descend boundary, a node the query
+  tagged `@function`. Both the
   full form (`function ... end`) and the short form (`f(x) = expr`, including the
   `where`/typed unwrapping) are recognised by the language query, so a nested
   short-form def is its own unit and is excluded from its enclosing unit's metrics,
@@ -672,8 +674,11 @@ tree-sitter tree, the query index, and inline suppression directives. `parse_cor
 read from it, so no file is parsed twice. Concrete in every field, so the relational
 passes dispatch statically over it rather than through `getproperty(::Any)`.
 
-`FunctionUnit` (`units.jl`). One callable definition: the node and its line span.
-The granularity at which scalar metrics report.
+`Unit` (`units.jl`). A run of sibling nodes and its line span, the granularity at
+which scalar metrics report. A callable definition is a run of one node, which is
+every unit a language query produces; a run of several is top-level code, where no
+single node spans the region and the metrics fold across the run instead. `fold_run`
+(`metrics.jl`) is that fold, beside the `fold_unit` that walks one subtree.
 
 `Subtree` (`clones.jl`). One named subtree of a function: its structural hash, the
 node, and its named-node count. The unit of duplicate detection, which works below
@@ -1195,7 +1200,7 @@ unsuppressed findings for gating.
 ## Conventions
 
 - Tree-sitter rows are 0-based. `line_of` (in `suppress.jl`) converts to 1-based
-  source lines, and `FunctionUnit` stores 1-based lines. Findings are 1-based.
+  source lines, and `Unit` stores 1-based lines. Findings are 1-based.
 - Metrics are syntactic, with no symbol resolution. Per-file metrics are scoped to
   one file's tree; duplicate detection, exact and near, is what spans files, and it
   still compares only structure.

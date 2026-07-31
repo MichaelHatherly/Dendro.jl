@@ -727,8 +727,8 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
     for r in regions
         push!(namespaces, (r.from, r.to))
     end
-    units = file.index.functions
-    uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    units = file.index.units
+    uranges = Tuple{Int, Int}[unit_span(u) for u in units]
     link = get(LINKAGES, file.language, nothing)
     for (i, d) in enumerate(caps.defnodes)
         kind = caps.defkinds[i]

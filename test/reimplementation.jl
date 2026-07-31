@@ -25,7 +25,7 @@ end
     end
     """
     index = Fixtures.idx(:julia, src)
-    units = Dendro.functions(index)
+    units = Dendro.units(index)
     sets = Dendro.callees_by_unit(index)
     @test length(sets) == length(units)
     for (i, u) in enumerate(units)

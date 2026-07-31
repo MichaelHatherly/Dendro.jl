@@ -25,6 +25,17 @@ function fold_unit(step::S, combine::C, node::TreeSitter.Node, index::QueryIndex
     return value
 end
 
+# Merge a metric across a unit's run: apply it to every node and combine the results
+# the way the metric already combines across one subtree's children. A callable is a
+# run of one, so this is the node reading unchanged.
+function fold_run(f::F, combine::C, u::Unit, index::QueryIndex) where {F, C}
+    value = f(first(u.nodes), index)
+    for k in 2:length(u.nodes)
+        value = combine(value, f(u.nodes[k], index))
+    end
+    return value
+end
+
 # Sum a counting `step` over a unit's subtree, the shape every count metric folds.
 sum_over(step::S, node::TreeSitter.Node, index::QueryIndex) where {S} =
     fold_unit(step, +, node, index, nothing)
@@ -35,9 +46,9 @@ count_if(hit::Bool, ctx) = (hit ? 1 : 0), ctx
 """
     function_length(unit) -> Int
 
-Number of source lines the function spans, inclusive.
+Number of source lines the unit spans, inclusive.
 """
-function_length(unit::FunctionUnit) = unit.lastline - unit.firstline + 1
+function_length(unit::Unit) = unit.lastline - unit.firstline + 1
 
 # Node types that open a function's keyword-argument region, the boundary past which a
 # parameter is named at the call site and so is a different concern than the positional
@@ -83,6 +94,12 @@ function first_parameter_list(node::TreeSitter.Node, index::QueryIndex)
     return nothing
 end
 
+# A signature belongs to a definition, so only a callable unit has one to read.
+# Top-level code has none, and reading it there would count a call site's arguments,
+# since Julia spells both as an `argument_list`.
+parameter_count(u::Unit, index::QueryIndex) =
+    is_function(unit_node(u), index) ? parameter_count(unit_node(u), index) : 0
+
 function parameter_count(node::TreeSitter.Node, index::QueryIndex)
     container = first_parameter_list(node, index)
     container === nothing && return 0
@@ -104,6 +121,9 @@ with no control flow has depth 0.
 nesting_depth(node::TreeSitter.Node, index::QueryIndex) =
     fold_unit(nesting_step, max, node, index, 0)
 
+# Depth is a maximum over the unit, so a run takes the deepest of its nodes.
+nesting_depth(u::Unit, index::QueryIndex) = fold_run(nesting_depth, max, u, index)
+
 # Depth at `node` is the enclosing depth plus one for a nesting construct; children
 # inherit it, and `max` keeps the deepest.
 function nesting_step(node::TreeSitter.Node, index::QueryIndex, depth::Int)
@@ -124,7 +144,13 @@ subtree. Branch points are the query's decision points plus short-circuit operat
 (`&&`, `||`), which each add an independent path.
 """
 cyclomatic(node::TreeSitter.Node, index::QueryIndex) =
-    1 + sum_over(branch_step, node, index)
+    1 + branch_points(node, index)
+
+# Over a run the base path is the unit's, not each node's, so the branch points fold
+# and the one is added once.
+cyclomatic(u::Unit, index::QueryIndex) = 1 + fold_run(branch_points, +, u, index)
+
+branch_points(node::TreeSitter.Node, index::QueryIndex) = sum_over(branch_step, node, index)
 
 # The counting steps are each one `count_if` over a different predicate, so they
 # share a shape with nothing to extract.
@@ -140,6 +166,8 @@ or one whose idiomatic return is a bare expression, counts only explicit returns
 """
 return_count(node::TreeSitter.Node, index::QueryIndex) =
     sum_over(return_step, node, index)
+
+return_count(u::Unit, index::QueryIndex) = fold_run(return_count, +, u, index)
 
 return_step(node::TreeSitter.Node, index::QueryIndex, ctx) =
     count_if(node in index.return_stmt, ctx)
@@ -180,6 +208,10 @@ function boolean_complexity(node::TreeSitter.Node, index::QueryIndex)
     isempty(index.short_circuit.ids) && return 0
     return fold_unit(op_chain_step, max, node, index, nothing)
 end
+
+# Separate expressions compete for the maximum whether they sit in one node or across
+# a run, so the run folds the same way the subtree does.
+boolean_complexity(u::Unit, index::QueryIndex) = fold_run(boolean_complexity, max, u, index)
 
 # The top of an expression owns its whole subtree's operators; a nested operator node
 # counts a strict subset, so `max` selects the outermost. Separate expressions compete.
@@ -271,6 +303,10 @@ Nejmeh's measure as PMD computes it. Statement sequences multiply, branches add,
 each `&&`/`||` in a condition adds one path. Dispatches on construct family from the
 query, so the arithmetic is the same across languages. Saturates at `NPATH_CAP`.
 """
+# A run is a statement sequence, and sequences multiply, the same arithmetic
+# `sequence_npath` applies to a block's children.
+npath(u::Unit, index::QueryIndex) = fold_run(npath, sat_mul, u, index)
+
 function npath(node::TreeSitter.Node, index::QueryIndex)
     node in index.loop && return loop_npath(node, index)
     node in index.switch && return switch_npath(node, index)
@@ -414,6 +450,9 @@ one; an operator change starts a new run.
 """
 cognitive_complexity(node::TreeSitter.Node, index::QueryIndex) =
     fold_unit(cognitive_step, +, node, index, 0) + boolean_runs(node, index)
+
+# Cognitive complexity carries no base of its own, so a run is the sum of its nodes.
+cognitive_complexity(u::Unit, index::QueryIndex) = fold_run(cognitive_complexity, +, u, index)
 
 # A decision adds one plus its enclosing nesting; an else-if continuation adds a flat
 # one; a nesting construct deepens the context for its children.

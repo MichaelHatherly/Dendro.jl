@@ -15,7 +15,7 @@ const COHESION_UBIQUITY = 1.0
 
 # Byte ranges of a file's units, the containment table `containing_unit` scans.
 unit_ranges(index::QueryIndex) =
-    Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in functions(index)]
+    Tuple{Int, Int}[unit_span(u) for u in units(index)]
 
 # The innermost function unit whose byte span contains `[from, to]`, or 0 when the
 # position lies in no function (top-level code). Units are few per file, so a scan.
@@ -38,7 +38,7 @@ end
 # cross-cutting utility rather than a shared concern. The connectivity `:low_cohesion`
 # reads as components and `:scattered` folds into the corpus graph.
 function binding_groups(index::QueryIndex, ubiquity::Float64)
-    units = functions(index)
+    units = index.units
     n = length(units)
     ranges = unit_ranges(index)
     # Units referencing one definition, keyed by the definition's identity.
@@ -68,21 +68,21 @@ and the unit's own name never counts, which excludes both recursion and Julia's
 call-shaped signature. The per-unit efferent-coupling scalar beside the binding
 edges cohesion reads; zero for a language with no `@callee` capture.
 """
-function fan_out(unit::FunctionUnit, index::QueryIndex)
+function fan_out(unit::Unit, index::QueryIndex)
     isempty(index.callee.nodes) && return 0
-    span = TreeSitter.byte_range(unit.node)
-    for (i, u) in enumerate(functions(index))
-        TreeSitter.byte_range(u.node) == span && return length(callees_by_unit(index)[i])
+    span = unit_span(unit)
+    for (i, u) in enumerate(units(index))
+        unit_span(u) == span && return length(callees_by_unit(index)[i])
     end
     return 0
 end
 
 # Each unit's distinct callee names from one pass over the `@callee` captures, in
-# `functions(index)` order. The single source of what counts as a unit's callee:
+# `units(index)` order. The single source of what counts as a unit's callee:
 # a call is attributed to its innermost unit, and a unit's own name never counts.
 # `fan_out` reads one entry; the reimplementation fingerprints read them all.
 function callees_by_unit(index::QueryIndex)
-    units = functions(index)
+    units = index.units
     out = [Set{String}() for _ in units]
     isempty(index.callee.nodes) && return out
     ranges = unit_ranges(index)

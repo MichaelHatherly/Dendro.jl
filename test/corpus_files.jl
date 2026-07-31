@@ -7,7 +7,7 @@
 end
 
 @testitem "corpus analysis holds its invariants" setup = [Fixtures] tags = [:corpus_files] begin
-    using Dendro: analyze, functions, source_files, language_for_path
+    using Dendro: analyze, units, source_files, language_for_path
 
     @testset "$lang" for lang in Fixtures.corpus_langs()
         dir = joinpath(Fixtures.corpus_root(), string(lang))
@@ -23,10 +23,10 @@ end
 
         for path in source_files(dir)
             i = Fixtures.idx(language_for_path(path), read(path, String))
-            for u in functions(i)
-                @test Dendro.cyclomatic(u.node, i) >= 1
-                @test Dendro.nesting_depth(u.node, i) >= 0
-                @test Dendro.parameter_count(u.node, i) >= 0
+            for u in units(i)
+                @test Dendro.cyclomatic(u, i) >= 1
+                @test Dendro.nesting_depth(u, i) >= 0
+                @test Dendro.parameter_count(u, i) >= 0
             end
         end
     end

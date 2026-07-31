@@ -72,7 +72,7 @@ end
 function reimpl_units(files::Vector{ParsedFile}, min_size::Int)
     out = ReimplUnit[]
     for f in files
-        units = functions(f.index)
+        units = f.index.units
         isempty(units) && continue
         ranges = unit_ranges(f.index)
         callees = callees_by_unit(f.index)
