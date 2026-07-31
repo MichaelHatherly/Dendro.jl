@@ -159,3 +159,13 @@
 (try_statement) @try
 
 [(return_statement) (break_statement) (continue_statement)] @terminal
+
+; Where top-level code lives: the file, and a module's body. A module body holds
+; statements the same way the file does, so a package's main file is read rather than
+; skipped as one large declaration.
+(source_file) @toplevel
+(module_definition (block) @toplevel)
+
+; A top-level form that declares rather than executes. A run of top-level code breaks
+; at one, so a type or a macro is never folded into the code around it.
+[(struct_definition) (abstract_definition) (macro_definition) (module_definition)] @declaration

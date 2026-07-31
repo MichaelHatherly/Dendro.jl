@@ -72,6 +72,10 @@ accepts. `message` is what the rule says when it fires. `severity` is `:warn` or
 deciding whether the rule reaches the [`errors`](@ref) floor. `kind` is `:flag` or
 `:scalar`; a scalar carries its `(warn, high)` `band` and a flag carries `nothing`.
 
+`scope` is the unit kind a scalar rule measures, `:any` or `:callable`, the same
+declaration a built-in [`Rule`](@ref) carries. A rule counting a shape "in one function"
+means the definitions, and top-level code is not one.
+
 `guard` says the rule is written to catch something the project intends never to write, so
 matching nothing is the state it wants rather than a rule to go and fix. Only the zero-match
 report reads it, and everything else treats a guard as any other rule. Without it that
@@ -88,9 +92,10 @@ struct PatternSpec
     kind::Symbol
     band::Union{Tuple{Int, Int}, Nothing}
     guard::Bool
+    scope::Symbol
 end
-PatternSpec(name::Symbol, message::String, severity::Symbol, kind::Symbol, band) =
-    PatternSpec(name, message, severity, kind, band, false)
+PatternSpec(name::Symbol, message::String, severity::Symbol, kind::Symbol, band, guard::Bool = false) =
+    PatternSpec(name, message, severity, kind, band, guard, :any)
 
 # The severities a `[patterns.<name>]` table may name. `warn` is the default: `high_floor`
 # gates on an absolute band of `:high`, so a rule that fires across a corpus would make
@@ -99,6 +104,11 @@ const PATTERN_SEVERITIES = (:warn, :high)
 
 # The rule kinds. A flag reports presence, a scalar counts its matches per unit.
 const PATTERN_KINDS = (:flag, :scalar)
+
+# The unit kinds a rule may measure. `:any` is the default: a lint rule is about a shape,
+# and a shape is a shape wherever it sits. A rule whose count only means something inside a
+# definition declares `:callable`.
+const PATTERN_SCOPES = (:any, :callable)
 
 """
     BUILTIN_RULES :: Vector{Rule}

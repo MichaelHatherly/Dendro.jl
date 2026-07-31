@@ -370,21 +370,11 @@ end
 end
 
 @testitem "a top-level binding is not an unused local" setup = [Fixtures] tags = [:flags] begin
-    using TreeSitter
-
     # `spare` is bound at top level and never read. That is `:unreferenced`'s
     # question, not this rule's, and it stays so once top-level code is a unit.
     src = "used = 1\nspare = 2\nprintln(used)\n"
-    tree = TreeSitter.parse(Dendro.parser_for(:julia), src)
-    i = Dendro.build_index(tree, :julia, src, Dendro.query_for(:julia), Dendro.scopes_query_for(:julia))
-    push!(
-        i.units, Dendro.Unit(
-            TreeSitter.Node[
-                c for c in TreeSitter.named_children(TreeSitter.root(tree))
-                    if !(c in i.comment)
-            ], 1, 3
-        )
-    )
+    i = Fixtures.idx(:julia, src)
+    @test !isempty(Dendro.units(i))          # the code is a unit
 
     @test isempty(Dendro.unused_locals(i))
     @test isempty(Dendro.unused_parameters(i))

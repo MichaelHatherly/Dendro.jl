@@ -21,9 +21,11 @@ end
     @test units[3].firstline == 3
 end
 
-@testitem "non-definition assignments are not units (julia)" setup = [Fixtures] tags = [:units] begin
+@testitem "non-definition assignments are not callable units (julia)" setup = [Fixtures] tags = [:units] begin
     src = "x = 5\nk::T = nothing\na, b = t\n"
-    @test isempty(Dendro.units(Fixtures.idx(:julia, src)))
+    i = Fixtures.idx(:julia, src)
+    # They are top-level code, so they are a unit; none of them is a definition.
+    @test !any(u -> Dendro.is_callable(u, i), Dendro.units(i))
 end
 
 @testitem "qualified definitions are named by their final component (julia)" setup = [Fixtures] tags = [:units] begin
@@ -95,18 +97,13 @@ end
     using TreeSitter
 
     src = "x = 1\nfunction f(y)\n    y\nend\nz = x + 1\n"
-    tree = TreeSitter.parse(Dendro.parser_for(:julia), src)
-    i = Dendro.build_index(tree, :julia, src, Dendro.query_for(:julia), Dendro.scopes_query_for(:julia))
-    top = Dendro.Unit(
-        TreeSitter.Node[
-            c for c in TreeSitter.named_children(TreeSitter.root(tree))
-                if !Dendro.is_function(c, i) && !(c in i.comment)
-        ], 1, 5
-    )
+    i = Fixtures.idx(:julia, src)
+    top = filter(u -> !Dendro.is_callable(u, i), Dendro.units(i))
+    callable = only(filter(u -> Dendro.is_callable(u, i), Dendro.units(i)))
 
-    @test length(top.nodes) == 2
-    @test !Dendro.is_callable(top, i)
-    @test Dendro.is_callable(only(Dendro.units(i)), i)
+    # The definition splits the top-level code either side of it into two runs.
+    @test [length(t.nodes) for t in top] == [1, 1]
+    @test length(callable.nodes) == 1
 end
 
 @testitem "a callable-scoped rule skips top-level code" setup = [Fixtures] tags = [:units] begin
@@ -148,4 +145,41 @@ end
     fired = Set(f.metric for f in out)
     @test :function_length in fired
     @test :parameter_count in fired
+end
+
+@testitem "top-level code becomes a unit, in runs between definitions" setup = [Fixtures] tags = [:units] begin
+    src = """
+    using X
+    a = 1
+    function f(y)
+        y
+    end
+    b = 2
+    struct S end
+    c = 3
+    """
+    i = Fixtures.idx(:julia, src)
+    us = Dendro.units(i)
+    kinds = [Dendro.is_callable(u, i) for u in us]
+    spans = [(u.firstline, u.lastline) for u in us]
+
+    # Source order, and the run breaks at the definition and at the declaration rather
+    # than straddling them.
+    @test spans == [(1, 2), (3, 5), (6, 6), (8, 8)]
+    @test kinds == [false, true, false, false]
+    @test length(us[1].nodes) == 2
+end
+
+@testitem "a module body holds top-level code" setup = [Fixtures] tags = [:units] begin
+    src = "module M\nusing X\nconst A = 1\nf(x) = x\nend\n"
+    i = Fixtures.idx(:julia, src)
+    top = filter(u -> !Dendro.is_callable(u, i), Dendro.units(i))
+    # The module itself is a declaration, so it is not folded into a run; its body is
+    # where the statements are read.
+    @test [(u.firstline, u.lastline) for u in top] == [(2, 3)]
+end
+
+@testitem "a language with no toplevel capture grows no top-level units" setup = [Fixtures] tags = [:units] begin
+    i = Fixtures.idx(:python, "import os\nx = 1\ndef f():\n    return x\n")
+    @test all(u -> Dendro.is_callable(u, i), Dendro.units(i))
 end

@@ -50,19 +50,9 @@ end
 end
 
 @testitem "the baseline samples only the units a rule measures" setup = [Fixtures] tags = [:rules] begin
-    using TreeSitter
-
     src = "function f(x)\n    x\nend\n" * join(("a$(n) = $(n)" for n in 1:40), "\n") * "\n"
-    tree = TreeSitter.parse(Dendro.parser_for(:julia), src)
-    i = Dendro.build_index(tree, :julia, src, Dendro.query_for(:julia), Dendro.scopes_query_for(:julia))
-    push!(
-        i.units, Dendro.Unit(
-            TreeSitter.Node[
-                c for c in TreeSitter.named_children(TreeSitter.root(tree))
-                    if !Dendro.is_function(c, i) && !(c in i.comment)
-            ], 4, 43
-        )
-    )
+    i = Fixtures.idx(:julia, src)
+    @test length(Dendro.units(i)) == 2       # the definition and the run after it
 
     bl = Dendro.add_samples!(Dendro.Baseline(), i)
     # The definition alone: a top-level run's length must not move the distribution a

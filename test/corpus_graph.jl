@@ -8,8 +8,13 @@
     # `f` in main.jl calls `helper`, defined in util.jl, which main.jl splices in via
     # `include`. The reference resolves across the file boundary to helper's unit, the
     # whole point of the corpus graph.
-    fidx = graph.unit_index[("main.jl", 1)]
-    hidx = graph.unit_index[("util.jl", 1)]
+    # By name, not by position: main.jl's first unit is the `include` call, top-level
+    # code rather than a definition, and only definitions are placed.
+    node(file, name) = only(
+        i for (i, u) in enumerate(graph.units) if u.file == file && u.name == name
+    )
+    fidx = node("main.jl", "f")
+    hidx = node("util.jl", "helper")
     @test haskey(graph.edges, (fidx, hidx))
     @test graph.edges[(fidx, hidx)] ≈ 1.0
     # The placement signal: all of f's cross-file reference mass lands in util.jl.

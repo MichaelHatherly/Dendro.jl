@@ -44,9 +44,9 @@ function file_own_affinity(f::ParsedFile, graph::CorpusGraph)
     isempty(units) && return own
     ranges = Tuple{Int, Int}[unit_span(u) for u in units]
     for (refid, defid) in f.index.bindings
-        ur = containing_unit(ranges, refid[1], refid[2])
+        ur = containing_callable(f.index, ranges, refid[1], refid[2])
         ur == 0 && continue
-        containing_unit(ranges, defid[1], defid[2]) == ur && continue
+        containing_callable(f.index, ranges, defid[1], defid[2]) == ur && continue
         gi = get(graph.unit_index, (f.file, ur), 0)
         gi == 0 && continue
         own[gi] = get(own, gi, 0.0) + 1.0

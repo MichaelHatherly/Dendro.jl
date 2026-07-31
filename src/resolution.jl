@@ -82,7 +82,7 @@ function unbound_references(file::ParsedFile)
         name = String(strip(TreeSitter.slice(file.source, r)))
         lookup_definition(caps.scopes, from, to, name) === nothing || continue
         resolved = reference_name(r, file.source, access, name)
-        push!(refs, UnboundRef(rid, resolved, containing_unit(uranges, from, to)))
+        push!(refs, UnboundRef(rid, resolved, containing_callable(file.index, uranges, from, to)))
     end
     return refs
 end

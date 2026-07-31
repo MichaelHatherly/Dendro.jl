@@ -263,7 +263,8 @@ Measurement:
 - `units.jl` exposes the units the query identified: `units(index)` returns them
   (the `index.units` the query built), `unit_span` is the byte range a unit covers
   and `unit_node` the definition a callable one is named by, `unit_name` labels it,
-  and `is_function(node, index)` is the no-descend boundary, a node the query
+  `is_callable` says whether a unit is a definition or top-level code, and
+  `is_function(node, index)` is the no-descend boundary, a node the query
   tagged `@function`. Both the
   full form (`function ... end`) and the short form (`f(x) = expr`, including the
   `where`/typed unwrapping) are recognised by the language query, so a nested
@@ -303,6 +304,11 @@ Measurement:
   a short-form's right-hand expression), reading a body's real-work count, comparing
   subtrees by normalised text, and collecting the blocks of one conditional chain
   (`branch_blocks`).
+- `scoring.jl` turns a measured value into findings for the corpus-relational
+  passes: `two_scores` (the band and the percentile), `fires`, and the two emit
+  shapes `scored_findings` and `directory_findings`. Ten passes read it, and none of
+  it is about what a `Finding` is or how one renders, which is why it sits apart from
+  `report.jl`.
 - `rules.jl` defines `Rule` (a metric name, kind, band, measuring function, and
   the unit `scope` it measures), `BUILTIN_RULES` (the default set, in report
   order), `OPTIONAL_RULES` (off by default), `rules_of_kind` (the active rules of
@@ -684,7 +690,14 @@ read from it, so no file is parsed twice. Concrete in every field, so the relati
 passes dispatch statically over it rather than through `getproperty(::Any)`.
 
 `Unit` (`units.jl`). A run of sibling nodes and its line span, the granularity at
-which scalar metrics report. A callable definition is a run of one node, which is
+which scalar metrics report. `append_toplevel_units!` (`query_index.jl`) builds one
+per maximal run of consecutive top-level statements, reading two query captures:
+`@toplevel` names a container whose direct children are top-level code (the file, and
+a module body), and `@declaration` names a top-level form that declares rather than
+executes, which a run breaks at along with every callable definition. Runs are
+contiguous, since the diff scope reads a unit's line span and a single unit spanning
+a whole file would report for a change on any line in it. A language whose query names
+no `@toplevel` grows no such units, so adding one is a query and nothing else. A callable definition is a run of one node, which is
 every unit a language query produces; a run of several is top-level code, where no
 single node spans the region and the metrics fold across the run instead. `fold_run`
 (`metrics.jl`) is that fold, beside the `fold_unit` that walks one subtree.
@@ -1208,6 +1221,11 @@ unsuppressed findings for gating.
 
 ## Conventions
 
+- `containing_callable` (`graph_edges.jl`) is what the symbol table, the corpus
+  graph, and cohesion ask when they need the unit a position belongs to. It answers
+  with the innermost *callable*, so top-level code reports 0 exactly as it did before
+  it became a unit: a run of statements has no name to resolve and cannot be moved
+  the way a definition can. Every `unit == 0` guard downstream reads that.
 - Tree-sitter rows are 0-based. `line_of` (in `suppress.jl`) converts to 1-based
   source lines, and `Unit` stores 1-based lines. Findings are 1-based.
 - Metrics are syntactic, with no symbol resolution. Per-file metrics are scoped to

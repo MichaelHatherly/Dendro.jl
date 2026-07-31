@@ -739,7 +739,7 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
         (owner.from, owner.to) in namespaces || continue
         name = String(strip(TreeSitter.slice(file.source, d)))
         path = module_path_of(regions, from, to)
-        unit = containing_unit(uranges, from, to)
+        unit = containing_callable(file.index, uranges, from, to)
         line = Int(TreeSitter.start_point(d).row) + 1
         external = link !== nothing && link.external_root(d, file.source)::Bool
         push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d), external))

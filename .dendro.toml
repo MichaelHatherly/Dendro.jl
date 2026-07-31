@@ -63,3 +63,6 @@ guard   = true
 message = "unnamed numeric literals in one function"
 kind    = "scalar"
 band    = [5, 10]
+# The count means something inside a definition. A declaration's own numbers, a band
+# table or a set of defaults, are named by the thing they declare.
+scope   = "callable"

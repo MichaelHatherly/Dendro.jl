@@ -32,6 +32,24 @@ function containing_unit(ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
     return best
 end
 
+"""
+    containing_callable(index, ranges, from, to) -> Int
+
+The innermost callable unit whose byte span contains `[from, to]`, or 0. The symbol
+table, the corpus graph and cohesion all ask which definition owns a position, and
+top-level code is not one: a run of statements has no name to resolve and cannot be
+moved the way a definition can, so a position inside one belongs to no unit, exactly
+as it did before top-level code became a unit.
+
+`ranges` is [`unit_ranges`](@ref) over the same index, so an index it returns is an
+index into `units(index)`.
+"""
+function containing_callable(index::QueryIndex, ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
+    ui = containing_unit(ranges, from, to)
+    ui == 0 && return 0
+    return is_callable(units(index)[ui], index) ? ui : 0
+end
+
 # The within-file links a file's bindings imply: each entry lists the local unit indices
 # that share one definition, the units referencing it plus, when it lives in a unit, its
 # owner. A binding referenced by more than `ubiquity` of the units links nothing, a
@@ -44,7 +62,7 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
     # Units referencing one definition, keyed by the definition's identity.
     groups = Dict{NodeId, Vector{Int}}()
     for (refid, defid) in index.bindings
-        ui = containing_unit(ranges, refid[1], refid[2])
+        ui = containing_callable(index, ranges, refid[1], refid[2])
         ui == 0 && continue
         push!(get!(() -> Int[], groups, defid), ui)
     end
@@ -52,7 +70,7 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
     threshold = ubiquity * n
     for (defid, members) in groups
         length(unique(members)) > threshold && continue
-        owner = containing_unit(ranges, defid[1], defid[2])
+        owner = containing_callable(index, ranges, defid[1], defid[2])
         push!(out, owner == 0 ? members : push!(copy(members), owner))
     end
     return out
