@@ -138,6 +138,8 @@ rules_of_kind(rules, kind::Symbol) = Iterators.filter(r -> r.kind == kind, rules
 const RELATIONAL = (
     duplicate = :duplicate,
     near_duplicate = :near_duplicate,
+    library_duplicate = :library_duplicate,
+    library_near_duplicate = :library_near_duplicate,
     unnatural = :unnatural,
     low_cohesion = :low_cohesion,
     scattered = :scattered,

@@ -92,6 +92,35 @@ Pair it with `base` to scope to the functions a change touched; an annotation sh
 inline on the diff when its line is part of the change, otherwise in the run's Checks
 tab. See `.github/workflows/dendro.yml` for a working setup.
 
+### Duplication against a library
+
+Every reading above judges one corpus against itself. `libraries` asks a different
+question: has the author written something a library the project already ships with does
+for them? Point Dendro at a dependency's source and it reports the sites in the project
+that duplicate it, naming the symbol to import.
+
+```julia
+analyze("src"; libraries = [Library("IterTools", "~/.julia/packages/IterTools/A1b2C/src")])
+```
+
+```
+src/util.jl:42  chunk_by  [IterTools.partition public, src/IterTools.jl:88]  library_duplicate 100 (high)
+src/parse.jl:210  read_header  [HTTP.parse_line internal, src/parse.jl:44]  library_duplicate 34 (warn)
+```
+
+A library is read and never scored: it stays out of the baseline, out of the graphs, and
+out of the report, so a dependency ten times the project's size neither moves the
+percentile nor fills the findings with code nobody can edit. The value is how much of your
+function the match covers. Only a match against a public whole library function, at or
+above half coverage, reaches the `errors` floor, since that is the one case with a name to
+call instead. `:library_near_duplicate` catches the copy-paste-then-edit the exact join
+misses, and always reports at `:warn`: measured over ten projects against their real
+dependency sets, its precision was a third of the exact pass's, so it proposes rather than
+gates. Indexing a dependency set is cached to disk, so a warm CI run pays about a tenth of
+the cold cost. See
+[the docs](https://michaelhatherly.github.io/Dendro.jl/dev/libraries/) for configuration,
+the CI recipe, how the defaults were measured, and the false positives worth recognising.
+
 To see the structure rather than read it, `mermaid(io, paths; graph, granularity, focus)`
 renders one of the graphs Dendro builds as a mermaid `flowchart`. `graph` picks the
 diagram: `:coupling` the cross-file reference graph behind `:misplaced`/`:scattered`,
@@ -124,13 +153,16 @@ julia -m Dendro src                       # report the findings
 julia -m Dendro --base=origin/main src    # only the lines a change touched
 julia -m Dendro --check src               # exit 1 on any error-severity finding (CI gate)
 julia -m Dendro --format=github src       # GitHub Actions annotations
+julia -m Dendro --library=IterTools=../IterTools/src src   # report duplication against a library
 ```
 
 The default report ranks every function by percentile, so it is never empty, the
 triage view. `--check` instead gates on the `:high` floor, the error-severity findings
 (high-band scalars and all flags), so a clean codebase exits 0 and a regression exits
 1. `--config=<file>` reads a config file in place of discovery, `--no-config` ignores
-config files, `--cut=<float>` sets the percentile cutoff. `--help` lists every flag.
+config files, `--cut=<float>` sets the percentile cutoff, `--library=<path>` (repeatable,
+optionally `<name>=<path>`) adds a reference corpus to compare against. `--help` lists
+every flag.
 
 ## Performance
 
@@ -175,19 +207,29 @@ divisible_package = true   # enable the opt-in directory-division pass
 min_size = 12              # min named-node subtree to count as a clone
 threshold = 0.9           # near-miss similarity cutoff
 radius_factor = 0.5       # candidate-search radius, as a fraction of function size
+library_threshold = 0.90   # cross-corpus near-miss cutoff
+library_gate_coverage = 50 # coverage a public whole-unit library match needs for :high
+library_anchor_grain = true # compare blocks against libraries too, not just whole functions
 
 [reimplementation]
 threshold = 0.6            # vocabulary overlap a candidate pair must reach
+
+[libraries.IterTools]
+path = "~/.julia/packages/IterTools/*/src"   # a reference corpus to compare against
 ```
 
 `[bands]` keys are the scalar metric names plus the relational names (`unnatural`,
 `low_cohesion`, `scattered`, `split_audience`, `misplaced`, `back_edge`,
 `dependency_cycle`, `hub`, `incoherent_package`, `divisible_package`); `[rules]` keys are
-any rule name, plus `reimplementation`, `incoherent_package` and `divisible_package` to
-gate those corpus passes; `[clones]` and `[reimplementation]` set the duplicate- and
-reimplementation-detection thresholds. An unknown key warns and is ignored, so a typo is
-visible rather than silent. The bands, the `cut`, the clone thresholds, and rule on/off
-are configurable; the corpus floors and model internals stay fixed.
+any rule name, plus `reimplementation`, `incoherent_package`, `divisible_package`,
+`library_duplicate` and `library_near_duplicate` to gate those corpus passes; `[clones]`
+and `[reimplementation]` set the duplicate- and reimplementation-detection thresholds;
+`[libraries.<name>]` declares a reference corpus by `path` or `paths`, with an optional
+`ignore` list. An unknown key warns and is ignored, so a typo is visible rather than
+silent, except a library path matching nothing, which errors: a library resolving to
+nothing would silently turn its gate off. The bands, the `cut`, the clone thresholds, the
+libraries, and rule on/off are configurable; the corpus floors and model internals stay
+fixed.
 
 ## Pattern rules
 
@@ -308,7 +350,8 @@ covers the decisions a new query has to make.
 
 The [documentation](https://MichaelHatherly.github.io/Dendro.jl/stable) covers the
 rest: the two-score model and every metric, duplicate and near-duplicate detection,
-within-file cohesion, cross-file placement and scattering, files serving disjoint
+duplication against a library the project already depends on, within-file cohesion,
+cross-file placement and scattering, files serving disjoint
 audiences, dependencies running against a directory pair's grain, dependency cycles
 reported as the edges that break them (`dependency_cycle`, banded on the number of files
 caught in the cycle at `[5, 10]`), hub files by fan-in and fan-out, dead private code by

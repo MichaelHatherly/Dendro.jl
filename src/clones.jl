@@ -70,9 +70,13 @@ A function's near-miss features from a single subtree walk: its pre-order subtre
 function clone_features(unit::FunctionUnit, index::QueryIndex)
     st = subtrees(unit, index)
     root = st[end]
-    sequence = [s.hash for s in sort(st; by = s -> preorder_key(s.node))]
-    return sequence, histogram_of(st), root.hash, root.size
+    return preorder_hashes(st), histogram_of(st), root.hash, root.size
 end
+
+# A subtree set's hashes in source order, the order-aware form the LCS compares. Read off a
+# walk the caller already has, so a pass building other readings from the same subtrees
+# pays for one walk.
+preorder_hashes(st::Vector{Subtree}) = UInt64[s.hash for s in sort(st; by = s -> preorder_key(s.node))]
 
 # Cap on the sequence length an LCS compares, bounding its O(n*m) cost. Beyond it the
 # comparison reads only the first `LCS_CAP` nodes, so a clone among very large
@@ -260,6 +264,24 @@ function rank_clones!(findings::Vector{Finding}, placement::ModulePlacement)
     return permute!(findings, sortperm(distances; rev = true, alg = Base.Sort.MergeSort))
 end
 
+"""
+    nearest_anchor(lookup, node) -> Any
+
+What `lookup` reports for the nearest ancestor of `node` it recognises, or `nothing` when
+no ancestor does. The step every maximality filter shares: an anchor is redundant when the
+anchor enclosing it most closely already covers it, so each walks up until an anchor
+answers. `lookup` returns `nothing` for a node it does not index.
+"""
+function nearest_anchor(lookup::F, node::TreeSitter.Node) where {F}
+    p = TreeSitter.parent(node)
+    while !TreeSitter.is_null(p)
+        answer = lookup(p)
+        answer === nothing || return answer
+        p = TreeSitter.parent(p)
+    end
+    return nothing
+end
+
 # An anchor is subsumed when its nearest enclosing anchor is a clone of at least the
 # same multiplicity: the larger clone already covers it. Multiplicity never rises
 # going up the tree, so the nearest anchor ancestor is the one to check.
@@ -270,16 +292,13 @@ function subsumed(
     )
     e = entries[i]
     k = length(buckets[(e.language, e.hash)])
-    p = TreeSitter.parent(e.node)
-    while !TreeSitter.is_null(p)
-        j = get(anchor_at, (e.file, nodeid(p)...), 0)
-        if j != 0
-            a = entries[j]
-            return length(buckets[(a.language, a.hash)]) >= k
-        end
-        p = TreeSitter.parent(p)
+    j = nearest_anchor(e.node) do p
+        hit = get(anchor_at, (e.file, nodeid(p)...), 0)
+        hit == 0 ? nothing : hit
     end
-    return false
+    j === nothing && return false
+    a = entries[j]
+    return length(buckets[(a.language, a.hash)]) >= k
 end
 
 # Default similarity cutoff for a near-miss, the LCS fraction `|LCS| / max(|a|, |b|)`
@@ -316,13 +335,95 @@ function uf_find(parent::Vector{Int}, x::Int)
     return x
 end
 
-# Dense L1 vector for one unit over a shared per-language vocabulary.
-function clone_vector(unit::CloneUnit, vocab::Dict{String, Int})
+# Dense L1 vector for one node-type histogram over a shared vocabulary.
+function clone_vector(histogram::Dict{String, Int}, vocab::Dict{String, Int})
     v = zeros(Float64, length(vocab))
-    for (t, c) in unit.histogram
+    for (t, c) in histogram
         v[vocab[t]] = c
     end
     return v
+end
+
+# One side of a banded candidate query: each item's node-type histogram, the characteristic
+# vector the radius query reads, and its size, which decides the band it lands in.
+struct BandedSide
+    histograms::Vector{Dict{String, Int}}
+    sizes::Vector{Int}
+end
+
+# The search bands one query band reaches. Within one corpus, querying band `b` against `b`
+# and `b+1` sees every pair straddling a boundary, since the lower member's own query covers
+# the pair from the other side. A cross-corpus query is directional and has no such
+# counterpart, so it reaches the band below as well.
+const WITHIN_BANDS = (0, 1)
+const CROSS_BANDS = (-1, 0, 1)
+
+# The band lookup miss, shared so an absent neighbour band allocates nothing.
+const NO_BAND = Int[]
+
+# Group item indices into size bands by `floor(log2(size))`. An L1 distance over node
+# histograms grows with function size, so a fixed radius would relate small and large
+# functions; banding is what keeps the radius meaningful.
+function size_bands(sizes::Vector{Int})
+    bands = Dict{Int, Vector{Int}}()
+    for (i, s) in enumerate(sizes)
+        push!(get!(() -> Int[], bands, floor(Int, log2(s))), i)
+    end
+    return bands
+end
+
+"""
+    banded_candidates(query, search, radius_factor, offsets) -> Vector{Tuple{Int, Int}}
+
+The candidate pairs a banded characteristic-vector radius query (DECKARD) proposes, each
+`(query index, search index)`. `offsets` says which search bands a query band reaches, and
+`radius_factor` times the query band's upper size bound is the radius, so the prefilter
+stays generous and an LCS similarity confirms.
+
+Two sides rather than one index set, so the within-corpus near pass (which passes the same
+side twice) and the cross-corpus one (which indexes the libraries and queries the project)
+read the same banding rather than a second copy of it. The query is never a verdict.
+
+Cheap relative to the LCS, so it stays serial, and its traversal order is deterministic,
+bands sorted and hits in query order, which fixes the pair order a parallel confirmation
+reads.
+"""
+function banded_candidates(
+        query::BandedSide, search::BandedSide, radius_factor::Float64, offsets
+    )
+    vocab = Dict{String, Int}()
+    for h in query.histograms, t in keys(h)
+        get!(vocab, t, length(vocab) + 1)
+    end
+    for h in search.histograms, t in keys(h)
+        get!(vocab, t, length(vocab) + 1)
+    end
+
+    qbands = size_bands(query.sizes)
+    sbands = size_bands(search.sizes)
+    out = Tuple{Int, Int}[]
+    for b in sort!(collect(keys(qbands)))
+        pool = Int[]
+        for o in offsets
+            append!(pool, get(sbands, b + o, NO_BAND))
+        end
+        isempty(pool) && continue
+        asked = qbands[b]
+        tree = NearestNeighbors.BallTree(
+            stack([clone_vector(search.histograms[i], vocab) for i in pool]),
+            NearestNeighbors.Cityblock()
+        )
+        radius = radius_factor * 2.0^(b + 1)
+        hits = NearestNeighbors.inrange(
+            tree, stack([clone_vector(query.histograms[i], vocab) for i in asked]), radius
+        )
+        for (qi, neighbours) in enumerate(hits)
+            for pos in neighbours
+                push!(out, (asked[qi], pool[pos]))
+            end
+        end
+    end
+    return out
 end
 
 # The near-miss similarity of two clone units, or zero when the size ratio alone rules
@@ -339,46 +440,23 @@ function pair_similarity(units::Vector{CloneUnit}, i::Int, j::Int, threshold::Fl
     return clone_similarity(a, b)
 end
 
-# The candidate pairs a radius query proposes within one language, deduped and with exact
-# clones dropped. A characteristic-vector radius query (DECKARD) proposes pairs cheaply;
-# size banding keeps the radius meaningful, querying each band against itself and the next
-# size up so a pair straddling a band boundary is still seen. Cheap relative to the LCS
-# verdict, so it stays serial; the traversal order is deterministic (bands sorted, hits in
-# query order), which fixes the pair order the parallel scoring reads.
+# The candidate pairs a banded radius query proposes within one language, deduped and with
+# exact clones dropped. One corpus, so both sides of the query are the same units.
 function candidate_pairs(units::Vector{CloneUnit}, idxs::Vector{Int}, radius_factor::Float64)
-    vocab = Dict{String, Int}()
-    for i in idxs, t in keys(units[i].histogram)
-        get!(vocab, t, length(vocab) + 1)
-    end
-
-    bands = Dict{Int, Vector{Int}}()
-    for i in idxs
-        push!(get!(() -> Int[], bands, floor(Int, log2(units[i].size))), i)
-    end
-
+    side = BandedSide(
+        Dict{String, Int}[units[i].histogram for i in idxs],
+        Int[units[i].size for i in idxs],
+    )
     pairs = Tuple{Int, Int}[]
     seen = Set{Tuple{Int, Int}}()
-    for b in sort!(collect(keys(bands)))
-        query = bands[b]
-        search = vcat(query, get(bands, b + 1, Int[]))
-        tree = NearestNeighbors.BallTree(
-            stack([clone_vector(units[i], vocab) for i in search]),
-            NearestNeighbors.Cityblock()
-        )
-        radius = radius_factor * 2.0^(b + 1)
-        hits = NearestNeighbors.inrange(tree, stack([clone_vector(units[i], vocab) for i in query]), radius)
-        for (qi, neighbours) in enumerate(hits)
-            i = query[qi]
-            for pos in neighbours
-                j = search[pos]
-                i == j && continue
-                pair = minmax(i, j)
-                pair in seen && continue
-                push!(seen, pair)
-                units[pair[1]].digest == units[pair[2]].digest && continue
-                push!(pairs, pair)
-            end
-        end
+    for (a, b) in banded_candidates(side, side, radius_factor, WITHIN_BANDS)
+        i, j = idxs[a], idxs[b]
+        i == j && continue
+        pair = minmax(i, j)
+        pair in seen && continue
+        push!(seen, pair)
+        units[pair[1]].digest == units[pair[2]].digest && continue
+        push!(pairs, pair)
     end
     return pairs
 end
@@ -405,6 +483,42 @@ function near_miss_edges!(
     return edges
 end
 
+"""
+    clone_units(files, min_size, metric) -> Vector{CloneUnit}
+
+Every function in `files` large enough to compare, with its near-miss features and the
+directive that may accept a `metric` finding on it. Both near-miss passes read their units
+this way, the within-corpus one and the cross-corpus one, differing only in the metric a
+`dendro-ignore` names.
+"""
+function clone_units(files::Vector{ParsedFile}, min_size::Integer, metric::Symbol)
+    units = CloneUnit[]
+    for f in files
+        for unit in functions(f.index)
+            sequence, histogram, digest, size = clone_features(unit, f.index)
+            size < unit_floor(unit.node, f.index, min_size) && continue
+            loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
+            sup = is_suppressed(f.directives, unit.firstline, metric)
+            push!(units, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
+        end
+    end
+    return units
+end
+
+"""
+    by_language(items) -> Dict{Symbol, Vector{Int}}
+
+Indices into `items` grouped by each one's `language`, so a shape is never compared across
+grammars. Every pass that proposes pairs starts here, whatever record it carries.
+"""
+function by_language(items)
+    bylang = Dict{Symbol, Vector{Int}}()
+    for (i, x) in enumerate(items)
+        push!(get!(() -> Int[], bylang, x.language), i)
+    end
+    return bylang
+end
+
 # Cluster the corpus's functions into near-miss groups, keyed by language so shapes
 # never cross grammars. Returns one `:near_duplicate` finding per cluster, its
 # `value` the weakest pairwise similarity in the cluster as a percent, suppressed when
@@ -414,21 +528,8 @@ function cluster_near_duplicates(
         threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR
     )
-    units = CloneUnit[]
-    for f in files
-        for unit in functions(f.index)
-            sequence, histogram, digest, size = clone_features(unit, f.index)
-            size < unit_floor(unit.node, f.index, min_size) && continue
-            loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
-            sup = is_suppressed(f.directives, unit.firstline, RELATIONAL.near_duplicate)
-            push!(units, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
-        end
-    end
-
-    bylang = Dict{Symbol, Vector{Int}}()
-    for (i, u) in enumerate(units)
-        push!(get!(() -> Int[], bylang, u.language), i)
-    end
+    units = clone_units(files, min_size, RELATIONAL.near_duplicate)
+    bylang = by_language(units)
     edges = Tuple{Int, Int, Float64}[]
     thr = Float64(threshold)
     rf = Float64(radius_factor)

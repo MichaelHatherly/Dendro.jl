@@ -111,6 +111,53 @@ end
     end
 end
 
+@testitem "the cross-corpus passes are deterministic across thread counts" tags = [:parallel] begin
+    mktempdir() do dir
+        # A project and a library beside it, with an exact copy and an edited one per
+        # project file, so both cross-corpus passes do real work over more than
+        # PARALLEL_MIN units and the parallel LCS confirmation has an order to fix.
+        proj = joinpath(dir, "proj", "src")
+        lib = joinpath(dir, "dep", "src")
+        mkpath(proj)
+        mkpath(lib)
+        chain(name, n) = string(
+            "function $name($(name)0)\n",
+            join("    $name$i = $name$(i - 1) + $i\n" for i in 1:n),
+            "    return $name$n\nend\n"
+        )
+        for i in 1:24
+            n = 6 + (i % 5)
+            write(joinpath(proj, "f$i.jl"), chain("p$i", n))
+            # An exact copy for the even files, one statement longer for the odd ones, so
+            # the exact join and the near pass each carry half the corpus.
+            write(joinpath(lib, "d$i.jl"), chain("d$i", i % 2 == 0 ? n : n + 1))
+        end
+        write(joinpath(lib, "Dep.jl"), "module Dep\n" * join("export d$i\ninclude(\"d$i.jl\")\n" for i in 1:24) * "end\n")
+
+        script = raw"""
+        import Dendro
+        fs = filter(f -> startswith(String(f.metric), "library_"), Dendro.analyze(ARGS[1]; libraries = [ARGS[2]]))
+        io = IOBuffer()
+        for f in fs
+            print(io, f.metric, '|', f.value, '|', f.absolute, '|')
+            for x in f.locations
+                print(io, basename(x.file), ':', x.line, ':', x.unit, ':', x.label, ';')
+            end
+            print(io, '\n')
+        end
+        print(hash(String(take!(io))), '|', length(fs))
+        """
+
+        p = Base.active_project()
+        serial = read(`$(Base.julia_cmd()) --startup-file=no --project=$p -t1 -e $script $proj $lib`, String)
+        parallel = read(`$(Base.julia_cmd()) --startup-file=no --project=$p -t4 -e $script $proj $lib`, String)
+
+        @test serial == parallel
+        # A match on an empty result would prove nothing.
+        @test parse(Int, split(serial, '|')[2]) > 0
+    end
+end
+
 @testitem "the hub pass is deterministic across thread counts" tags = [:parallel] begin
     mktempdir() do dir
         # Two interleaved chains: `a$i` reaches three files back, `b$i` six back, so every

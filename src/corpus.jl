@@ -2,14 +2,42 @@
 # into the `ParsedFile` records every later pass reads. What runs over those records
 # lives in `analyze.jl`.
 
+"""
+    ParseOptions
+
+What a parse pass does beyond building each file's query index: the active `rules` a
+directive is validated against, the `patterns` to index and the `pattern_dirs` to read
+their queries from, whether to resolve `bindings`, and whether to read inline `directives`.
+
+A reference corpus (a [`Library`](@ref)) is read and never scored, so it needs none of the
+optional walks: no rule runs over it, nothing asks what it binds, and no directive in it
+suppresses anything. Over a large dependency set the binding resolution alone is the
+difference between usable and not. The options travel in one value rather than as more
+parameters on [`parse_chunk!`](@ref), the same way scan state travels in a `Scan`.
+"""
+struct ParseOptions
+    rules::Vector{Rule}
+    patterns::Vector{PatternSpec}
+    pattern_dirs::Vector{String}
+    bindings::Bool
+    directives::Bool
+end
+
+ParseOptions(;
+    rules = BUILTIN_RULES, patterns::Vector{PatternSpec} = PatternSpec[],
+    pattern_dirs::Vector{String} = String[], bindings::Bool = true, directives::Bool = true
+) = ParseOptions(convert(Vector{Rule}, rules), patterns, pattern_dirs, bindings, directives)
+
 # Parse each path once. Each record carries everything the baseline, the per-file
 # scoring pass, and duplicate clustering need, so no file is parsed twice. Files
 # whose language has no profile are skipped. `language` forces one language for
-# every path, as `analyze` does.
+# every path, as `analyze` does. `bindings` and `directives` turn off the optional walks
+# for a corpus that is read and never scored.
 function parse_corpus(
         paths::AbstractVector{<:AbstractString}; language = nothing,
         rules = BUILTIN_RULES, profiles::Dict{Symbol, LanguageProfile} = PROFILES,
-        patterns::Vector{PatternSpec} = PatternSpec[], pattern_dirs::Vector{String} = String[]
+        patterns::Vector{PatternSpec} = PatternSpec[], pattern_dirs::Vector{String} = String[],
+        bindings::Bool = true, directives::Bool = true
     )
     forced = language === nothing ? nothing : Symbol(lowercase(String(language)))
     extensions = extension_map(profiles)
@@ -30,8 +58,9 @@ function parse_corpus(
     # Compile every pattern query before the fan-out too. A malformed one is a ConfigError
     # the caller should see once, not once per parse task racing to report it.
     isempty(patterns) || foreach(p -> pattern_queries(p, pattern_dirs, patterns), langs)
+    options = ParseOptions(; rules, patterns, pattern_dirs, bindings, directives)
     parallel_chunks(() -> Dict{LanguageProfile, TreeSitter.Parser}(), n) do parsers, idxs
-        parse_chunk!(files, parsers, entries, idxs, rules, patterns, pattern_dirs)
+        parse_chunk!(files, parsers, entries, idxs, options)
     end
     # A file the parse boundary turned away leaves its slot unassigned. Compacting in index
     # order keeps the corpus order every later pass and the parallel determinism rely on.
@@ -44,8 +73,7 @@ end
 # parser cannot take leaves its slot unassigned and `parse_corpus` drops it.
 function parse_chunk!(
         files::Vector{ParsedFile}, parsers::Dict{LanguageProfile, TreeSitter.Parser},
-        entries::Vector{Tuple{String, LanguageProfile}}, idxs, rules,
-        patterns::Vector{PatternSpec}, pattern_dirs::Vector{String}
+        entries::Vector{Tuple{String, LanguageProfile}}, idxs, options::ParseOptions
     )
     for i in idxs
         path, profile = entries[i]
@@ -61,12 +89,16 @@ function parse_chunk!(
         end
         parser = get!(() -> parser_for(profile), parsers, profile)
         tree = parse(parser, source)
-        index = build_index(tree, profile.name, source, query_for(profile), scopes_query_for(profile))
+        index = build_index(
+            tree, profile.name, source, query_for(profile), scopes_query_for(profile);
+            bindings = options.bindings
+        )
         # Skipped entirely for a project that declares no rules, so the second query family
         # costs an unconfigured scan nothing at all.
-        isempty(patterns) ||
-            index_all_patterns!(index, tree, pattern_queries(profile, pattern_dirs, patterns), source)
-        directives = suppressions(index; file = path, rules)
+        isempty(options.patterns) ||
+            index_all_patterns!(index, tree, pattern_queries(profile, options.pattern_dirs, options.patterns), source)
+        directives = options.directives ?
+            suppressions(index; file = path, rules = options.rules) : Directive[]
         files[i] = ParsedFile(profile, source, path, tree, index, directives)
     end
     return nothing

@@ -19,6 +19,10 @@ struct CLIOptions
     format::Symbol
     check::Bool
     check_patterns::Bool
+    # Reference corpora as `--library` gave them, `(name, path)` with an empty name where
+    # the flag named none. Kept raw so `run_cli` validates the path at the CLI boundary and
+    # a missing one is a clean usage error rather than the exception `Library` throws.
+    libraries::Vector{Tuple{String, String}}
 end
 
 # A flag's value: from `--flag=value` when given inline, else the next token.
@@ -42,6 +46,14 @@ function parse_cut(value)
     return n
 end
 
+# A `--library` value split into an optional name and a path, on the first `=` so a Windows
+# path keeps its drive letter (`C:` uses a colon).
+function split_library(value::AbstractString)
+    i = findfirst('=', value)
+    i === nothing && return ("", String(value))
+    return (String(value[1:prevind(value, i)]), String(value[nextind(value, i):end]))
+end
+
 # Parse argv into options, throwing `CLIError` on a bad flag or missing value. `--help`
 # and `--version` are handled before this, so every remaining `--flag` is an option or
 # an error and every bare token is a path.
@@ -53,6 +65,7 @@ function parse_args(argv)
     format = :text
     check = false
     check_patterns = false
+    libraries = Tuple{String, String}[]
     while !isempty(argv)
         x = popfirst!(argv)
         inline = nothing
@@ -70,6 +83,8 @@ function parse_args(argv)
             base = take_value!(argv, x, inline)
         elseif x == "--config"
             config_file = take_value!(argv, x, inline)
+        elseif x == "--library"
+            push!(libraries, split_library(take_value!(argv, x, inline)))
         elseif x == "--cut"
             cut = parse_cut(take_value!(argv, x, inline))
         elseif x == "--format"
@@ -83,7 +98,7 @@ function parse_args(argv)
     isempty(paths) && throw(CLIError("no paths given"))
     !use_config && config_file !== nothing &&
         throw(CLIError("--no-config and --config are contradictory"))
-    return CLIOptions(paths, base, config_file, use_config, cut, format, check, check_patterns)
+    return CLIOptions(paths, base, config_file, use_config, cut, format, check, check_patterns, libraries)
 end
 
 # Check every declared rule against its fixtures and print the disagreements. Exits
@@ -109,6 +124,15 @@ function emit_report(findings, format)
     return nothing
 end
 
+# The config with the `--library` flags folded in. Merged rather than overriding, so a
+# project declares its libraries in `.dendro.toml` and a one-off scan or a CI job
+# generating paths adds to them.
+function merge_libraries(config::Config, flags::Vector{Tuple{String, String}})
+    isempty(flags) && return config
+    named = Library[isempty(name) ? Library(path) : Library(name, path) for (name, path) in flags]
+    return override_config(config; libraries = [config.libraries; named])
+end
+
 # Resolve config, analyze, print, and return the exit code. With `--check` the run
 # gates on the `:high` floor, the error-severity findings (high-band scalars and all
 # flags), exiting 1 when any remain and 0 on a clean floor. This is the satisfiable
@@ -121,7 +145,13 @@ function run_cli(options::CLIOptions)
     for path in options.paths
         ispath(path) || throw(CLIError("no such path: $path"))
     end
+    # Same reasoning as a `[libraries]` glob matching nothing: a library that quietly
+    # resolves to nothing turns the gate off and reports a clean run.
+    for (_, path) in options.libraries
+        isdir(path) || throw(CLIError("no such library directory: $path"))
+    end
     config = discover_config(options.paths; explicit = options.config_file, use_files = options.use_config)
+    config = merge_libraries(config, options.libraries)
     options.check_patterns && return report_pattern_tests(config, options.paths)
     findings = active(analyze(options.paths; base = options.base, config = config, cut = options.cut))
     if options.check
@@ -146,6 +176,9 @@ function print_help()
           --config=<file>  read <file> instead of a discovered .dendro.toml
           --no-config      ignore .dendro.toml, score against built-in defaults
           --cut=<float>    percentile cutoff for corpus-relative flags (default 0.95)
+          --library=<path> index <path> as a library to report duplication against
+          --library=<name>=<path>
+                           ... under the display name <name>
           --format=<fmt>   output format: text (default) or github
           --check          exit 1 when any finding is reported
           --check-patterns check pattern rules against their fixtures and exit

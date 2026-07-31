@@ -83,7 +83,7 @@ function ratchet(head::Findings, base_counts::Dict{FloorKey, Int}, root::Abstrac
 end
 
 """
-    errors(paths; since=nothing, config=nothing, rules=nothing, ignore=String[], language=nothing) -> Findings
+    errors(paths; since=nothing, config=nothing, rules=nothing, ignore=String[], language=nothing, libraries=nothing) -> Findings
 
 The error-severity findings over `paths`: the deterministic floor, every finding at
 the `:high` absolute band (high-band scalars and all flags), with inline
@@ -113,14 +113,18 @@ gate.
 
 `config`, `rules`, `ignore`, and `language` pass through to [`analyze`](@ref); `rules`
 absent, the active set is the config's resolution of [`BUILTIN_RULES`](@ref) and the
-enabled [`OPTIONAL_RULES`](@ref).
+enabled [`OPTIONAL_RULES`](@ref). `libraries` names the reference corpora to compare
+against, folded into the resolved config so the working tree and the `since` base are
+scored against the same ones.
 """
 function errors(
         paths::Union{AbstractString, AbstractVector{<:AbstractString}};
-        since = nothing, config = nothing, rules = nothing, ignore = String[], language = nothing
+        since = nothing, config = nothing, rules = nothing, ignore = String[],
+        language = nothing, libraries = nothing
     )
     roots::Vector{String} = paths isa AbstractString ? [paths] : collect(paths)
-    cfg::Config = config === nothing ? discover_config(roots) : config
+    discovered::Config = config === nothing ? discover_config(roots) : config
+    cfg::Config = libraries === nothing ? discovered : override_config(discovered; libraries)
     head = high_floor(active(analyze(paths; config = cfg, rules, ignore, language)))
     since === nothing && return head
     root = git_toplevel(roots)

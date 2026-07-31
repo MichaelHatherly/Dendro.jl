@@ -9,6 +9,7 @@ makedocs(;
         "Home" => "index.md",
         "Scoring and metrics" => "metrics.md",
         "Duplicate detection" => "duplicates.md",
+        "Duplication against a library" => "libraries.md",
         "Cohesion and placement" => "cohesion.md",
         "Suppressing findings" => "suppression.md",
         "Custom rules" => "rules.md",

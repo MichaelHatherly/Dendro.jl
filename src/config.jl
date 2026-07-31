@@ -53,7 +53,10 @@ ships, each a `LanguageProfile` naming where to load its grammar and queries fro
 `patterns` carries the user-authored lint rules the config declares, each a
 [`PatternSpec`](@ref), sorted by name so a report reads in a stable order, and
 `patterns_dir` overrides where their queries are read from (empty for the default,
-`.dendro/patterns` beside the config).
+`.dendro/patterns` beside the config); `library_threshold` and `library_gate_coverage`
+are the cross-corpus duplication thresholds and `library_anchor_grain` widens the near pass
+to compare blocks as well as whole functions; `libraries` holds the reference corpora a
+`[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name.
 Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
@@ -74,9 +77,13 @@ struct Config
     threshold::Float64
     radius_factor::Float64
     reimpl_threshold::Float64
+    library_threshold::Float64
+    library_gate_coverage::Int
+    library_anchor_grain::Bool
     languages::Dict{Symbol, LanguageProfile}
     patterns::Vector{PatternSpec}
     patterns_dir::String
+    libraries::Vector{Library}
 end
 
 """
@@ -102,7 +109,10 @@ scalar_metric_names(acc) = union(
 # Corpus passes a `[rules]` key may toggle alongside the per-unit rules. They are
 # gated in `analyze` rather than resolved into the rule set, so `resolve_rules`
 # ignores these names.
-const TOGGLEABLE_RELATIONAL = (:reimplementation, :incoherent_package, :divisible_package)
+const TOGGLEABLE_RELATIONAL = (
+    :reimplementation, :incoherent_package, :divisible_package,
+    :library_duplicate, :library_near_duplicate,
+)
 
 # Every rule name a `[rules]` key may toggle: built-in or optional, of either kind, the
 # toggleable corpus passes, and the pattern rules the same config declares, so a project
@@ -190,6 +200,7 @@ overrides() = (
     rules = Dict{Symbol, Bool}(),
     languages = Dict{Symbol, LanguageProfile}(),
     patterns = Dict{Symbol, PatternSpec}(),
+    libraries = Dict{String, Library}(),
 )
 
 # Apply a `[bands]` table into the override dicts: a relational name lands in
@@ -225,7 +236,11 @@ function apply_rules!(acc, table, source)
 end
 
 # Apply a `[clones]` table: the three clone-detection thresholds (`min_size` named-node
-# floor, near-miss `threshold`, candidate `radius_factor`), anything else warns.
+# floor, near-miss `threshold`, candidate `radius_factor`) and the two cross-corpus ones
+# (`library_threshold`, `library_gate_coverage`), anything else warns. The library keys
+# live here rather than in a table of their own: they are clone-detection thresholds, and
+# a `[library]` table a letter away from `[libraries]` is the typo that would silently
+# discard a setting, since an unknown top-level key warns and is dropped.
 function apply_clones(scalars, table, source)
     for (key, value) in table
         if key == "min_size"
@@ -234,6 +249,12 @@ function apply_clones(scalars, table, source)
             scalars = merge(scalars, (threshold = config_float(value, key, source),))
         elseif key == "radius_factor"
             scalars = merge(scalars, (radius_factor = config_float(value, key, source),))
+        elseif key == "library_threshold"
+            scalars = merge(scalars, (library_threshold = config_float(value, key, source),))
+        elseif key == "library_gate_coverage"
+            scalars = merge(scalars, (library_gate_coverage = config_int(value, key, source),))
+        elseif key == "library_anchor_grain"
+            scalars = merge(scalars, (library_anchor_grain = config_bool(value, key, source),))
         else
             @warn "Dendro: unknown clones key in $source, ignored" key
         end
@@ -241,19 +262,24 @@ function apply_clones(scalars, table, source)
     return scalars
 end
 
-# Coerce a TOML array of extensions, stripping any leading dot so `[".zig"]` and
-# `["zig"]` both reach the registry in the form `language_for_path` compares.
-function extension_list(value, key, source)::Vector{String}
+# Coerce a TOML array of strings, the shape a library's `paths` and `ignore` take and the
+# raw form an extension list is read from.
+function string_list(value, key, source)::Vector{String}
     value isa AbstractVector ||
-        config_error("`$key` in $source must be an array of extension strings, got $value")
+        config_error("`$key` in $source must be an array of strings, got $value")
     out = String[]
-    for ext in value
-        ext isa AbstractString ||
-            config_error("`$key` in $source must be an array of extension strings, got $value")
-        push!(out, lowercase(lstrip(String(ext), '.')))
+    for s in value
+        s isa AbstractString ||
+            config_error("`$key` in $source must be an array of strings, got $value")
+        push!(out, String(s))
     end
     return out
 end
+
+# Coerce a TOML array of extensions, stripping any leading dot so `[".zig"]` and
+# `["zig"]` both reach the registry in the form `language_for_path` compares.
+extension_list(value, key, source)::Vector{String} =
+    String[lowercase(lstrip(e, '.')) for e in string_list(value, key, source)]
 
 # Apply one `[languages.<name>]` table into the override dict. Only `queries` is required:
 # `grammar` defaults to the language name, which resolves to the JLL named after it, so
@@ -281,6 +307,68 @@ function apply_language!(acc, name::String, table::Dict{String, Any}, source)
     end
     isempty(queries) && config_error("language `$name` in $source needs a `queries` directory")
     acc.languages[sym] = LanguageProfile(sym, grammar, queries, extensions)
+    return nothing
+end
+
+# One path component expanded against a directory: the entries whose name the component
+# matches, sorted so a scan reads the same way on every run. A component with no `*` is
+# taken literally, so a path that never globs costs no directory listing.
+function glob_entries(dir::String, part::String)
+    occursin('*', part) || return [joinpath(dir, part)]
+    isdir(dir) || return String[]
+    re = glob_to_regex(part)
+    return String[joinpath(dir, e) for e in sort!(readdir(dir)) if occursin(re, e)]
+end
+
+# The directories a configured library path names. A single `*` per component expands as a
+# filesystem glob, which is what makes `~/.julia/packages/IterTools/*/src` survive a
+# version bump. `**` is refused: one `*` covers the version-slug case, and recursive
+# globbing over a package depot is a way to index gigabytes by accident.
+#
+# A path matching nothing is an error rather than a warning, the asymmetry with an unknown
+# key inside the same table: a typo'd key leaves the rest of the table working, where a
+# path resolving to nothing silently turns the gate off, which is the failure this whole
+# feature exists to prevent.
+function library_dirs(raw::AbstractString, key, source)
+    occursin("**", raw) &&
+        config_error("`$key` in $source may use one `*` per path component, not `**`")
+    path = config_path(expanduser(String(raw)), key, source)
+    parts = splitpath(path)
+    dirs = String[first(parts)]
+    for part in Iterators.drop(parts, 1)
+        next = String[]
+        for d in dirs
+            append!(next, glob_entries(d, part))
+        end
+        dirs = next
+    end
+    filter!(isdir, dirs)
+    isempty(dirs) && config_error("`$key` in $source matched no directory: $path")
+    return dirs
+end
+
+# One `[libraries.<name>]` table read into the override dict: `path` or `paths`, at least
+# one required, with `ignore` optional. Paths expand `~`, resolve against the config file's
+# own directory, and glob. An unknown key warns and is dropped, as a band does.
+function apply_library!(acc, name::String, table::Dict{String, Any}, source)
+    roots = String[]
+    ignore = String[]
+    for (key, value) in table
+        full = "libraries.$name.$key"
+        if key == "path"
+            append!(roots, library_dirs(config_string(value, full, source), full, source))
+        elseif key == "paths"
+            for p in string_list(value, full, source)
+                append!(roots, library_dirs(p, full, source))
+            end
+        elseif key == "ignore"
+            append!(ignore, string_list(value, full, source))
+        else
+            @warn "Dendro: unknown library key in $source, ignored" library = name key
+        end
+    end
+    isempty(roots) && config_error("library `$name` in $source needs a `path` or `paths`")
+    acc.libraries[name] = Library(name, roots; ignore)
     return nothing
 end
 
@@ -323,7 +411,7 @@ end
 # Dict, whose iteration order is arbitrary, so relying on file order would make a config
 # apply differently run to run.
 const CONFIG_KEY_ORDER = (
-    "patterns", "languages", "cut", "clones", "reimplementation",
+    "patterns", "languages", "libraries", "cut", "clones", "reimplementation",
     "patterns_dir", "bands", "rules",
 )
 
@@ -353,17 +441,27 @@ function apply_key!(acc, scalars, key, value, source)
     elseif key == "patterns_dir"
         scalars = merge(scalars, (patterns_dir = config_path(value, key, source),))
     else
-        applier = key == "languages" ? apply_language! : apply_pattern!
+        applier = key == "languages" ? apply_language! :
+            key == "libraries" ? apply_library! : apply_pattern!
         apply_named_tables!(applier, acc, config_table(value, key, source), key, source)
     end
     return scalars
 end
 
-# The user-global config path, XDG-respecting, the layer above the built-in defaults.
-function global_config_path()
-    base = get(ENV, "XDG_CONFIG_HOME", joinpath(homedir(), ".config"))
-    return joinpath(base, "dendro", "config.toml")
-end
+"""
+    xdg_path(var, default, parts...) -> String
+
+A Dendro path under an XDG base directory: `\$<var>/dendro/<parts...>`, falling back to the
+specification's default under the home directory when the variable is unset. The config
+cascade's user-global layer is this, a file a user edits and expects to find where the
+specification says. Cached data is not: the reference-index cache is a scratch space the
+package owns, which `Pkg.gc()` knows how to reclaim.
+"""
+xdg_path(var::String, default::String, parts::String...) =
+    joinpath(get(ENV, var, joinpath(homedir(), default)), "dendro", parts...)
+
+# The user-global config path, the layer above the built-in defaults.
+global_config_path() = xdg_path("XDG_CONFIG_HOME", ".config", "config.toml")
 
 # The directory a discovered `.dendro.toml` is looked for in: the git toplevel of the
 # roots when they are in a repo, else the first root's own directory. Mirrors how the
@@ -410,6 +508,9 @@ function discover_config(roots; explicit = nothing, use_files = true)
     scalars = (
         cut = DEFAULT_CUT, min_size = DEFAULT_MIN_SIZE, threshold = DEFAULT_THRESHOLD,
         radius_factor = DEFAULT_RADIUS_FACTOR, reimpl_threshold = DEFAULT_REIMPL_THRESHOLD,
+        library_threshold = DEFAULT_LIBRARY_THRESHOLD,
+        library_gate_coverage = DEFAULT_LIBRARY_GATE_COVERAGE,
+        library_anchor_grain = false,
         patterns_dir = "",
     )
     if use_files
@@ -431,13 +532,15 @@ function discover_config(roots; explicit = nothing, use_files = true)
         get(acc.relational, :divisible_package, DIVISIBLE_PACKAGE_BAND),
         acc.rules,
         scalars.min_size, scalars.threshold, scalars.radius_factor,
-        scalars.reimpl_threshold, acc.languages,
+        scalars.reimpl_threshold, scalars.library_threshold, scalars.library_gate_coverage,
+        scalars.library_anchor_grain, acc.languages,
         sort!(collect(values(acc.patterns)); by = s -> s.name), scalars.patterns_dir,
+        sort!(collect(values(acc.libraries)); by = l -> l.name),
     )
 end
 
 """
-    override_config(config; cut=nothing, min_size=nothing, threshold=nothing, radius_factor=nothing) -> Config
+    override_config(config; cut=nothing, min_size=nothing, threshold=nothing, radius_factor=nothing, libraries=nothing) -> Config
 
 `config` with the thresholds a caller named directly applied over it, the last layer of
 the cascade [`discover_config`](@ref) resolves the earlier ones of. A `nothing` keeps the
@@ -445,11 +548,12 @@ config's own value.
 
 [`analyze`](@ref) folds its keywords in through this, so a threshold is resolved once and
 every pass reads it from the same place rather than from a keyword the caller may or may
-not have set.
+not have set. `libraries` accepts [`Library`](@ref) values or bare root paths, a string
+being one root.
 """
 function override_config(
         config::Config; cut = nothing, min_size = nothing,
-        threshold = nothing, radius_factor = nothing
+        threshold = nothing, radius_factor = nothing, libraries = nothing
     )
     return Config(
         cut === nothing ? config.cut : Float64(cut), config.bands,
@@ -459,6 +563,8 @@ function override_config(
         min_size === nothing ? config.min_size : Int(min_size),
         threshold === nothing ? config.threshold : Float64(threshold),
         radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
-        config.reimpl_threshold, config.languages, config.patterns, config.patterns_dir,
+        config.reimpl_threshold, config.library_threshold, config.library_gate_coverage,
+        config.library_anchor_grain, config.languages, config.patterns, config.patterns_dir,
+        libraries === nothing ? config.libraries : as_libraries(libraries),
     )
 end
