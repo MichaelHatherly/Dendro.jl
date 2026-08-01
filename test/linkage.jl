@@ -50,7 +50,7 @@ end
     @test "push!" in names
     @test !("helper" in names)
     pushref = only(filter(r -> r.name == "push!", refs))
-    @test file.index.functions[pushref.unit].firstline == 2
+    @test file.index.units[pushref.unit].firstline == 2
 end
 
 @testitem "unbound references carry the namespace a reference qualifies" setup = [Fixtures] tags = [:linkage] begin

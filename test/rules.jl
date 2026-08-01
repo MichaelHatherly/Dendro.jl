@@ -36,3 +36,28 @@ end
     # Without the rule, the same name is unknown and warns.
     @test_logs (:warn,) Dendro.suppressions(Fixtures.idx(:julia, src); file = "x.jl")
 end
+
+@testitem "a retuned band keeps a rule's unit scope" tags = [:rules] begin
+    # `reband` rebuilds the rule around the project's band. Dropping `scope` there would
+    # silently put `function_length` back on top-level code for any project that retunes
+    # it, which is the one place the band is known not to transfer.
+    config = Dendro.discover_config(String[]; use_files = false)
+    config.bands[:function_length] = (10, 20)
+    rules = Dendro.resolve_rules(config)
+    len = only(filter(r -> r.name === :function_length, rules))
+    @test len.band == (10, 20)
+    @test len.scope === :callable
+end
+
+@testitem "the baseline samples only the units a rule measures" setup = [Fixtures] tags = [:rules] begin
+    src = "function f(x)\n    x\nend\n" * join(("a$(n) = $(n)" for n in 1:40), "\n") * "\n"
+    i = Fixtures.idx(:julia, src)
+    @test length(Dendro.units(i)) == 2       # the definition and the run after it
+
+    bl = Dendro.add_samples!(Dendro.Baseline(), i)
+    # The definition alone: a top-level run's length must not move the distribution a
+    # definition is ranked against.
+    @test bl.samples[(:julia, :function_length)] == [3.0]
+    # A rule that measures any unit sees both.
+    @test length(bl.samples[(:julia, :cyclomatic)]) == 2
+end

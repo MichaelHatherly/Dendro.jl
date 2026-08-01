@@ -57,41 +57,6 @@ end
 Finding(file, line, unit, metric, value, absolute, percentile, kind, suppressed) =
     Finding(metric, [Location(file, line, unit)], value, absolute, percentile, kind, suppressed)
 
-# The defining name tagged on `node`'s binder, a sibling outside its subtree, or "".
-# An anonymous callable bound to a name (a JS arrow `const f = () => ...`) carries its
-# name on the enclosing binder, so a unit holding no name of its own takes the binder's.
-function binder_def_name(node::TreeSitter.Node, index::QueryIndex)
-    p = TreeSitter.parent(node)
-    TreeSitter.is_null(p) && return ""
-    for c in TreeSitter.children(p)
-        c in index.def_name && return String(strip(TreeSitter.slice(index.source, c)))
-    end
-    return ""
-end
-
-# Label a function node by its name, or "" when no name node is found. A qualified
-# definition tags its final component as `def_name`; prefer that over the first
-# `@name`, which for `Module.method` is the module qualifier. A bound anonymous
-# callable takes the name from its enclosing binder when it holds none of its own.
-function unit_name(node::TreeSitter.Node, index::QueryIndex)
-    name = Ref("")
-    def = Ref("")
-    TreeSitter.traverse(node) do n, enter
-        if enter
-            isempty(name[]) && n in index.name &&
-                (name[] = String(strip(TreeSitter.slice(index.source, n))))
-            isempty(def[]) && n in index.def_name &&
-                (def[] = String(strip(TreeSitter.slice(index.source, n))))
-        end
-        nothing
-    end
-    isempty(def[]) || return def[]
-    binder = binder_def_name(node, index)
-    return isempty(binder) ? name[] : binder
-end
-
-unit_name(unit::FunctionUnit, index::QueryIndex) = unit_name(unit.node, index)
-
 """
     Scan
 
@@ -135,9 +100,10 @@ in_scope(scan::Scan, a::Int, b::Int) = scan.within === nothing || intersects(sca
 in_scope(scan::Scan, line::Int) = scan.within === nothing || inrange(scan.within, line)
 
 # Scalar findings for one function unit, one per scalar rule that fires.
-function unit_findings!(out, scan::Scan, unit::FunctionUnit)
+function unit_findings!(out, scan::Scan, unit::Unit)
     name = unit_name(unit, scan.index)
     for r in rules_of_kind(scan.rules, :scalar)
+        applies(r, unit, scan.index) || continue
         value = r.fn(unit, scan.index)::Int
         band = severity(value, something(r.band))
         pct = ranks(scan, r.name) ?
@@ -180,7 +146,7 @@ changed range and flags on a changed line.
 """
 function findings_for(scan::Scan)
     out = Finding[]
-    for unit in functions(scan.index)
+    for unit in units(scan.index)
         in_scope(scan, unit.firstline, unit.lastline) || continue
         unit_findings!(out, scan, unit)
     end
@@ -188,97 +154,6 @@ function findings_for(scan::Scan)
         flag_findings!(out, scan, r.fn(scan.index)::Vector{TreeSitter.Node}, r.name, r.severity)
     end
     return out
-end
-
-# The two scores one value carries: its severity against the fixed `band`, and its
-# percentile among `counts`, the values of everything scored alongside it. The percentile
-# is `nothing` unless `enough` of them were scored to rank against, so a thin corpus is
-# read on the absolute band alone. Every corpus-relational pass reads a value this way,
-# whatever it scores, a file, a directory pair, or a cycle.
-function two_scores(value::Int, counts::Vector{Int}, band::Tuple{Int, Int}, enough::Bool)
-    absolute = severity(value, band)
-    pct = enough ? searchsortedlast(counts, value) / length(counts) : nothing
-    return absolute, pct
-end
-
-# Whether a reading is reported: either score trips, the absolute band or the corpus rank.
-# Both halves are kept, since absolute alone misses an outlier in a uniformly weak corpus
-# and the rank alone calls that corpus fine.
-fires(absolute::Symbol, pct::Union{Float64, Nothing}, cut::Real) =
-    absolute !== :ok || (pct !== nothing && pct >= cut)
-
-"""
-    scored_findings(metric, scored, band, cut, min_files; min_reported=1) -> Vector{Finding}
-
-One `metric` finding per entry of `scored`, the emission the file-level corpus passes
-share. Each entry pairs a file with its value and the locations to report it at, the
-first of which is the site a `dendro-ignore` covers. A finding is emitted when the value
-breaches the absolute `band` or lands at or above the `cut` percentile of the scored
-values, the two-score model; the percentile is read only once the corpus holds
-`min_files` scored entries, and is `nothing` below that.
-
-`min_reported` is the smallest value that names something to act on. Entries below it
-stay in the scored population, so they count toward the percentile of the entries above,
-but never emit. Findings come back sorted by descending value, then file and line.
-
-An entry is keyed by its `ParsedFile` because the suppression directive is read off it, and
-that is what bounds this to the passes scoring a file. A pass scoring something else reads
-its directives out of a path-keyed dict instead: [`directory_findings`](@ref) is that shape
-for the two passes whose subject is a directory. `:misplaced` scores a unit, `:back_edge` a
-directory pair, `:dependency_cycle` a cyclic component, and `:hub` a graph node, and those
-four build their locations only for the entries that fire, which neither shape can express
-because both take them upfront. They emit directly and share the part that is genuinely
-common, the band-and-percentile reading through `two_scores` and `fires`.
-"""
-function scored_findings(
-        metric::Symbol, scored::Vector{Tuple{ParsedFile, Int, Vector{Location}}},
-        band::Tuple{Int, Int}, cut::Real, min_files::Integer; min_reported::Int = 1
-    )
-    findings = Finding[]
-    counts = sort([s[2] for s in scored])
-    enough = length(scored) >= min_files
-    for (f, value, locations) in scored
-        value >= min_reported || continue
-        absolute, pct = two_scores(value, counts, band, enough)
-        fires(absolute, pct, cut) || continue
-        sup = is_suppressed(f.directives, locations[1].line, metric)
-        push!(findings, Finding(metric, locations, value, absolute, pct, :scalar, sup))
-    end
-    sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
-    return findings
-end
-
-"""
-    directory_findings(metric, scored, directives, band, cut, enough) -> Vector{Finding}
-
-One `metric` finding per entry of `scored`, the emission the two directory passes share.
-Each entry pairs a directory's value with the locations to report it at, the first of which
-stands for the directory itself and is the site a `dendro-ignore` covers. A finding is
-emitted when the value breaches the absolute `band` or lands at or above the `cut`
-percentile of the scored values, the two-score model; `enough` says whether the corpus holds
-enough scored directories for that rank to mean anything, and each pass decides it against
-its own floor. Findings come back sorted by descending value, then file and line.
-
-A directory is not a `ParsedFile`, so the suppression directives arrive as `directives`,
-keyed by path, which is what separates this from [`scored_findings`](@ref). Both take their
-locations upfront, which is what keeps the passes building locations lazily out of either.
-"""
-function directory_findings(
-        metric::Symbol, scored::Vector{Tuple{Int, Vector{Location}}},
-        directives::Dict{String, Vector{Directive}},
-        band::Tuple{Int, Int}, cut::Real, enough::Bool
-    )
-    findings = Finding[]
-    counts = sort([value for (value, _) in scored])
-    for (value, locations) in scored
-        absolute, pct = two_scores(value, counts, band, enough)
-        fires(absolute, pct, cut) || continue
-        anchor = first(locations)
-        sup = is_suppressed(get(() -> Directive[], directives, anchor.file), anchor.line, metric)
-        push!(findings, Finding(metric, locations, value, absolute, pct, :scalar, sup))
-    end
-    sort!(findings; by = f -> (-something(f.value, 0), first(f.locations).file, first(f.locations).line))
-    return findings
 end
 
 """

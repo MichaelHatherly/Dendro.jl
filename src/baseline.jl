@@ -16,8 +16,12 @@ Baseline() = Baseline(Dict{Tuple{Symbol, Symbol}, Vector{Float64}}())
 
 # Accumulate one tree's scalar-metric values into a baseline, keyed by language.
 function add_samples!(baseline::Baseline, index::QueryIndex, rules = BUILTIN_RULES)
-    for unit in functions(index)
+    for unit in units(index)
         for r in rules_of_kind(rules, :scalar)
+            # The same gate the scoring pass reads. A rule that says nothing about a unit
+            # must not sample it either, or top-level readings would move the percentile a
+            # definition is then ranked against.
+            applies(r, unit, index) || continue
             samples = get!(() -> Float64[], baseline.samples, (index.language, r.name))
             push!(samples, Float64(r.fn(unit, index)::Int))
         end

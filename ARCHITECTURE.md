@@ -15,7 +15,7 @@ source text
   -> tree
   -> build_index(tree, query)        nodes the language query identifies
        (+ scopes query: resolve each reference to its in-file definition)
-  -> functions(index)                units to measure
+  -> units(index)                    units to measure
   -> per unit: scalar rules; per index: flag rules
   -> score each reading (absolute band, optional corpus percentile)
   -> mark suppressed findings from inline directives
@@ -242,7 +242,7 @@ Resolution and configuration:
   that resolved registry rather than on `PROFILES` directly. The built-in table is never
   mutated, so one analysis cannot leak a registration into the next.
 - `query_index.jl` defines `NodeId`/`nodeid`, `Concept` (the nodes a query tagged
-  for one measured construct, plus their ids for O(1) membership), `FunctionUnit`,
+  for one measured construct, plus their ids for O(1) membership), `Unit`,
   `QueryIndex`, `CONCEPT_NAMES` (the capture names a query may use), and
   `build_index`, which runs a language's query over a tree once and files every
   capture under its concept. Identification lives here: metric code asks whether a
@@ -260,9 +260,12 @@ Resolution and configuration:
 
 Measurement:
 
-- `units.jl` exposes the function units the query identified: `functions(index)`
-  returns them (the `index.functions` the query built), and `is_function(node,
-  index)` is the no-descend boundary, a node the query tagged `@function`. Both the
+- `units.jl` exposes the units the query identified: `units(index)` returns them
+  (the `index.units` the query built), `unit_span` is the byte range a unit covers
+  and `unit_node` the definition a callable one is named by, `unit_name` labels it,
+  `is_callable` says whether a unit is a definition or top-level code, and
+  `is_function(node, index)` is the no-descend boundary, a node the query
+  tagged `@function`. Both the
   full form (`function ... end`) and the short form (`f(x) = expr`, including the
   `where`/typed unwrapping) are recognised by the language query, so a nested
   short-form def is its own unit and is excluded from its enclosing unit's metrics,
@@ -301,10 +304,17 @@ Measurement:
   a short-form's right-hand expression), reading a body's real-work count, comparing
   subtrees by normalised text, and collecting the blocks of one conditional chain
   (`branch_blocks`).
-- `rules.jl` defines `Rule` (a metric name, kind, band, and measuring function),
-  `BUILTIN_RULES` (the default set, in report order), `OPTIONAL_RULES` (off by
-  default), `rules_of_kind` (the active rules of one kind), and `metric_names` (the names a directive
-  may name: the active rules plus the relational clone metrics). The built-in rules
+- `scoring.jl` turns a measured value into findings for the corpus-relational
+  passes: `two_scores` (the band and the percentile), `fires`, and the two emit
+  shapes `scored_findings` and `directory_findings`. Ten passes read it, and none of
+  it is about what a `Finding` is or how one renders, which is why it sits apart from
+  `report.jl`.
+- `rules.jl` defines `Rule` (a metric name, kind, band, measuring function, and
+  the unit `scope` it measures), `BUILTIN_RULES` (the default set, in report
+  order), `OPTIONAL_RULES` (off by default), `rules_of_kind` (the active rules of
+  one kind), `applies` (whether a rule measures a given unit), and `metric_names`
+  (the names a directive may name: the active rules plus the relational clone
+  metrics). The built-in rules
   wrap the metrics.jl/flags.jl functions; a caller's rule wraps their own.
 - `baseline.jl` defines `Baseline` over a corpus, `percentile` scoring, and
   `add_samples!`, which samples the active rule set's scalar rules over one file's
@@ -661,8 +671,15 @@ also carries `bindings`, a `Dict{NodeId, NodeId}` from each reference to the in-
 definition it resolves to, empty unless `build_index` was given a scopes query.
 
 `Rule` (`rules.jl`). One lint check as data: a metric `name`, a `kind` (`:scalar`
-or `:flag`), a `(warn, high)` `band` for scalars, and an `fn` that measures one
-unit (scalar) or the file's index (flag). The active set is a `Vector{Rule}` carried by `Scan`
+or `:flag`), a `(warn, high)` `band` for scalars, an `fn` that measures one
+unit (scalar) or the file's index (flag), and a `scope` naming which units a scalar
+measures. `scope` is `:any` bar the rules that ask about a definition:
+`function_length` measures the distance to a boundary an author drew,
+`parameter_count` reads a signature, and `return_count`/`local_count` count what
+only a body has. Top-level code has none of these, so those rules say nothing there
+instead of reading a number against a band calibrated on definitions. `applies` is
+that test, and both the scoring pass and the baseline read it, so a rule that says
+nothing about a unit does not sample it into the percentile either. The active set is a `Vector{Rule}` carried by `Scan`
 and `analyze`, so checks are a value, not module constants. Built-ins wrap the
 metrics.jl/flags.jl functions; a caller's rule wraps their own.
 
@@ -672,8 +689,18 @@ tree-sitter tree, the query index, and inline suppression directives. `parse_cor
 read from it, so no file is parsed twice. Concrete in every field, so the relational
 passes dispatch statically over it rather than through `getproperty(::Any)`.
 
-`FunctionUnit` (`units.jl`). One callable definition: the node and its line span.
-The granularity at which scalar metrics report.
+`Unit` (`units.jl`). A run of sibling nodes and its line span, the granularity at
+which scalar metrics report. `append_toplevel_units!` (`query_index.jl`) builds one
+per maximal run of consecutive top-level statements, reading two query captures:
+`@toplevel` names a container whose direct children are top-level code (the file, and
+a module body), and `@declaration` names a top-level form that declares rather than
+executes, which a run breaks at along with every callable definition. Runs are
+contiguous, since the diff scope reads a unit's line span and a single unit spanning
+a whole file would report for a change on any line in it. A language whose query names
+no `@toplevel` grows no such units, so adding one is a query and nothing else. A callable definition is a run of one node, which is
+every unit a language query produces; a run of several is top-level code, where no
+single node spans the region and the metrics fold across the run instead. `fold_run`
+(`metrics.jl`) is that fold, beside the `fold_unit` that walks one subtree.
 
 `Subtree` (`clones.jl`). One named subtree of a function: its structural hash, the
 node, and its named-node count. The unit of duplicate detection, which works below
@@ -1194,8 +1221,13 @@ unsuppressed findings for gating.
 
 ## Conventions
 
+- `containing_callable` (`graph_edges.jl`) is what the symbol table, the corpus
+  graph, and cohesion ask when they need the unit a position belongs to. It answers
+  with the innermost *callable*, so top-level code reports 0 exactly as it did before
+  it became a unit: a run of statements has no name to resolve and cannot be moved
+  the way a definition can. Every `unit == 0` guard downstream reads that.
 - Tree-sitter rows are 0-based. `line_of` (in `suppress.jl`) converts to 1-based
-  source lines, and `FunctionUnit` stores 1-based lines. Findings are 1-based.
+  source lines, and `Unit` stores 1-based lines. Findings are 1-based.
 - Metrics are syntactic, with no symbol resolution. Per-file metrics are scoped to
   one file's tree; duplicate detection, exact and near, is what spans files, and it
   still compares only structure.

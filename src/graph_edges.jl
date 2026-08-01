@@ -15,7 +15,7 @@ const COHESION_UBIQUITY = 1.0
 
 # Byte ranges of a file's units, the containment table `containing_unit` scans.
 unit_ranges(index::QueryIndex) =
-    Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in functions(index)]
+    Tuple{Int, Int}[unit_span(u) for u in units(index)]
 
 # The innermost function unit whose byte span contains `[from, to]`, or 0 when the
 # position lies in no function (top-level code). Units are few per file, so a scan.
@@ -32,19 +32,37 @@ function containing_unit(ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
     return best
 end
 
+"""
+    containing_callable(index, ranges, from, to) -> Int
+
+The innermost callable unit whose byte span contains `[from, to]`, or 0. The symbol
+table, the corpus graph and cohesion all ask which definition owns a position, and
+top-level code is not one: a run of statements has no name to resolve and cannot be
+moved the way a definition can, so a position inside one belongs to no unit, exactly
+as it did before top-level code became a unit.
+
+`ranges` is [`unit_ranges`](@ref) over the same index, so an index it returns is an
+index into `units(index)`.
+"""
+function containing_callable(index::QueryIndex, ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
+    ui = containing_unit(ranges, from, to)
+    ui == 0 && return 0
+    return is_callable(units(index)[ui], index) ? ui : 0
+end
+
 # The within-file links a file's bindings imply: each entry lists the local unit indices
 # that share one definition, the units referencing it plus, when it lives in a unit, its
 # owner. A binding referenced by more than `ubiquity` of the units links nothing, a
 # cross-cutting utility rather than a shared concern. The connectivity `:low_cohesion`
 # reads as components and `:scattered` folds into the corpus graph.
 function binding_groups(index::QueryIndex, ubiquity::Float64)
-    units = functions(index)
+    units = index.units
     n = length(units)
     ranges = unit_ranges(index)
     # Units referencing one definition, keyed by the definition's identity.
     groups = Dict{NodeId, Vector{Int}}()
     for (refid, defid) in index.bindings
-        ui = containing_unit(ranges, refid[1], refid[2])
+        ui = containing_callable(index, ranges, refid[1], refid[2])
         ui == 0 && continue
         push!(get!(() -> Int[], groups, defid), ui)
     end
@@ -52,7 +70,7 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
     threshold = ubiquity * n
     for (defid, members) in groups
         length(unique(members)) > threshold && continue
-        owner = containing_unit(ranges, defid[1], defid[2])
+        owner = containing_callable(index, ranges, defid[1], defid[2])
         push!(out, owner == 0 ? members : push!(copy(members), owner))
     end
     return out
@@ -68,21 +86,21 @@ and the unit's own name never counts, which excludes both recursion and Julia's
 call-shaped signature. The per-unit efferent-coupling scalar beside the binding
 edges cohesion reads; zero for a language with no `@callee` capture.
 """
-function fan_out(unit::FunctionUnit, index::QueryIndex)
+function fan_out(unit::Unit, index::QueryIndex)
     isempty(index.callee.nodes) && return 0
-    span = TreeSitter.byte_range(unit.node)
-    for (i, u) in enumerate(functions(index))
-        TreeSitter.byte_range(u.node) == span && return length(callees_by_unit(index)[i])
+    span = unit_span(unit)
+    for (i, u) in enumerate(units(index))
+        unit_span(u) == span && return length(callees_by_unit(index)[i])
     end
     return 0
 end
 
 # Each unit's distinct callee names from one pass over the `@callee` captures, in
-# `functions(index)` order. The single source of what counts as a unit's callee:
+# `units(index)` order. The single source of what counts as a unit's callee:
 # a call is attributed to its innermost unit, and a unit's own name never counts.
 # `fan_out` reads one entry; the reimplementation fingerprints read them all.
 function callees_by_unit(index::QueryIndex)
-    units = functions(index)
+    units = index.units
     out = [Set{String}() for _ in units]
     isempty(index.callee.nodes) && return out
     ranges = unit_ranges(index)

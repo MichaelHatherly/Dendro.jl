@@ -71,8 +71,8 @@ drops these; the corpus graph picks them up and tries to resolve them against
 function unbound_references(file::ParsedFile)
     caps = file.index.scope_captures
     isempty(caps.scopes) && return UnboundRef[]
-    units = file.index.functions
-    uranges = Tuple{Int, Int}[TreeSitter.byte_range(u.node) for u in units]
+    units = file.index.units
+    uranges = Tuple{Int, Int}[unit_span(u) for u in units]
     access = get(MODULE_ACCESS, file.language, nothing)
     refs = UnboundRef[]
     for r in caps.refnodes
@@ -82,7 +82,7 @@ function unbound_references(file::ParsedFile)
         name = String(strip(TreeSitter.slice(file.source, r)))
         lookup_definition(caps.scopes, from, to, name) === nothing || continue
         resolved = reference_name(r, file.source, access, name)
-        push!(refs, UnboundRef(rid, resolved, containing_unit(uranges, from, to)))
+        push!(refs, UnboundRef(rid, resolved, containing_callable(file.index, uranges, from, to)))
     end
     return refs
 end

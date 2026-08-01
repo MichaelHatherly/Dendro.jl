@@ -1,7 +1,7 @@
 @testitem "token_stream (julia)" setup = [Fixtures] tags = [:naturalness] begin
     src = "function f(x)\n    return x + 1\nend\n"
     i = Fixtures.idx(:julia, src)
-    u = only(Dendro.functions(i))
+    u = only(Dendro.units(i))
     toks = Dendro.token_stream(u, i)
 
     # Identifiers reduce to their node type; anonymous tokens (keywords, and in

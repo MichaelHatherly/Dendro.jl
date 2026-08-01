@@ -60,7 +60,7 @@ function definition_reach(files::Vector{ParsedFile}, visible::Dict{String, Dict{
     reach = zeros(Int, ndefs)
     seen = Set{Int}()
     for f in files
-        units = length(f.index.functions)
+        units = length(f.index.units)
         units == 0 && continue
         empty!(seen)
         for candidates in values(visible[f.file])
@@ -100,7 +100,10 @@ function build_corpus_graph(
     units = CorpusUnit[]
     unit_index = Dict{Tuple{String, Int}, Int}()
     for f in files
-        for (u, fu) in enumerate(f.index.functions)
+        for (u, fu) in enumerate(f.index.units)
+            # Only definitions are placed. `u` stays the position in `f.index.units`, so
+            # a `(file, unit)` key still means what the symbol table's `unit` means.
+            is_callable(fu, f.index) || continue
             push!(units, CorpusUnit(f.file, u, unit_name(fu, f.index), fu.firstline))
             unit_index[(f.file, u)] = length(units)
         end
@@ -113,7 +116,8 @@ function build_corpus_graph(
     breadth = Dict{Int, Set{Int}}()
     for reference in linkage.references
         reference.ref.unit == 0 && continue
-        src = unit_index[(reference.file.file, reference.ref.unit)]
+        src = get(unit_index, (reference.file.file, reference.ref.unit), 0)
+        src == 0 && continue
         push!(resolved, (src, reference.candidates))
         for di in reference.candidates
             push!(get!(() -> Set{Int}(), breadth, di), src)

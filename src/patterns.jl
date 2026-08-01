@@ -30,6 +30,7 @@ function apply_pattern!(acc, name::String, table::Dict{String, Any}, source)
     kind = :flag
     band = nothing
     guard = false
+    scope = :any
     for (key, value) in table
         if key == "message"
             message = config_string(value, "patterns.$name.$key", source)
@@ -41,13 +42,15 @@ function apply_pattern!(acc, name::String, table::Dict{String, Any}, source)
             band = band_tuple(value, "patterns.$name.$key", source)
         elseif key == "guard"
             guard = config_bool(value, "patterns.$name.$key", source)
+        elseif key == "scope"
+            scope = pattern_symbol(value, PATTERN_SCOPES, key, name, source)
         else
             @warn "Dendro: unknown pattern key in $source, ignored" pattern = name key
         end
     end
     isempty(message) && config_error("pattern `$name` in $source needs a `message`")
     validate_pattern_band(name, kind, band, source)
-    acc.patterns[Symbol(name)] = PatternSpec(Symbol(name), message, severity, kind, band, guard)
+    acc.patterns[Symbol(name)] = PatternSpec(Symbol(name), message, severity, kind, band, guard, scope)
     return nothing
 end
 
@@ -449,10 +452,14 @@ pattern_step(node::TreeSitter.Node, _index::QueryIndex, bucket::PatternBucket) =
 How many times rule `name` matched inside `unit`, excluding nested callables. Zero when
 the rule has no query for this language.
 """
-function pattern_count(unit::FunctionUnit, index::QueryIndex, name::Symbol)
+function pattern_count(unit::Unit, index::QueryIndex, name::Symbol)
     bucket = get(index.patterns, name, nothing)
     bucket === nothing && return 0
-    return fold_unit(pattern_step, +, unit.node, index, bucket)
+    total = 0
+    for n in unit.nodes
+        total += fold_unit(pattern_step, +, n, index, bucket)
+    end
+    return total
 end
 
 """
@@ -463,8 +470,10 @@ the spec's severity; a scalar counts its matches per unit and is scored against 
 band and the corpus percentile, exactly as a built-in scalar is.
 """
 function pattern_rule(spec::PatternSpec)
-    spec.kind === :scalar &&
-        return Rule(spec.name, :scalar, spec.band, (u, i) -> pattern_count(u, i, spec.name), spec.severity)
+    spec.kind === :scalar && return Rule(
+        spec.name, :scalar, spec.band, (u, i) -> pattern_count(u, i, spec.name),
+        spec.severity, spec.scope
+    )
     return Rule(spec.name, :flag, nothing, i -> pattern_hits(i, spec.name), spec.severity)
 end
 

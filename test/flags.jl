@@ -109,28 +109,28 @@ end
 
 @testitem "empty_body (julia)" setup = [Fixtures] tags = [:flags] begin
     i = Fixtures.idx(:julia, "function g()\nend\n")
-    @test Dendro.empty_body(only(Dendro.functions(i)).node, i)
+    @test Dendro.empty_body(Dendro.unit_node(only(Dendro.units(i))), i)
 
     i = Fixtures.idx(:julia, "function g()\n    1\nend\n")
-    @test !Dendro.empty_body(only(Dendro.functions(i)).node, i)
+    @test !Dendro.empty_body(Dendro.unit_node(only(Dendro.units(i))), i)
 
     # A short-form def's expression body always does work, so it is never empty.
     i = Fixtures.idx(:julia, "f(x) = x + 1\n")
-    @test !Dendro.empty_body(only(Dendro.functions(i)).node, i)
+    @test !Dendro.empty_body(Dendro.unit_node(only(Dendro.units(i))), i)
 
     # A bare `function f end` has a name but no call signature: a forward declaration of a
     # zero-method generic function, a contract, not an empty implementation.
     i = Fixtures.idx(:julia, "function f end\n")
-    @test !Dendro.empty_body(only(Dendro.functions(i)).node, i)
+    @test !Dendro.empty_body(Dendro.unit_node(only(Dendro.units(i))), i)
 
     # A zero-argument method with an empty body is a real empty implementation: its
     # signature is the call `f()`, distinguishing it from the forward declaration above.
     i = Fixtures.idx(:julia, "function f() end\n")
-    @test Dendro.empty_body(only(Dendro.functions(i)).node, i)
+    @test Dendro.empty_body(Dendro.unit_node(only(Dendro.units(i))), i)
 
     # A `where`-qualified empty method keeps its call signature, so it stays flagged.
     i = Fixtures.idx(:julia, "function f(x) where T end\n")
-    @test Dendro.empty_body(only(Dendro.functions(i)).node, i)
+    @test Dendro.empty_body(Dendro.unit_node(only(Dendro.units(i))), i)
 end
 
 @testitem "empty_body across languages" setup = [Fixtures] tags = [:flags] begin
@@ -367,4 +367,15 @@ end
     # one that does real work is not.
     @test length(Dendro.trivial_wrappers(Fixtures.idx(:julia, "f(x) = g(x)\n"))) == 1
     @test isempty(Dendro.trivial_wrappers(Fixtures.idx(:julia, "f(x) = x + 1\n")))
+end
+
+@testitem "a top-level binding is not an unused local" setup = [Fixtures] tags = [:flags] begin
+    # `spare` is bound at top level and never read. That is `:unreferenced`'s
+    # question, not this rule's, and it stays so once top-level code is a unit.
+    src = "used = 1\nspare = 2\nprintln(used)\n"
+    i = Fixtures.idx(:julia, src)
+    @test !isempty(Dendro.units(i))          # the code is a unit
+
+    @test isempty(Dendro.unused_locals(i))
+    @test isempty(Dendro.unused_parameters(i))
 end

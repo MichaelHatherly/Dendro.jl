@@ -6,16 +6,23 @@
 # node was tagged.
 
 """
-    FunctionUnit
+    Unit
 
-A single callable definition: the tree-sitter node plus its 1-based first and
-last source line.
+One measured unit: a run of sibling nodes plus its 1-based first and last source
+line. A callable definition is a run of one node, which is every unit a language
+query produces; a run of several is top-level code, where no single node spans the
+region and the run itself is what the metrics fold over.
+
+`nodes` is never empty, and its members share a parent and are in source order.
 """
-struct FunctionUnit
-    node::TreeSitter.Node
+struct Unit
+    nodes::Vector{TreeSitter.Node}
     firstline::Int
     lastline::Int
 end
+
+Unit(node::TreeSitter.Node, firstline::Integer, lastline::Integer) =
+    Unit(TreeSitter.Node[node], Int(firstline), Int(lastline))
 
 # Nodes captured for one concept: the nodes in capture order, and their ids for
 # O(1) membership. Both are filled together as the query's captures are walked.
@@ -69,7 +76,7 @@ const CONCEPT_NAMES = (
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
-    :parameter_name, :broad_catch, :callee,
+    :parameter_name, :broad_catch, :callee, :toplevel, :declaration,
 )
 
 """
@@ -86,7 +93,7 @@ the field declarations rather than at the call site.
 struct QueryIndex
     language::Symbol
     source::String
-    functions::Vector{FunctionUnit}
+    units::Vector{Unit}
     function_ids::Set{NodeId}
     short_function::Concept
     decision::Concept
@@ -136,6 +143,14 @@ struct QueryIndex
     # final name, so `x.push` and `Base.push!` count by what they invoke. Feeds the
     # `fan_out` scalar.
     callee::Concept
+    # A container whose direct named children are top-level code: the file itself, and
+    # a namespace body that holds statements rather than only declarations. Empty for a
+    # language whose query names none, and then that language grows no top-level units.
+    toplevel::Concept
+    # A top-level form that declares rather than executes: a type, a macro, a namespace.
+    # A run of top-level code breaks at one, the way it breaks at a callable definition,
+    # so a declaration is never folded into the code around it.
+    declaration::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -165,6 +180,7 @@ struct QueryIndex
         ternary, try_stmt, case = Concept(), Concept(), Concept()
         def_name, init, requires_body, parameter_name = Concept(), Concept(), Concept(), Concept()
         broad_catch, callee = Concept(), Concept()
+        toplevel, declaration = Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "nesting" => nesting,
@@ -177,14 +193,15 @@ struct QueryIndex
             "case" => case, "def_name" => def_name, "init" => init,
             "requires_body" => requires_body, "parameter_name" => parameter_name,
             "broad_catch" => broad_catch, "callee" => callee,
+            "toplevel" => toplevel, "declaration" => declaration,
         )
         return new(
-            language, source, FunctionUnit[], Set{NodeId}(),
+            language, source, Unit[], Set{NodeId}(),
             short_function, decision, continuation, nesting, short_circuit, parameter,
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
-            callee, by_name, Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
+            callee, toplevel, declaration, by_name, Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,
         )
     end
@@ -212,7 +229,7 @@ end
     build_index(tree, language, source, query, scopes_query = nothing) -> QueryIndex
 
 Run `query` over `tree` once and collect every capture into a [`QueryIndex`](@ref).
-`@function` captures become [`FunctionUnit`](@ref)s; every other capture is filed
+`@function` captures become [`Unit`](@ref)s; every other capture is filed
 under its concept. When `scopes_query` is given, a second pass resolves each
 reference to its in-file definition into `index.bindings`.
 
@@ -246,10 +263,58 @@ function build_index(
     for n in funcs
         sp = TreeSitter.start_point(n)
         ep = TreeSitter.end_point(n)
-        Base.push!(idx.functions, FunctionUnit(n, Int(sp.row) + 1, Int(ep.row) + 1))
+        Base.push!(idx.units, Unit(n, Int(sp.row) + 1, Int(ep.row) + 1))
     end
+    append_toplevel_units!(idx)
     (!bindings || isempty(caps.scopes)) || resolve_bindings!(idx.bindings, caps, source)
     return idx
+end
+
+"""
+    append_toplevel_units!(index)
+
+Add a unit for each maximal run of consecutive top-level statements, and re-sort the
+units into source order. A run is what the `@toplevel` containers hold that is neither
+a callable definition nor a `@declaration`, so it is the code a file executes rather
+than the definitions it provides.
+
+Runs are contiguous by construction. A single unit spanning a whole file would report
+for a change on any line in it, including lines inside the definitions it straddles,
+because the diff scope reads a unit's line span.
+
+A language whose query names no `@toplevel` container grows no such units, so adding
+one is a query and nothing else.
+"""
+function append_toplevel_units!(idx::QueryIndex)
+    isempty(idx.toplevel.nodes) && return idx
+    run = TreeSitter.Node[]
+    for container in idx.toplevel.nodes
+        for c in TreeSitter.named_children(container)
+            c in idx.comment && continue
+            if is_function(c, idx) || c in idx.declaration
+                flush_run!(idx, run)
+            else
+                Base.push!(run, c)
+            end
+        end
+        flush_run!(idx, run)
+    end
+    sort!(idx.units; by = u -> (u.firstline, u.lastline))
+    return idx
+end
+
+# Close the run being accumulated, if any, into a unit spanning its first line to its
+# last, and empty it for the next one.
+function flush_run!(idx::QueryIndex, run::Vector{TreeSitter.Node})
+    isempty(run) && return nothing
+    Base.push!(
+        idx.units, Unit(
+            copy(run), Int(TreeSitter.start_point(first(run)).row) + 1,
+            Int(TreeSitter.end_point(last(run)).row) + 1
+        )
+    )
+    empty!(run)
+    return nothing
 end
 
 # Record one function node once. Several patterns can tag the same definition (a

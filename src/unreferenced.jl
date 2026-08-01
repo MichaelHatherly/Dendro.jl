@@ -69,7 +69,7 @@ function reach_graph(
         public = link === nothing || link.is_public(d, get(() -> Set{String}(), surface, d.file))::Bool
         (public || d.external_root) && push!(roots, i)
         d.unit == 0 && continue
-        from, to = TreeSitter.byte_range(file_by_path[d.file].index.functions[d.unit].node)
+        from, to = unit_span(file_by_path[d.file].index.units[d.unit])
         push!(get!(() -> Tuple{Int, Int, Int}[], topfns, d.file), (from, to, i))
     end
 

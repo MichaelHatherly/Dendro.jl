@@ -57,7 +57,7 @@ end
     q = Dendro.compile_pattern_query(g, "(integer_literal) @lit\n", "julia.patterns.scm")
     Dendro.index_patterns!(index, tree, q, src)
 
-    units = Dict(Dendro.unit_name(u, index) => u for u in Dendro.functions(index))
+    units = Dict(Dendro.unit_name(u, index) => u for u in Dendro.units(index))
     # The closure's 8 and 9 belong to the closure, not to `outer`. Every built-in
     # scalar stops at a nested callable and a pattern scalar that did not would read
     # as a Dendro bug.

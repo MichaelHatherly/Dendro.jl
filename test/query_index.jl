@@ -3,12 +3,12 @@
     i = Fixtures.idx(:julia, src)
 
     # Both definitions, in source order: the full form and the short form.
-    units = Dendro.functions(i)
+    units = Dendro.units(i)
     @test [Dendro.unit_name(u, i) for u in units] == ["f", "g"]
 
     # The short form is tagged as such; the full form is not.
-    @test units[2].node in i.short_function
-    @test !(units[1].node in i.short_function)
+    @test Dendro.unit_node(units[2]) in i.short_function
+    @test !(Dendro.unit_node(units[1]) in i.short_function)
 
     # Concept membership: one `if` (a decision and a nesting construct), one comment,
     # and two `&&` operators across the two functions.

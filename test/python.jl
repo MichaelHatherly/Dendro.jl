@@ -1,20 +1,20 @@
 @testitem "python scalar metrics" setup = [Fixtures] tags = [:python] begin
     big = "def f(x, y):\n    if x > 0 and y > 0:\n        for i in range(x):\n            while i > 0:\n                i -= 1\n    elif x < 0 or y < 0:\n        z = 1 if x > 0 else 2\n    try:\n        g()\n    except Exception as e:\n        h()\n    return [i for i in range(x) if i > 2]\n"
     i = Fixtures.idx(:python, big)
-    u = only(Dendro.functions(i))
+    u = only(Dendro.units(i))
     # if(+1) and(+1) for(+1) while(+1) elif(+1) or(+1) ternary(+1) except(+1)
-    @test Dendro.cyclomatic(u.node, i) == 9
-    @test Dendro.parameter_count(u.node, i) == 2
-    @test Dendro.nesting_depth(u.node, i) == 3
+    @test Dendro.cyclomatic(u, i) == 9
+    @test Dendro.parameter_count(u, i) == 2
+    @test Dendro.nesting_depth(u, i) == 3
 end
 
 @testitem "python empty_body" setup = [Fixtures] tags = [:python] begin
     # A pass-only body is an empty stub even though pass is a statement.
     i = Fixtures.idx(:python, "def e():\n    pass\n")
-    @test Dendro.empty_body(only(Dendro.functions(i)).node, i)
+    @test Dendro.empty_body(Dendro.unit_node(only(Dendro.units(i))), i)
 
     i = Fixtures.idx(:python, "def e():\n    return 1\n")
-    @test !Dendro.empty_body(only(Dendro.functions(i)).node, i)
+    @test !Dendro.empty_body(Dendro.unit_node(only(Dendro.units(i))), i)
 end
 
 @testitem "python empty_catches" setup = [Fixtures] tags = [:python] begin

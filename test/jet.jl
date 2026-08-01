@@ -207,6 +207,18 @@
 # through are frames JET can see and count. The reader doing that checking in Dendro rather
 # than behind a stdlib call is the whole point of the format, so this is the shape rather
 # than inference to recover.
+#
+# Reading a file's top-level code as units lowered sound from 1722 to 1710 and raised opt
+# from 32 to 33. The fall is a redistribution rather than a saving: `report.jl` drops 43,
+# `rules.jl` 15 and `baseline.jl` 7, against 22 in the new `scoring.jl` that the scalar
+# scoring left `report.jl` for, 21 in `units.jl` where the unit model now lives, and 10
+# across `query_index.jl`, `clones.jl` and frames that carry no file. `unit_findings!` takes
+# the abstract `Unit` where it took the `FunctionUnit` struct, so the per-unit frames are
+# counted at that signature rather than at each concrete reader.
+#
+# The one opt report is `apply_pattern!`'s new `scope` branch, the same dispatch on an `Any`
+# TOML value the four branches beside it already carry. Narrowing it would mean narrowing
+# all five, so this is the shape rather than inference to recover.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -214,8 +226,8 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1722  # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
+        SOUND_LIMIT = 1710  # JET.report_package(Dendro; mode = :sound).
+        OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
             sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))

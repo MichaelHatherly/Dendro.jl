@@ -72,18 +72,19 @@ end
 function reimpl_units(files::Vector{ParsedFile}, min_size::Int)
     out = ReimplUnit[]
     for f in files
-        units = functions(f.index)
+        units = f.index.units
         isempty(units) && continue
         ranges = unit_ranges(f.index)
         callees = callees_by_unit(f.index)
         idents = [Set{String}() for _ in units]
         for n in f.index.name.nodes
             nid = nodeid(n)
-            ui = containing_unit(ranges, nid[1], nid[2])
+            ui = containing_callable(f.index, ranges, nid[1], nid[2])
             ui == 0 && continue
             union!(idents[ui], subtokens(TreeSitter.slice(f.index.source, n)))
         end
         for (i, unit) in enumerate(units)
+            is_callable(unit, f.index) || continue
             root = subtrees(unit, f.index)[end]
             root.size < min_size && continue
             terms = Set{String}("c:" * c for c in callees[i])

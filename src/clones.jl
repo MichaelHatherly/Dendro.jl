@@ -22,17 +22,42 @@ end
 """
     subtrees(unit, index) -> Vector{Subtree}
 
-Every named subtree of a function unit, bottom-up, stopping at nested callables so
-each is its own unit. The last entry is the unit's own node, the whole-function
-subtree.
+Every named subtree of a unit, bottom-up, stopping at nested callables so each is its
+own unit. For a callable, a run of one node, the last entry is that node's own subtree.
 """
 # Collect a unit's nodes into a fresh vector via `collector!`, which fills it walking
-# from the unit's node and stopping at nested callables.
-collect_unit(collector!::F, ::Type{T}, unit::FunctionUnit, index::QueryIndex) where {F, T} =
-    (acc = T[]; collector!(acc, unit.node, index); acc)
+# each node of the run and stopping at nested callables.
+function collect_unit(collector!::F, ::Type{T}, unit::Unit, index::QueryIndex) where {F, T}
+    acc = T[]
+    for n in unit.nodes
+        collector!(acc, n, index)
+    end
+    return acc
+end
 
-subtrees(unit::FunctionUnit, index::QueryIndex) =
-    collect_unit(collect_subtrees!, Subtree, unit, index)
+subtrees(unit::Unit, index::QueryIndex) = first(run_subtrees(unit, index))
+
+"""
+    run_subtrees(unit, index) -> (subtrees, digest, size)
+
+A unit's subtrees together with the identity of the unit as a whole. A callable is a
+run of one node, so its digest and size are that node's own subtree's, unchanged. A run
+of several has no node of its own, so its digest folds its members' hashes in order, the
+way [`collect_subtrees!`](@ref) folds a node's children, and its size sums them.
+"""
+function run_subtrees(unit::Unit, index::QueryIndex)
+    acc = Subtree[]
+    root = collect_subtrees!(acc, first(unit.nodes), index)
+    length(unit.nodes) == 1 && return acc, root.hash, root.size
+    digest = hash(root.hash, hash(:run))
+    size = root.size
+    for k in 2:length(unit.nodes)
+        r = collect_subtrees!(acc, unit.nodes[k], index)
+        digest = hash(r.hash, digest)
+        size += r.size
+    end
+    return acc, digest, size
+end
 
 # Push every named subtree of `node` into `acc`, returning `node`'s own so a parent
 # can fold its hash and size in.
@@ -67,10 +92,9 @@ A function's near-miss features from a single subtree walk: its pre-order subtre
 `sequence` (the Type-2 hashes in source order for the order-aware LCS), its node-type
 `histogram` (the characteristic vector), its exact `digest`, and its `size`.
 """
-function clone_features(unit::FunctionUnit, index::QueryIndex)
-    st = subtrees(unit, index)
-    root = st[end]
-    return preorder_hashes(st), histogram_of(st), root.hash, root.size
+function clone_features(unit::Unit, index::QueryIndex)
+    st, digest, size = run_subtrees(unit, index)
+    return preorder_hashes(st), histogram_of(st), digest, size
 end
 
 # A subtree set's hashes in source order, the order-aware form the LCS compares. Read off a
@@ -123,6 +147,10 @@ end
 unit_floor(node::TreeSitter.Node, index::QueryIndex, min_size::Integer) =
     has_control(node, index) ? min_size : 2 * min_size
 
+# A run clears the lower floor when any of its nodes carries control flow.
+unit_floor(u::Unit, index::QueryIndex, min_size::Integer) =
+    any(n -> has_control(n, index), u.nodes) ? min_size : 2 * min_size
+
 # The size floor for a subtree to anchor a clone, or `nothing` if it is neither a
 # function nor a block. Blocks must clear twice the function floor: a short block of
 # boilerplate, a couple of counter updates, coincides across unrelated code, while a
@@ -168,7 +196,7 @@ function cluster_duplicates(files::Vector{ParsedFile}; min_size::Integer = DEFAU
     # right one.
     anchor_at = Dict{Tuple{String, Int, Int, UInt16}, Int}()
     for f in files
-        for unit in functions(f.index)
+        for unit in units(f.index)
             name = unit_name(unit, f.index)
             for s in subtrees(unit, f.index)
                 floor = anchor_floor(s.node, f.index, min_size)
@@ -492,17 +520,17 @@ this way, the within-corpus one and the cross-corpus one, differing only in the 
 `dendro-ignore` names.
 """
 function clone_units(files::Vector{ParsedFile}, min_size::Integer, metric::Symbol)
-    units = CloneUnit[]
+    out = CloneUnit[]
     for f in files
-        for unit in functions(f.index)
+        for unit in units(f.index)
             sequence, histogram, digest, size = clone_features(unit, f.index)
-            size < unit_floor(unit.node, f.index, min_size) && continue
+            size < unit_floor(unit, f.index, min_size) && continue
             loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
             sup = is_suppressed(f.directives, unit.firstline, metric)
-            push!(units, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
+            push!(out, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
         end
     end
-    return units
+    return out
 end
 
 """

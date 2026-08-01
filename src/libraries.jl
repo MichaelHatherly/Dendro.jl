@@ -190,14 +190,14 @@ function reference_publicness(files::Vector{ParsedFile})
     table = corpus_symbols(files)
     surface = public_surface(files, DeclaredLinkage(files, Corpus(files)))
     languages = Dict{String, Symbol}(f.file => f.language for f in files)
-    units = Dict{String, Vector{FunctionUnit}}(f.file => f.index.functions for f in files)
+    units = Dict{String, Vector{Unit}}(f.file => f.index.units for f in files)
     public = falses(length(table.defs))
     ranges = Dict{String, Vector{Tuple{Int, Int, Int}}}()
     for (di, d) in enumerate(table.defs)
         link = get(LINKAGES, languages[d.file], nothing)
         public[di] = link !== nothing && link.is_public(d, get(() -> Set{String}(), surface, d.file))::Bool
         d.unit == 0 && continue
-        from, to = TreeSitter.byte_range(units[d.file][d.unit].node)
+        from, to = unit_span(units[d.file][d.unit])
         push!(get!(() -> Tuple{Int, Int, Int}[], ranges, d.file), (from, to, di))
     end
     return table, public, ranges
@@ -272,12 +272,12 @@ function build_reference_index(
 
     anchors = RefAnchor[]
     by_hash = Dict{Tuple{Symbol, UInt64}, Vector{Int}}()
-    units = Int[]
+    whole_units = Int[]
     empty_ranges = Tuple{Int, Int, Int}[]
     for f in files
         shown = root_relative(f.file, library.roots)
         topfns = get(ranges, f.file, empty_ranges)
-        for unit in functions(f.index)
+        for unit in units(f.index)
             st = subtrees(unit, f.index)
             for s in st
                 floor = anchor_floor(s.node, f.index, min_size)
@@ -294,11 +294,11 @@ function build_reference_index(
                     )
                 )
                 push!(get!(() -> Int[], by_hash, (f.language, s.hash)), length(anchors))
-                whole && push!(units, length(anchors))
+                whole && push!(whole_units, length(anchors))
             end
         end
     end
-    return ReferenceIndex(library.name, by_hash, anchors, units, grain)
+    return ReferenceIndex(library.name, by_hash, anchors, whole_units, grain)
 end
 
 # The near-miss features one anchor carries: the pre-order hash sequence the LCS compares
@@ -461,7 +461,7 @@ function cluster_library_duplicates(
     )
     findings = Finding[]
     for f in files
-        for unit in functions(f.index)
+        for unit in units(f.index)
             name = unit_name(unit, f.index)
             st = subtrees(unit, f.index)
             total = st[end].size
@@ -563,7 +563,7 @@ function project_regions(files::Vector{ParsedFile}, min_size::Integer, grain::Sy
 
     regions = ProjectRegion[]
     for f in files
-        for unit in functions(f.index)
+        for unit in units(f.index)
             st = subtrees(unit, f.index)
             name = unit_name(unit, f.index)
             total = st[end].size

@@ -59,9 +59,11 @@ function cluster_low_cohesion(
     scored = Tuple{ParsedFile, Int, Vector{Location}}[]
     for f in files
         scopes_query_for(f) === nothing && continue
-        n = length(functions(f.index))
-        n < MIN_COHESION_UNITS && continue
-        nodes = Int[graph.unit_index[(f.file, u)] for u in 1:n]
+        nodes = Int[
+            g for g in (get(graph.unit_index, (f.file, u), 0) for u in eachindex(units(f.index)))
+                if g != 0
+        ]
+        length(nodes) < MIN_COHESION_UNITS && continue
         reps = component_reps(graph, components(adj, nodes))
         locations = Location[Location(f.file, graph.units[nd].line, graph.units[nd].name) for nd in reps]
         push!(scored, (f, length(locations), locations))

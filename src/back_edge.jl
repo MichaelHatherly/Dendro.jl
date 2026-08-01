@@ -215,7 +215,7 @@ function edge_reference_sites(
             edge = (src, get(fg.index, table.defs[di].file, 0))
             edge in wanted || continue
             byid = get!(() -> reference_lines(f), lines, f.file)
-            labels = get!(() -> String[unit_name(u, f.index) for u in f.index.functions], unit_labels, f.file)
+            labels = get!(() -> String[unit_name(u, f.index) for u in f.index.units], unit_labels, f.file)
             unit = ref.unit == 0 ? "" : labels[ref.unit]
             push!(get!(() -> Location[], out, edge), Location(f.file, byid[ref.id], unit))
         end
