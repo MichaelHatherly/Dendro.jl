@@ -114,7 +114,7 @@ end
 # Julia functions: a Julia rule matching on node-type strings is checked by nothing.
 #
 # The one gap is predicates. TreeSitter.jl warns on an unknown one and then rejects every
-# match, so a rule using `#not-any-of?` reads as clean code. `PATTERN_PREDICATES` closes
+# match, so a rule using `#same-line?` reads as clean code. `PATTERN_PREDICATES` closes
 # it at load.
 
 # The predicates TreeSitter.jl implements, read off its `predicate` dispatch. A query

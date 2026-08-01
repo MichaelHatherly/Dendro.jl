@@ -19,14 +19,8 @@ Pkg = "1"
 RelocatableFolders = "1"
 Scratch = "1"
 TOML = "1"
-TreeSitter = "0.2"
+TreeSitter = "0.3"
 julia = "1.11"
-
-# Temporary, for as long as the predicates this branch uses are unreleased. Tracks the
-# branch rather than a commit so review of TreeSitter.jl#65 keeps reaching this CI.
-# Delete this table and raise the compat bound once the predicates ship.
-[sources]
-TreeSitter = {url = "https://github.com/MichaelHatherly/TreeSitter.jl", rev = "mh/query-predicates"}
 
 [apps.dendro]
 

@@ -1,10 +1,10 @@
 # Adopting the new TreeSitter.jl query predicates
 
-Status: proposed
+Status: accepted. Everything here is implemented.
 Date: 2026-07-31
 
-Depends on [TreeSitter.jl#65](https://github.com/MichaelHatherly/TreeSitter.jl/pull/65),
-which adds nine query predicates. Nothing here can land before that release.
+Depended on [TreeSitter.jl#65](https://github.com/MichaelHatherly/TreeSitter.jl/pull/65),
+which added nine query predicates, released in TreeSitter.jl 0.3.0.
 
 ## The problem
 
@@ -62,22 +62,14 @@ Four changes, none of them large, all of them gated on the release.
 
 ### 1. Reaching the predicates
 
-Until the release, `Project.toml` carries a `[sources]` table pointing `TreeSitter`
-at the `mh/query-predicates` branch. It tracks the branch rather than a commit so
-that review of the upstream PR keeps reaching this CI. The compat bound stays at
-`"0.2"`, which the branch satisfies since it still declares 0.2.3.
+The compat bound is `"0.3"`. The release dropped the internal parser timeout and
+cancellation-flag bindings, breaking under 0.x semver, and Dendro calls none of
+them, so the bump carries no code change of its own.
 
-At release the `[sources]` table is deleted and the bound raised. The upstream
-`Unreleased` section carries a `Removed` entry (the deprecated timeout and
-cancellation-flag parser bindings), so the release is breaking under 0.x semver and
-the bound most likely becomes `"0.3"`. Dendro calls none of the removed bindings,
-checked by grep over `src/`, so that bump needs no code change of its own. Read the
-published version rather than assuming it.
-
-One trap when adopting this locally: `Pkg.instantiate` leaves an existing manifest
-alone when it already satisfies the constraints, so a manifest resolved before the
-`[sources]` table was added keeps the registry copy and every new predicate reads
-as unknown. Delete `Manifest.toml` and instantiate again.
+While the predicates were unreleased, `Project.toml` carried a `[sources]` table
+pointing `TreeSitter` at the upstream branch, tracking the branch rather than a
+commit so that review of the upstream PR kept reaching this CI. Both the table and
+the old bound are gone.
 
 ### 2. The predicate allowlist
 
