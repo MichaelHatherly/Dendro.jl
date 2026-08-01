@@ -222,6 +222,66 @@ forwarded(a, b) = f(a..., b...)
 # typed literal above does.
 sliced(out, before, i, after) = out[before..., i, after...]
 
+# An `elseif` repeating a condition an earlier branch already took. The marker sits on the
+# `if`, which is the node the rule reports. Literals stay at 0, 1, or 2 throughout: any
+# other number would make these fixtures fire `magic_number` as well.
+function repeats_the_if(x)
+    if x > 0    # dendro-expect: unreachable_branch
+        return :pos
+    elseif x > 0
+        return :never
+    end
+end
+
+function repeats_an_elseif(x)
+    if x > 2    # dendro-expect: unreachable_branch
+        return :big
+    elseif x > 0
+        return :pos
+    elseif x > 0
+        return :never
+    end
+end
+
+# The same condition respelled. The comparison reads trees rather than text, so the spacing
+# does not hide it, which is the case `#eq?` would have missed.
+function respelled(x)
+    if x > 0    # dendro-expect: unreachable_branch
+        return :pos
+    elseif x>0
+        return :never
+    end
+end
+
+# Distinct conditions are an ordinary chain. A second test of the same variable is only
+# unreachable when it is the same test, so a renamed operand must stay quiet.
+function distinct(x)
+    if x > 2
+        return :big
+    elseif x > 0
+        return :pos
+    else
+        return :neg
+    end
+end
+
+function renamed(x, y)
+    if x > 0
+        return :x
+    elseif y > 0
+        return :y
+    end
+end
+
+# Introspection macros left in source. `@info` and `@debug` are logging and stay quiet.
+inspect(x) = @show x                     # dendro-expect: debug_output
+warntype(f, x) = @code_warntype f(x)     # dendro-expect: debug_output
+lowered(f, x) = @code_lowered f(x)       # dendro-expect: debug_output
+open_it(f, x) = @edit f(x)               # dendro-expect: debug_output
+logs_it(x) = @info "value" x
+debugs_it(x) = @debug "value" x
+times_it(x) = @time work(x)
+
 # A fixture pins what the query matches, not what the score comes to: the band and the
 # percentile are Dendro's and are tested elsewhere. So a scalar rule marks the line its
 # occurrences sit on, exactly as a flag rule does.

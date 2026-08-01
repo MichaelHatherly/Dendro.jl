@@ -142,9 +142,11 @@ end
     using Dendro: compile_pattern_query, ConfigError, language_grammar, profile_for
 
     g = language_grammar(profile_for(:julia))
-    # `#not-any-of?` compiles cleanly and then rejects every match, so a rule using it
-    # reports nothing and reads as clean code. That is the one hole tree-sitter leaves.
-    src = "(identifier) @a\n((identifier) @b (#not-any-of? @b \"x\"))\n"
+    # A predicate tree-sitter has never heard of compiles cleanly and then rejects every
+    # match, so a rule using it reports nothing and reads as clean code. That is the one
+    # hole tree-sitter leaves. `#same-line?` stands in for any plausible-sounding name a
+    # rule might reach for.
+    src = "(identifier) @a\n((identifier) @b (#same-line? @b @a))\n"
     err = try
         compile_pattern_query(g, src, "julia.patterns.scm")
         nothing
@@ -152,12 +154,14 @@ end
         e
     end
     @test err isa ConfigError
-    @test occursin("not-any-of?", err.msg)
+    @test occursin("same-line?", err.msg)
     @test occursin("line 2", err.msg)
     @test occursin("any-of?", err.msg)   # names the alternatives
 
-    # Every implemented predicate compiles.
-    ok = "((identifier) @a (#any-of? @a \"x\" \"y\"))\n((identifier) @c (#match? @c \"^z\"))\n"
+    # Every implemented predicate compiles, the tree predicates included.
+    ok = "((identifier) @a (#any-of? @a \"x\" \"y\"))\n((identifier) @c (#match? @c \"^z\"))\n" *
+        "((identifier) @d (#not-has-ancestor? @d \"function_definition\"))\n" *
+        "((if_statement . (_) @_e (elseif_clause . (_) @_f)) @g (#structure-eq? @_e @_f))\n"
     @test compile_pattern_query(g, ok, "julia.patterns.scm") isa Dendro.TreeSitter.Query
 end
 
