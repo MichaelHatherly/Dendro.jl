@@ -100,6 +100,27 @@ edges the diagram is diffing, so a box that changes membership between base and 
 indistinguishable from the change under review. Directories hold still. Every movement
 the diagram shows is then edge movement, which is the only reason to draw it.
 
+The communities still have something to say, so they colour the nodes inside those boxes.
+A `classDef` per community and a `class` line per node, the overlay mechanism the coupling
+view already uses for `:misplaced` and `:scattered`.
+
+Colour the head revision's communities and never the fact that a node's community moved.
+Recolouring the movement brings back the ambiguity the boxes were changed to avoid, since
+a recoloured node reads equally as the edit or as the detector re-clustering. Read as a
+head-only overlay it claims nothing about the diff and only says which cluster each file
+currently sits in, which is what lets an arrow crossing a box and a colour boundary read
+as worse than one crossing the box alone.
+
+The overlay earns more than it costs because a file coloured unlike its box-mates is a
+file whose coupling sits outside its directory. That is `:scattered` and `:misplaced`
+drawn in place, from findings already computed.
+
+Two mechanics. Only the communities the drawn edges touch need a colour, the rest
+neutral, since a palette of thirty is noise. And key the colour off something stable such
+as the community's lowest-numbered file, because the raw labels renumber between
+revisions and a colour that shifts for that reason is the churn this section exists to
+rule out.
+
 ### 4. Trimming
 
 Reuse `focus`, `context` and `neighbourhood`, with the flagged set being the files whose
