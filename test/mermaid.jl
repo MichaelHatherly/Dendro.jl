@@ -131,6 +131,80 @@ end
     end
 end
 
+# The change view: the file graph at a base ref against the file graph at the working
+# tree. Only the edges whose weight moved are drawn, with the state carried by the arrow.
+
+@testitem "change deltas report an added, dropped, and reweighted edge" tags = [:mermaid] begin
+    edge(w, names) = Dendro.FileEdge(w, names, length(names), Dendro.Location[])
+    base = Dict(("a.jl", "b.jl") => edge(3, ["old"]), ("a.jl", "c.jl") => edge(2, ["gone"]), ("b.jl", "c.jl") => edge(1, ["same"]))
+    head = Dict(("a.jl", "b.jl") => edge(5, ["old", "fresh"]), ("d.jl", "b.jl") => edge(1, ["born"]), ("b.jl", "c.jl") => edge(1, ["same"]))
+
+    deltas = Dendro.change_deltas(base, head)
+    # The unchanged edge is absent: a diagram of everything is the coupling view.
+    @test [(d.from, d.to) for d in deltas] == [("a.jl", "b.jl"), ("a.jl", "c.jl"), ("d.jl", "b.jl")]
+    @test [(d.base, d.head) for d in deltas] == [(3, 5), (2, 0), (0, 1)]
+    # Only the names the edge gained, so a thickened edge says what arrived on it.
+    @test deltas[1].names == ["fresh"]
+    @test deltas[3].names == ["born"]
+end
+
+@testitem "change view draws growth thick and shrinkage dotted" tags = [:mermaid] begin
+    deltas = [
+        Dendro.EdgeDelta("a.jl", "b.jl", 0, 2, ["born"]),
+        Dendro.EdgeDelta("a.jl", "c.jl", 3, 5, ["fresh"]),
+        Dendro.EdgeDelta("b.jl", "c.jl", 4, 1, String[]),
+        Dendro.EdgeDelta("c.jl", "d.jl", 2, 0, String[]),
+    ]
+    io = IOBuffer()
+    Dendro.change_file(io, deltas)
+    out = String(take!(io))
+
+    @test startswith(out, "flowchart LR")
+    @test occursin("==>|new: born|", out)
+    @test occursin("==>|+2 fresh|", out)
+    @test occursin("-.->|-3|", out)
+    @test occursin("-.->|gone|", out)
+end
+
+@testitem "change view reports a reference that crossed a new file boundary" setup = [Fixtures] tags = [:mermaid] begin
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "mod.jl"), "include(\"a.jl\")\ninclude(\"b.jl\")\n")
+    write(joinpath(src, "a.jl"), "export entry\nentry() = 1\n")
+    write(joinpath(src, "b.jl"), "export shared\nshared() = 1\n")
+    Fixtures.commit!(root, "base")
+    # `entry` now reaches into `b.jl`, which is one new file-graph edge.
+    write(joinpath(src, "a.jl"), "export entry\nentry() = shared()\n")
+
+    io = IOBuffer()
+    Dendro.mermaid(io, src; graph = :change, base = "HEAD")
+    out = String(take!(io))
+    @test startswith(out, "flowchart LR")
+    @test occursin("==>", out)
+    @test occursin("new: shared", out)
+    @test occursin("a.jl", out)
+    @test occursin("b.jl", out)
+end
+
+@testitem "change view draws nothing when the corpus is untouched" setup = [Fixtures] tags = [:mermaid] begin
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "mod.jl"), "include(\"a.jl\")\ninclude(\"b.jl\")\n")
+    write(joinpath(src, "a.jl"), "export entry\nentry() = shared()\n")
+    write(joinpath(src, "b.jl"), "export shared\nshared() = 1\n")
+    Fixtures.commit!(root, "base")
+
+    io = IOBuffer()
+    Dendro.mermaid(io, src; graph = :change, base = "HEAD")
+    out = String(take!(io))
+    @test startswith(out, "flowchart LR")
+    @test !occursin("==>", out)
+    @test !occursin("-.->", out)
+end
+
+@testitem "change view requires a base ref and rejects unit granularity" tags = [:mermaid] begin
+    @test_throws ErrorException Dendro.mermaid(IOBuffer(), "src"; graph = :change)
+    @test_throws ErrorException Dendro.mermaid(IOBuffer(), "src"; graph = :change, base = "HEAD", granularity = :unit)
+end
+
 @testitem "mermaid public entrypoint runs end to end on a folder" setup = [Fixtures] tags = [:mermaid] begin
     mktempdir() do dir
         write(joinpath(dir, "mod.jl"), "include(\"a.jl\")\ninclude(\"b.jl\")\n")

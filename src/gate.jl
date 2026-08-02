@@ -19,43 +19,13 @@ const FloorKey = Tuple{Symbol, Vector{Tuple{String, String}}}
 fkey(f::Finding, root::AbstractString, rels::Dict{String, String})::FloorKey =
     (f.metric, sort!([(relative_to(rels, loc.file, root), loc.unit) for loc in f.locations]))
 
-# One location's path made repo-relative, memoized across a whole keying pass. `realpath` is
-# a syscall, `fkey` resolves every location of every finding, and the architecture rules
-# carry many: a `:back_edge` finding names every reference site across its edge, so one
-# corpus file is resolved dozens of times over a run without this.
-function relative_to(rels::Dict{String, String}, path::String, root::AbstractString)
-    hit = get(rels, path, "")
-    isempty(hit) || return hit
-    resolved = relpath(realpath(path), root)
-    rels[path] = resolved
-    return resolved
-end
-
-# The base error floor as a multiset of keys. `git archive` the `since` revision of just
-# `paths` into a tempdir, no worktree or index mutation, analyze that, and count each
-# high-floor finding's key. The archive is scoped to `paths`, not the whole tree, so the
-# base corpus matches HEAD's: a whole-tree archive would shift the baseline and clone
-# corpus and manufacture deltas. An empty archive (paths new at `since`) leaves the count
-# empty, so every HEAD finding reads as new. The ref is pre-checked, so a missing ref
-# throws rather than silently degrading to the floor.
+# The base error floor as a multiset of keys: analyze the corpus as it stood at `since` and
+# count each high-floor finding's key. An empty base corpus (paths new at `since`) leaves
+# the count empty, so every HEAD finding reads as new.
 function base_floor_counts(roots::Vector{String}, since, root::AbstractString; config, rules, ignore, language)
-    refspec = string(since, "^{commit}")
-    verified = success(pipeline(`git -C $root rev-parse --verify --quiet $refspec`; stdout = devnull, stderr = devnull))
-    verified || error("Dendro: `since` ref not found: $since")
-
-    rels = [relpath(realpath(p), root) for p in roots]
     counts = Dict{FloorKey, Int}()
-    mktempdir() do tmp
-        # git archive errors when no path matches at `since` (paths new at base). The ref
-        # is already validated, so an empty archive means an empty base set, every HEAD
-        # finding new.
-        archive = pipeline(`git -C $root archive $since -- $rels`; stderr = devnull)
-        archived = success(pipeline(archive, pipeline(`tar -x -C $tmp`; stderr = devnull)))
-        # macOS maps /tmp to /private/tmp; resolve the tempdir root so its relative paths
-        # match HEAD's, or every base key misaligns and the ratchet calls everything new.
-        troot = realpath(tmp)
-        tpaths = String[joinpath(troot, r) for r in rels if ispath(joinpath(troot, r))]
-        (archived && !isempty(tpaths)) || return
+    with_base_corpus(roots, since, root; keyword = "since") do troot, tpaths
+        isempty(tpaths) && return
         resolved = Dict{String, String}()
         for f in high_floor(active(analyze(tpaths; config, rules, ignore, language)))
             k = fkey(f, troot, resolved)

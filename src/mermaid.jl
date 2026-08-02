@@ -174,10 +174,19 @@ end
 Render one of Dendro's graphs over `paths` as a mermaid `flowchart`, written to `io`.
 `graph` selects the diagram: `:coupling` the corpus reference graph behind `:misplaced`
 and `:scattered`, `:reachability` the dead-code graph behind `:unreferenced`, `:clones`
-the duplicate clusters. `granularity` is `:file` (units collapsed to their file) or `:unit`
-(one node per function). Active findings overlay onto the diagram: misplaced and scattered
-nodes are classed, the misplaced suggested home drawn as a dashed edge, dead definitions
-and public roots classed.
+the duplicate clusters, `:change` the file graph at a `base` git ref against the file
+graph at the working tree. `granularity` is `:file` (units collapsed to their file) or
+`:unit` (one node per function). Active findings overlay onto the diagram: misplaced and
+scattered nodes are classed, the misplaced suggested home drawn as a dashed edge, dead
+definitions and public roots classed.
+
+`:change` answers a reviewer's first question on a large diff, whether an edit stayed in
+one place or rewired the corpus. Only the edges whose weight moved are drawn, with the
+state in the arrow: `==>` for an edge added or grown, labelled with the definition names
+it gained, and `-.->` for one weakened or gone. It needs `base`, and it is file-level
+only, since a unit has no identity that survives a rename across revisions. A change that
+rewired nothing draws a header and no edges. Unlike the other diagrams it reads git, so
+`paths` must sit inside a repository and `base` must name a commit.
 
 `focus` trims the diagram to what the findings touch. `:findings` keeps only flagged nodes
 and the `context` hops of graph neighbours around them, drawn greyed, so a unit-level graph
@@ -199,27 +208,34 @@ graph over a language a `.dendro.toml` registers, which `analyze` does from its 
 function mermaid(
         io::IO, paths::Union{AbstractString, AbstractVector{<:AbstractString}};
         graph::Symbol = :coupling, granularity::Symbol = :file,
-        focus::Symbol = :auto, context::Integer = 1,
+        focus::Symbol = :auto, context::Integer = 1, base = nothing,
         ignore = String[], language = nothing, rules = BUILTIN_RULES, cut::Real = 0.95,
         min_size::Integer = DEFAULT_MIN_SIZE, threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR,
         profiles::Dict{Symbol, LanguageProfile} = PROFILES
     )
-    graph in (:coupling, :reachability, :clones) ||
-        error("Dendro: graph must be :coupling, :reachability or :clones, got :$graph")
+    graph in (:coupling, :reachability, :clones, :change) ||
+        error("Dendro: graph must be :coupling, :reachability, :clones or :change, got :$graph")
     granularity in (:file, :unit) ||
         error("Dendro: granularity must be :file or :unit, got :$granularity")
     focus in (:auto, :all, :findings) ||
         error("Dendro: focus must be :auto, :all or :findings, got :$focus")
     context >= 0 || error("Dendro: context must be >= 0, got $context")
+    graph === :change && base === nothing &&
+        error("Dendro: graph :change needs a `base` git ref to compare against")
+    graph === :change && granularity === :unit &&
+        error("Dendro: graph :change is file-level; a unit has no identity across revisions")
     resolved = focus === :auto ? (granularity === :unit ? :findings : :all) : focus
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
-    files = parse_corpus(collect_corpus(roots, ignore, language; profiles); language, rules, profiles)
+    parse_at(at) = parse_corpus(collect_corpus(at, ignore, language; profiles); language, rules, profiles)
+    files = parse_at(roots)
     if graph === :coupling
         table = corpus_symbols(files)
         mermaid_coupling(io, files, build_corpus_graph(files, table), table, granularity, cut, resolved, context)
     elseif graph === :reachability
         mermaid_reachability(io, files, corpus_symbols(files), granularity, resolved, context)
+    elseif graph === :change
+        mermaid_change(io, files, roots, base, parse_at)
     else
         mermaid_clones(io, files, granularity, min_size, threshold, radius_factor)
     end
@@ -536,4 +552,100 @@ function clones_file(io::IO, clusters::Vector{Finding})
         println(io, "  ", fids[a], exact ? " --- " : " -.- ", fids[b])
     end
     return nothing
+end
+
+# --- Change ---------------------------------------------------------------------------
+
+"""
+    EdgeDelta
+
+One file-to-file dependency's movement between two revisions of the corpus.
+
+`base` and `head` are the edge's weight at each revision, either of them zero where the
+edge did not exist. `names` holds the definitions the edge gained, so a thickened arrow
+says what arrived on it and not only that the coupling grew. An edge that lost references
+names nothing: the definitions behind the drop are gone from head, and naming them sends
+a reader to code that is not there.
+"""
+struct EdgeDelta
+    from::String
+    to::String
+    base::Int
+    head::Int
+    names::Vector{String}
+end
+
+# A file graph's edges keyed by repo-relative endpoint paths. Two revisions number their
+# nodes independently, so a path is the only key that means the same thing in both.
+function edges_by_path(graph::FileGraph, root::AbstractString)
+    out = Dict{Tuple{String, String}, FileEdge}()
+    rels = Dict{String, String}()
+    for ((a, b), e) in graph.edges
+        out[(relative_to(rels, graph.files[a], root), relative_to(rels, graph.files[b], root))] = e
+    end
+    return out
+end
+
+# The file graph over a parsed corpus, the structure the change view diffs.
+file_corpus_graph(files::Vector{ParsedFile}) = build_file_graph(files, corpus_symbols(files), Corpus(files))
+
+# The edges whose weight moved between the two revisions, ordered by endpoint. An edge
+# standing at the same weight in both is dropped: drawing every edge is the coupling view,
+# and the question here is what the change did.
+function change_deltas(base::Dict{Tuple{String, String}, FileEdge}, head::Dict{Tuple{String, String}, FileEdge})
+    out = EdgeDelta[]
+    for key in sort!(collect(union(keys(base), keys(head))))
+        b = get(base, key, nothing)
+        h = get(head, key, nothing)
+        bw = b === nothing ? 0 : b.weight
+        hw = h === nothing ? 0 : h.weight
+        bw == hw && continue
+        gained = h === nothing ? String[] : sort!(setdiff(h.names, b === nothing ? String[] : b.names))
+        push!(out, EdgeDelta(key[1], key[2], bw, hw, gained))
+    end
+    return out
+end
+
+# The arrow and label one delta draws with. Mermaid styles a link by its ordinal index
+# (`linkStyle N`), so drawing state in colour would make every emitter count its links;
+# the arrow shape carries it instead and survives being read without colour.
+function delta_arrow(d::EdgeDelta)
+    d.head == 0 && return ("-.->", "gone")
+    d.head < d.base && return ("-.->", string("-", d.base - d.head))
+    named = isempty(d.names) ? "" : string(": ", join(d.names, ", "))
+    d.base == 0 && return ("==>", string("new", named))
+    return ("==>", string("+", d.head - d.base, isempty(d.names) ? "" : string(" ", join(d.names, ", "))))
+end
+
+# The change view: the edges that moved, drawn between their endpoint files. An untouched
+# corpus draws a header and nothing else, which is the honest picture of a change that
+# rewired nothing.
+function change_file(io::IO, deltas::Vector{EdgeDelta})
+    mmd_header(io, Pair{String, String}[])
+    fileset = Set{String}()
+    for d in deltas
+        push!(fileset, d.from)
+        push!(fileset, d.to)
+    end
+    fids = file_ids(fileset)
+    file_nodes(io, fids, Set(keys(fids)))
+    for d in deltas
+        arrow, label = delta_arrow(d)
+        println(io, "  ", fids[d.from], " ", arrow, "|", mmd_label(label), "| ", fids[d.to])
+    end
+    return nothing
+end
+
+# The change view over `roots`: the file graph at `base` against the file graph at the
+# working tree. `parse_at` is the caller's own parse of a corpus, so the base revision is
+# read with the same language, rule, and ignore settings as head without this carrying a
+# copy of each of them.
+function mermaid_change(io::IO, files::Vector{ParsedFile}, roots::Vector{String}, base, parse_at)
+    root = git_toplevel(roots)
+    head = edges_by_path(file_corpus_graph(files), root)
+    prior = with_base_corpus(roots, base, root) do troot, tpaths
+        isempty(tpaths) && return Dict{Tuple{String, String}, FileEdge}()
+        return edges_by_path(file_corpus_graph(parse_at(tpaths)), troot)
+    end
+    return change_file(io, change_deltas(prior, head))
 end
