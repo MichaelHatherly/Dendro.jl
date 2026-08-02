@@ -60,56 +60,44 @@ jobs:
       - run: just fmt-check
 
   jet:
-    name: JET Julia ${{ matrix.version }}
     runs-on: ubuntu-latest
-    # Sound analysis is the longest item in the suite and the only one whose cost is an
-    # inference workload, so it gets a process and a heap to itself rather than sharing
-    # both with 2965 other tests. A cell that stops making progress is stuck, and the
-    # default six-hour limit turns that into hours of a dead runner.
+    # Sound analysis is an inference workload rather than a test, and the longest single
+    # check by a wide margin, so it gets a process and a heap to itself. A cell that stops
+    # making progress is stuck, and the default six-hour limit turns that into hours of a
+    # dead runner.
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        # Basic mode gates every stable version. The sound and optimization ratchets are
-        # pinned to one version inside the item and skip elsewhere, and JET ships a stub on
-        # pre-release Julia, so nightly has nothing to run.
-        version:
-          - 'min'
-          - '1'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The ratchet limits in `jet/run.jl` are counts one Julia and JET pairing produces,
+      # so the gate runs on the current stable release and nowhere else. JET ships empty
+      # stubs on Julia versions it does not support, which is the other reason nightly has
+      # nothing to run here.
       - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32 # v3.0.2
         with:
-          version: ${{ matrix.version }}
+          version: '1'
 
       - uses: julia-actions/cache@a45e8fa8be21c18a06b7177052533149e61e9b38 # v3.1.0
 
-      - uses: julia-actions/julia-buildpkg@e3eb439fad4f9aba7da2667e7510e4a46ebc46e1 # v1.7.0
-
-      - uses: julia-actions/julia-runtest@6e050c8013b833b1195105ff2fce9cd802f53271 # v1.12.0
+      - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2.85.0
         with:
-          # The item asserts on report counts and exercises no Dendro line the other cells
-          # do not already report, so instrumenting it and uploading the result adds a step
-          # and changes no number. Measured at 3m23s instrumented against 3m37s without, so
-          # this buys the step rather than the analysis.
-          coverage: false
-          test_args: 'jet'
+          tool: just
+
+      - run: just jet
         env:
           # JET's sound analysis churns tens of gigabytes through the collector. Julia
           # sizes its heap from physical memory, so the 16 GB Linux runner lets that heap
-          # grow until the runner process itself is starved and the job dies mid-test with
-          # no logs. `Pkg.test` spawns the test process without forwarding
-          # `--heap-size-hint`, so the cap travels as an environment variable.
+          # grow until the runner process itself is starved and the job dies mid-run with
+          # no logs.
           JULIA_HEAP_SIZE_HINT: '6G'
 
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     # A cell that stops making progress is stuck, and the default six-hour limit turns that
-    # into hours of a dead runner. JET runs in its own job, so what is left here is the
-    # ordinary suite under coverage.
+    # into hours of a dead runner. JET has an environment and a job of its own, so what is
+    # left here is the suite under coverage.
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -138,11 +126,6 @@ jobs:
 
       - uses: julia-actions/julia-runtest@6e050c8013b833b1195105ff2fce9cd802f53271 # v1.12.0
         continue-on-error: ${{ matrix.version == 'nightly' }}
-        with:
-          # JET has its own job. Nine cells ran it where at most one does the analysis the
-          # ratchet reads, and it shared a process, and on ubuntu a capped heap, with every
-          # other item. Excluding it takes the longest single item off all nine.
-          test_args: '-jet'
 
       - uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38 # v1.2.2
 

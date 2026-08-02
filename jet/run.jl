@@ -1,19 +1,22 @@
-# JET static analysis over Dendro's own modules. JET loads only a stub on
-# pre-release Julia and errors when called, so skip the whole analysis there
-# (nightly runs in CI).
+# JET static analysis over Dendro's own modules. Run it with `just jet`; CI runs the same
+# recipe in a job of its own.
 #
-# Basic mode is a zero-tolerance gate on every stable Julia version: a type-level
-# regression, a call that admits a no-method branch, fails here rather than at
-# runtime. Pkg resolves a version-appropriate JET release per Julia (0.9 on 1.11,
-# 0.10 on 1.12).
+# This sits outside the test suite in an environment of its own. Sound analysis is an
+# inference workload rather than a test, it is the longest single check by a wide margin,
+# and the ratchet below reads counts that one Julia and JET pairing produces. Inside the
+# suite it ran in nine matrix cells where at most one did the analysis the ratchet reads,
+# and it shared a process, and on ubuntu a capped heap, with the other 2965 tests.
+#
+# Basic mode is a zero-tolerance gate: a type-level regression, a call that admits a
+# no-method branch, fails here rather than at runtime.
 #
 # Sound mode and the optimization analyzer flag far more, mostly intentional dynamic
 # dispatch on Dendro's design (function-valued rules, tree-walks over `Any` nodes).
 # Rather than gate at zero, ratchet: cap the count at its current value so it can
 # only fall. Lower a limit whenever the count drops, that locks in the cleanup;
-# never raise one without a reason. The counts depend on the Julia and JET versions
-# (JET 0.10 on Julia 1.12), so the ratchet runs only on that Julia version, and
-# skips elsewhere. The sound count rose from 462 to 472 with the Julia 1.12.6 / JET
+# never raise one without a reason. The counts depend on the Julia and JET versions,
+# so a toolchain bump is answered by re-measuring and recording what moved, the same
+# as a code change. The sound count rose from 462 to 472 with the Julia 1.12.6 / JET
 # 0.10.15 bump; it is identical on the prior commit, so it tracks the toolchain, not
 # a code regression. The `:unreferenced` pass then raised it from 472 to 478 and the
 # opt count from 12 to 13: the reachability resolver dispatches through the
@@ -116,11 +119,11 @@
 # `Location`s rather than indices the caller re-wraps.
 #
 # The review fixes then took the count from 1308 to 1303, so the limit drops to match.
-# Measure under `Pkg.test`, which is what CI runs and what these numbers are on. A bare
-# `report_package` against this project reads exactly one lower, since `Pkg.test` analyses
-# with `--check-bounds=yes`; the deltas below are the same either way, the absolute figure
-# is not. Resolving each corpus path once per scope into `Scope.rels` and reading it through
-# `in_scope` took `analyze.jl` from 50 to 40: the inline `relpath(realpath(...))` per
+# Measured under `Pkg.test`, which is what CI ran then and what the numbers above are on. A
+# bare `report_package` against this project read exactly one lower, since `Pkg.test`
+# analyses with `--check-bounds=yes`; the deltas below are the same either way, the absolute
+# figure is not. Resolving each corpus path once per scope into `Scope.rels` and reading it
+# through `in_scope` took `analyze.jl` from 50 to 40: the inline `relpath(realpath(...))` per
 # location was re-resolving inside a closure the scoping filter and the parallel per-file
 # pass both widened through. Against that, `cluster_back_edge`'s `floors` keyword adds 2,
 # irreducibly, since a caller may name either floor and the NamedTuple's type is therefore
@@ -260,28 +263,32 @@
 # Unlike the entries above this one, no narrowing was attempted or measured; the raise was
 # taken directly.
 #
-# The numbers here are what ubuntu CI reports. macOS runs one lower on the same code, so a
-# local check that lands one under the limit is at the limit, not below it.
-@testitem "JET" tags = [:jet] begin
-    import JET
+# Moving to JET 0.12 took sound from 1774 to 1371 and left opt at 33. Every absolute figure
+# above it is on JET 0.10.15 under `Pkg.test` and does not reproduce here: 0.11 rebuilt
+# `report_package` on Revise, so which definitions it reaches changed, and this runs without
+# the `--check-bounds=yes` that `Pkg.test` imposed. The deltas and the narrowing attempts
+# recorded above still hold, since they are about Dendro's shape rather than JET's, but
+# compare a new measurement against 1371 and not against anything before it. Basic mode is
+# still at zero, so nothing in the bump is a type-level regression. The one call that had to
+# change is the module filter: 0.12 removed `target_defined_modules`, and `target_modules`
+# is the replacement it names. Dendro is one module with no submodules, so the two select
+# the same frames.
 
-    if isempty(VERSION.prerelease)
-        JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
+using Dendro
+using JET
+using Test
 
-        JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1774  # JET.report_package(Dendro; mode = :sound).
-        OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
+const SOUND_LIMIT = 1371  # JET.report_package(Dendro; mode = :sound).
+const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
-        if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)
-            sound = JET.get_reports(JET.report_package(Dendro; target_defined_modules = true, mode = :sound))
-            length(sound) < SOUND_LIMIT && @info "JET sound below limit; lower SOUND_LIMIT to $(length(sound))"
-            @test length(sound) <= SOUND_LIMIT
+@testset "JET" begin
+    JET.test_package(Dendro; target_modules = (Dendro,), mode = :basic)
 
-            opt = JET.get_reports(JET.report_opt(Tuple{typeof(Dendro.analyze), String}; target_modules = (Dendro,)))
-            length(opt) < OPT_LIMIT && @info "JET opt below limit; lower OPT_LIMIT to $(length(opt))"
-            @test length(opt) <= OPT_LIMIT
-        end
-    else
-        @test true skip = true
-    end
+    sound = JET.get_reports(JET.report_package(Dendro; target_modules = (Dendro,), mode = :sound))
+    length(sound) < SOUND_LIMIT && @info "JET sound below limit; lower SOUND_LIMIT to $(length(sound))"
+    @test length(sound) <= SOUND_LIMIT
+
+    opt = JET.get_reports(JET.report_opt(Tuple{typeof(Dendro.analyze), String}; target_modules = (Dendro,)))
+    length(opt) < OPT_LIMIT && @info "JET opt below limit; lower OPT_LIMIT to $(length(opt))"
+    @test length(opt) <= OPT_LIMIT
 end

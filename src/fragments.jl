@@ -67,7 +67,7 @@ function collect_fragments(source::AbstractString, path::AbstractString)
     out = Dict{String, Fragment}()
     for m in eachmatch(FRAGMENT_DEF_RE, text)
         # Both groups are required by the pattern, but a capture's type admits `nothing`
-        # whatever the pattern says, and the suite's JET gate is zero-tolerance.
+        # whatever the pattern says, and the basic-mode JET gate is zero-tolerance.
         name, body = capture_text(m, 1), capture_text(m, 2)
         (name === nothing || body === nothing) && continue
         line = line_at_offset(text, m.offset - 1)

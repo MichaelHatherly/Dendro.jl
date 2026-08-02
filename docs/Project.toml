@@ -2,5 +2,8 @@
 Dendro = "1795b8db-9815-49e8-b387-5b722b8875ff"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 
+[sources]
+Dendro = {path = ".."}
+
 [compat]
 Documenter = "1"

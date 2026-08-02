@@ -1314,7 +1314,7 @@ unsuppressed findings for gating.
 package environment omits, so parsing only works there. The suite is
 [TestItemRunner](https://github.com/julia-vscode/TestItemRunner.jl): `runtests.jl`
 is one `@run_package_tests` call, and each check is a self-contained `@testitem`
-tagged by area (`:metrics`, `:clones`, `:jet`, …). Items run in their own module,
+tagged by area (`:metrics`, `:clones`, `:patterns`, …). Items run in their own module,
 so each imports what it uses; `Dendro` and `Test` are auto-imported. Shared
 helpers and the language-fixture tables live in one `@testmodule Fixtures`
 (`test/setup.jl`), reached qualified, e.g. `Fixtures.idx(:julia, src)`.
@@ -1328,6 +1328,7 @@ change that makes Dendro trip its own metrics is a signal to fix the code. The t
 carry inline `dendro-ignore: parameter_count` with a reason, suppressed rather than
 omitted from the gate, so the count stays honest.
 
-`test/jet.jl` is the `:jet` item: basic-mode JET is a zero-tolerance gate on every
-Julia version, sound mode and the optimization analyzer are ratcheted at
-`SOUND_LIMIT`/`OPT_LIMIT` (pinned to one Julia version, lowered when a count drops).
+JET has an environment of its own in `jet/` and runs by `just jet`, outside the suite:
+basic mode is a zero-tolerance gate, sound mode and the optimization analyzer are
+ratcheted at `SOUND_LIMIT`/`OPT_LIMIT`, lowered when a count drops. The counts belong
+to one Julia and JET pairing, so CI runs it on the current stable release alone.
