@@ -349,16 +349,29 @@ Reporting:
   annotations. Both share `score_suffix`. A finding renderer takes `Findings`; a
   graph renderer (`mermaid`, `mermaid.jl`) takes the corpus, since a graph is not
   recoverable from findings.
-- `diff.jl` defines the unified-diff parser (`changed_ranges`, `coalesce_lines`)
-  that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
+- `diff.jl` defines the line-range vocabulary a scope is expressed in: `coalesce_lines`
+  merges added line numbers into ranges, and `inrange`/`intersects` test a span against
+  them. The line numbers themselves come from `git.jl`.
+- `git.jl` is everything Dendro asks of a git repository, and the only file that knows
+  libgit2 exists. `git_toplevel` resolves the repo root for the ratchet base, the spatial
+  `base` scope, the `:change` diagram, and the discovered `.dendro.toml`.
+  `changed_ranges` reads a revision against the working tree into per-file line ranges,
+  pulling each hunk's lines out of a `git_patch` rather than parsing diff text.
+  `with_base_corpus` materialises a revision into a tempdir by walking its tree and
+  writing each blob (`checkout_tree`, `write_entry`), with `base_tree` resolving the ref.
+  The `LibGit2` stdlib owns repository and object lifetimes; raw `ccall` covers only the
+  hunk and line detail it does not wrap, which is why `DiffLine` is declared here.
+  Nothing shells out, so `--base` and `--since` need no `git` or `tar` binary. Included
+  after `diff.jl`, whose `coalesce_lines` it calls, and before `config.jl`, `analyze.jl`,
+  `gate.jl` and `mermaid.jl`, which call it.
 - `gate.jl` defines `errors`, the gate view over `analyze`: `high_floor` keeps the
   `:high`-band findings, applied after `active`. With `since`, `base_floor_counts`
   analyzes the base revision and `ratchet` subtracts its floor by `fkey`, a
   line-independent location-set key. Built on plain `analyze`, it adds no branch to
-  the pipeline. `git_toplevel` (`analyze.jl`) resolves the repo root for the ratchet
+  the pipeline. `git_toplevel` (`git.jl`) resolves the repo root for the ratchet
   base, the spatial `base` scope, and the `:change` diagram; `with_base_corpus`
-  (`analyze.jl`) materialises a revision of the corpus with `git archive` for the
-  ratchet and that diagram alike.
+  (`git.jl`) materialises a revision of the corpus from its tree for the ratchet and
+  that diagram alike.
 - `clones.jl` defines both duplicate passes over a shared subtree index. `subtrees`
   hashes every named subtree of a function bottom-up. Exact: `anchor_floor` and `cluster_duplicates`
   bucket function- and block-shaped subtrees by hash, with `subsumed` as the
@@ -1186,8 +1199,8 @@ kinds of finding part.
 Under `CYCLE_LOCATIONS_MAX` cuts, each location is one edge to remove, at the import
 statement admitting it where the language declares one, labelled `cut -> <target>`, the
 target named relative to the source file's directory. That label is part of the finding's
-ratchet key (`fkey`, `gate.jl`), which is scored once in place and once in a `git archive`
-tempdir, so an absolute target would re-report every cut finding as new. Above
+ratchet key (`fkey`, `gate.jl`), which is scored once in place and once in a tempdir
+holding the base revision, so an absolute target would re-report every cut finding as new. Above
 it, the component has no bounded edit: the locations become its highest-degree members and
 every label reads `tangled: <n> cuts`. Reporting the tangle rather than dropping it is the
 honest-over-silent call, and the label is what tells the two apart without inferring

@@ -33,6 +33,15 @@ dendro --check --since=origin/main src
 `--base` asks a different question, scoping the report to the lines a change touched, so
 naming both is a usage error rather than a silent choice of one.
 
+Both read the repository through libgit2 rather than by running `git`, so neither needs
+the `git` or `tar` binaries on `PATH`. That matters in a minimal CI container, and it
+means the base revision is read straight from the object database: no worktree is
+touched and no index is mutated. One consequence is worth knowing if your repository
+uses `export-ignore` gitattributes, which `git archive` would honour and a direct read of
+the tree does not. The base corpus is now the same set of files the working tree is
+scanned as, which is the comparison a ratchet wants; an `export-ignore`d file that used
+to be missing from the base alone would have read as newly added.
+
 ## Flags
 
 ```
