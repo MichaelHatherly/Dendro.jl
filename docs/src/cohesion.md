@@ -93,8 +93,11 @@ cross-file companion to within-file `:low_cohesion`. The corpus graph holds only
 cross-file edges, so its communities alone would split every layered file. Folding each
 file's within-file binding edges, the same edges cohesion links on, into the graph first
 lets a cohesive file's units settle into one community, so only a file whose units are
-each drawn toward a different other file scatters. The score is the count of distinct
-communities the file's units occupy whose plurality anchor is another file: a file that
+each drawn toward a different other file scatters. Every unit sharing one file-local
+definition is joined to every other, and an edge's weight is how many definitions its two
+units share, so calling one helper repeatedly is not read as more coupling than calling it
+once. The score is the count of distinct communities the file's units occupy whose
+plurality anchor is another file: a file that
 stays home scores zero. A bag of unrelated functions is low-cohesion but not scattered,
 each its own self-anchored community; what scatters is a file each of whose units belongs
 with a different other file. Two scores, like cohesion: the absolute band and the corpus
@@ -105,10 +108,11 @@ labelled with the file that community is anchored in. The count is the score; th
 the edit:
 
 ```
-src/resolution.jl:25  corpus_symbols  [belongs with mermaid.jl]  scattered 4 (warn; p96)
-    also at src/resolution.jl:66  unbound_references  [belongs with bindings.jl]
-    also at src/resolution.jl:166  DeclaredLinkage  [belongs with linkage.jl]
-    also at src/resolution.jl:179  visible_defs  [belongs with linkage.jl]
+src/units.jl:11  units  [belongs with reimplementation.jl]  scattered 5 (ok; p97)
+    also at src/units.jl:19  unit_span  [belongs with flags.jl]
+    also at src/units.jl:30  unit_node  [belongs with flags.jl]
+    also at src/units.jl:39  is_callable  [belongs with corpus_graph.jl]
+    also at src/units.jl:52  is_function  [belongs with metrics.jl]
 ```
 
 Two units pulled toward the same file is the useful reading there: it says where the seam

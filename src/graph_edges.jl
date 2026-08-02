@@ -1,10 +1,18 @@
-# What a within-file binding edge is. A file's functions link when they reference a
-# common file-local binding, a helper, type, or constant defined in the same file, read
-# from the lexical bindings `bindings.jl` resolves. These edges are the within-file view
-# of the corpus unit graph: `:low_cohesion` counts the components they form, `:scattered`
-# folds them into the cross-file graph so a cohesive file's units settle into one
-# community. Syntactic and within one file, linking on a resolved binding, never a symbol
-# across files.
+# The two within-file edges a file's bindings imply, both read from the lexical bindings
+# `bindings.jl` resolves and both syntactic and within one file, never a symbol across
+# files.
+#
+# `binding_groups` is the undirected one: a file's units link when they reference a common
+# file-local binding, a helper, type, or constant defined in the same file. It answers which
+# units belong together, so it drops a cross-cutting binding every concern reaches for and
+# says nothing about direction. `:low_cohesion` counts the components these form and
+# `:scattered` folds them into the cross-file graph, so a cohesive file's units settle into
+# one community.
+#
+# `binding_reference_edges` is the directed one: one edge per reference, from the unit that
+# named it to the unit holding the definition. It answers which unit reached for which, so
+# it keeps every binding and every unit rather than only the callables. The unit-level
+# change diagram diffs these, where a partition's undirected relation has no arrow to draw.
 
 # A binding referenced by more than this fraction of a file's units is cross-cutting,
 # a file-local utility every concern reaches for, and links nothing: keeping its edges
@@ -72,6 +80,30 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
         length(unique(members)) > threshold && continue
         owner = containing_callable(index, ranges, defid[1], defid[2])
         push!(out, owner == 0 ? members : push!(copy(members), owner))
+    end
+    return out
+end
+
+# The within-file links a file's bindings imply, read as references: each key is a
+# `(referrer, definition)` pair of local unit indices and the weight how many times the
+# referrer named it. A reference outside any unit, a definition outside any unit, and a
+# unit naming its own definition all draw nothing. The directed reading beside
+# `binding_groups`' undirected one: an arrow here says which unit reached for which, which
+# is what a diff of the within-file view reports. Every unit is a node, not only the
+# callables, so a file-scope constant its functions read is the node they point at.
+#
+# No ubiquity cut. Dropping a name most of the file reaches for is right when the question
+# is which concern a unit belongs to and wrong when it is what an edit rewired, the same
+# split `file_graph.jl` draws over the cross-file references.
+function binding_reference_edges(index::QueryIndex)
+    ranges = unit_ranges(index)
+    out = Dict{Tuple{Int, Int}, Float64}()
+    for (refid, defid) in index.bindings
+        src = containing_unit(ranges, refid[1], refid[2])
+        src == 0 && continue
+        dst = containing_unit(ranges, defid[1], defid[2])
+        (dst == 0 || dst == src) && continue
+        out[(src, dst)] = get(out, (src, dst), 0.0) + 1.0
     end
     return out
 end

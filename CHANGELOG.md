@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported 2756 findings across 2756 units. Across eight corpora `cyclomatic` and
   `function_length` do not move at all and `cognitive_complexity` moves by four findings in
   450, while `boolean_complexity` falls 97.8%. The absolute bands are untouched.
+- `:scattered`'s band moves from `(4, 6)` to `(7, 10)`, the first measurement of it. Over
+  261 scored files across ten corpora the pooled median is 2 and the p90 is 6, so `high` at
+  6 put 11.5% of scored files, in five of the ten corpora, into the error floor every
+  dogfooding package gates on. At 10 it fires on 4 of Makie's 145 files and on nothing else
+  measured, and `warn` at 7 sits above the p90 of every corpus but one. A file below the
+  band still reports where it ranks in the top 5% of its own corpus, so a corpus whose
+  worst file scores 6 is not silent.
 
 ### Fixed
 
@@ -61,9 +68,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the queries. `patterns_dir` behaves the same way.
 - A `[bands]` override for a rule declared in the same file is no longer dropped depending
   on TOML dictionary iteration order. Top-level config keys apply in a fixed order.
-
-### Fixed
-
+- The unit-level change diagram draws references, so an arrow says which unit reached for
+  which. It drew the edges cohesion partitions on, which relate every unit sharing a
+  definition and carry no direction of their own, so the picture took one from whichever
+  unit the file's bindings happened to resolve to first. A commit here that changed a single
+  function reported 24 moved edges among functions that were byte-identical across it, some
+  of them the same pair with the arrow reversed; it now reports the two the edit moved. A
+  definition at file scope is a node of its own, so the functions reading a constant point
+  at it rather than at each other.
+- `:scattered` no longer moves on the order a file's bindings resolve in. The within-file
+  edges a file contributed joined one arbitrarily chosen unit to the rest and weighted each
+  by that unit's reference count, so the same code yielded different weights, a different
+  community partition and a different score depending on which unit came first. Every pair
+  of units sharing a file-local definition is now joined, weighted by how many definitions
+  the pair shares, which also stops calling one helper three times reading as three times
+  the coupling. `:low_cohesion` is unchanged, since the added edges sit inside a component
+  the old shape already connected.
 - A source file holding an embedded NUL byte is reported and skipped instead of taking the
   whole scan down. Tree-sitter takes the source as a C string, so a byte no C string can
   carry is a file the parser will never accept. A corpus holds one now and then, a fuzzer

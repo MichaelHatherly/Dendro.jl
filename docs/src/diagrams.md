@@ -67,7 +67,13 @@ answer rather than an empty file.
 A file edge is a reference that crossed a file boundary, so an edit that stays inside one
 file draws nothing at all. Splitting a 200-line function into five moves plenty of
 structure and moves no file edge. `granularity = :unit` reads the level below: each file's
-own binding edges, one subgraph per file, the same arrows.
+own references, one subgraph per file, the same arrows.
+
+An arrow runs from the unit that named a definition to the unit holding it, and its weight
+is how many times it named it, so a call added inside a file thickens one arrow and says
+which two units it joined. A definition at file scope that the file's functions read, a
+constant or a lookup table, is a node of its own rather than folded into whichever function
+sits beside it.
 
 ```julia
 mermaid("src"; graph = :change, base = "main", granularity = :unit)

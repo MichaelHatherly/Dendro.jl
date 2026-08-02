@@ -157,12 +157,25 @@ binding edges alongside the cross-file ones; reading the view that folds the wit
 in lets a cohesive file's units cluster together, and the score is how many different
 modules a file's units are pulled toward. A file whose units each belong with a different
 other file is flagged `:scattered`, the cross-file companion to within-file
-`:low_cohesion`. The fold-in is load-bearing: the cross-file edges alone leave a file's
-units unlinked to each other, so every layered file would look scattered. Keep the
-within-file edges in the graph, read them folded in for scattering and as components
+`:low_cohesion`. Without the fold-in the cross-file edges leave a file's units unlinked to
+each other, so every layered file would look scattered. A binding relates every unit that
+names it, so its edges are the clique over that group, one weight per shared definition
+and no direction. A star round one member takes both its arrows and its spoke weights from
+whichever unit the resolution happened to yield first, so the same code moves the
+partition, the plurality anchor and the score on nothing. Keep the within-file edges in
+the graph, read them folded in for scattering and as components
 within one file for cohesion, keep the score the count of communities a file's units
 occupy that are anchored elsewhere, and keep it name-based and lexical like the rest of
 placement.
+
+A diagram of that relation needs the direction the clique drops, so the unit-level change
+view reads the same bindings a second way: one edge per reference, from the unit that named
+a definition to the unit holding it, over every named unit rather than only the callables
+and with no cross-cutting cut. Two constructors over one set of primitives, the split the
+file graph already draws over the cross-file references and for the same reason, that one
+function serving both notions of an edge leaves every reader working out which one a call
+site meant. Keep the undirected reading for anything that partitions and the directed one
+for anything a reader takes as a claim about what an edit rewired.
 
 The file graph is that resolution read one level up. Placement asks where a unit belongs;
 the file graph asks which file depends on which. Nodes are corpus files, an edge counts the
