@@ -170,6 +170,44 @@ This is not a detail to settle during implementation. A comment has a size budge
 artifact does not, and that budget sets how hard the trimming in step 4 has to work. Pick
 the destination before step 4, and treat the trim as sized by it.
 
+## Open: the view inside one file
+
+The file graph sees nothing when a change stays inside one file, since an edge is a
+reference that crossed a file boundary. Splitting a 200-line function into five draws an
+empty diagram. That is right for the architecture question and wrong for a reviewer, who
+would still like to know the shape moved.
+
+The material is already built. The unit graph carries each file's within-file binding
+edges alongside the cross-file ones, which is what `:low_cohesion` reads as components
+within one file, so a per-file unit-level change view is a diff of a structure that
+exists. The identity objection that rules out unit granularity corpus-wide is weaker
+inside one file, and the clone passes hash every subtree, so a unit whose name changed and
+whose subtree hash did not is a rename and not a deletion plus an addition. Match on name
+first and hash second.
+
+The two granularities do not belong in one flowchart. A file edge means "references
+crossed" and a unit edge means "this function calls that one", so drawing both in one
+frame gives the same arrow two meanings.
+
+Presentation is the part that decides whether this is worth building. The failure mode is
+trust: a reviewer who expands fifteen diagrams and finds fourteen saying nothing stops
+expanding them, and the one that mattered goes unread. So the output is a sentence per
+file and the diagram is the evidence for it, drawn only when a structural predicate fires.
+A within-file component splitting in two, a cycle appearing among units in one file, a
+unit's fan-in falling to zero, one unit becoming the hub the rest of the file calls. Each
+is a claim a sentence can make with a picture as proof. A file that changed and trips none
+of them gets the line and no picture.
+
+The rest follows from that. Collapse each diagram behind a `<details>` whose summary is
+the sentence, cap how many are drawn and say how many were dropped, since a silent cap
+reads as "that was everything". Scope each to the changed units plus one hop through the
+same `focus` machinery, because forty units in one file is a hairball at any zoom. Keep
+the arrow vocabulary identical to the corpus view, so someone who learned to read one
+reads the other with no second legend.
+
+Not sequenced. It needs the delivery question above settled first, since a per-file
+diagram is what a comment's size budget runs out on.
+
 ## Sequencing
 
 1. Factor the base helper out of `gate.jl`.

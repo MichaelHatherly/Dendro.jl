@@ -219,6 +219,21 @@
 # The one opt report is `apply_pattern!`'s new `scope` branch, the same dispatch on an `Any`
 # TOML value the four branches beside it already carry. Narrowing it would mean narrowing
 # all five, so this is the shape rather than inference to recover.
+#
+# The `:change` diagram raised sound from 1710 to 1722. `with_base_corpus` carries most of
+# it: the ratchet's `git archive` block became a callback so the diagram could reuse it, and
+# a callback is analysed at `::F` with the git plumbing inside it as frames JET can see and
+# count. Two shapes were measured and kept, worth four reports each. `mktempdir` with a block
+# wraps the callback in a second closure that its own signature types as `Any`, so a `try`
+# does the cleanup one layer down instead. A keyword argument splits a method into a
+# `kwcall` wrapper and a body, and every report against the body is then raised twice, so
+# `keyword` is positional. Two were measured and reverted, costing four: annotating
+# `ref::AbstractString` forces a `string(since)` at the gate's call site, and typing the
+# `base` keyword as a `Union` adds a split, each a frame of its own. The remainder is the six
+# functions the view is built from, counted at their own signatures.
+#
+# The numbers here are what ubuntu CI reports. macOS runs one lower on the same code, so a
+# local check that lands one under the limit is at the limit, not below it.
 @testitem "JET" tags = [:jet] begin
     import JET
 
@@ -226,7 +241,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1710  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1722  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

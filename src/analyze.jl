@@ -34,13 +34,23 @@ end
 # The ref is checked first, since a broken ref is misconfiguration and must not degrade
 # into an empty base that reads as "everything is new". `keyword` names the caller's own
 # option in that error, so the message points at what the user typed.
-function with_base_corpus(f, roots::Vector{String}, ref, root::AbstractString; keyword::AbstractString = "base")
+#
+# `f` is annotated `::F` to force a specialisation per callback. Julia does not specialise
+# on a bare function argument, so without it every caller compiles to the same dynamic
+# call and static analysis cannot see through the block. `keyword` is positional for the
+# same reason: a keyword argument splits the method into a `kwcall` wrapper and a body,
+# and every report against the body is then raised twice.
+function with_base_corpus(f::F, roots::Vector{String}, ref, root::AbstractString, keyword::AbstractString = "base") where {F}
     refspec = string(ref, "^{commit}")
     verified = success(pipeline(`git -C $root rev-parse --verify --quiet $refspec`; stdout = devnull, stderr = devnull))
     verified || error("Dendro: `$keyword` ref not found: $ref")
 
     rels = [relpath(realpath(p), root) for p in roots]
-    return mktempdir() do tmp
+    # `mktempdir` with a block would wrap `f` in a second closure that its own signature
+    # types as `Any`, which costs every caller a call no static analysis can see through.
+    # The `try` does the same cleanup one layer down.
+    tmp = mktempdir()
+    try
         # git archive errors when no path matches at `ref`, which is the paths-are-new
         # case, not a failure.
         archive = pipeline(`git -C $root archive $ref -- $rels`; stderr = devnull)
@@ -50,6 +60,8 @@ function with_base_corpus(f, roots::Vector{String}, ref, root::AbstractString; k
         troot = realpath(tmp)
         tpaths = archived ? String[joinpath(troot, r) for r in rels if ispath(joinpath(troot, r))] : String[]
         return f(troot, tpaths)
+    finally
+        rm(tmp; recursive = true, force = true)
     end
 end
 

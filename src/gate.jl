@@ -24,7 +24,7 @@ fkey(f::Finding, root::AbstractString, rels::Dict{String, String})::FloorKey =
 # the count empty, so every HEAD finding reads as new.
 function base_floor_counts(roots::Vector{String}, since, root::AbstractString; config, rules, ignore, language)
     counts = Dict{FloorKey, Int}()
-    with_base_corpus(roots, since, root; keyword = "since") do troot, tpaths
+    with_base_corpus(roots, since, root, "since") do troot, tpaths
         isempty(tpaths) && return
         resolved = Dict{String, String}()
         for f in high_floor(active(analyze(tpaths; config, rules, ignore, language)))

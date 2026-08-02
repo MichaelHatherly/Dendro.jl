@@ -640,7 +640,7 @@ end
 # working tree. `parse_at` is the caller's own parse of a corpus, so the base revision is
 # read with the same language, rule, and ignore settings as head without this carrying a
 # copy of each of them.
-function mermaid_change(io::IO, files::Vector{ParsedFile}, roots::Vector{String}, base, parse_at)
+function mermaid_change(io::IO, files::Vector{ParsedFile}, roots::Vector{String}, base, parse_at::P) where {P}
     root = git_toplevel(roots)
     head = edges_by_path(file_corpus_graph(files), root)
     prior = with_base_corpus(roots, base, root) do troot, tpaths
