@@ -178,6 +178,33 @@ end
     @test haskey(graph.edges, (graph.unit_index[("main.rs", 1)], graph.unit_index[("foo.rs", 1)]))
 end
 
+@testitem "a reference edge points from the referrer to the definition" setup = [Fixtures] tags = [:corpus_graph] begin
+    index = Fixtures.idx(:julia, "helper() = 1\none() = helper()\ntwo() = helper()\n")
+    name(i) = Dendro.unit_name(Dendro.units(index)[i], index)
+    edges = Dict((name(a), name(b)) => w for ((a, b), w) in Dendro.binding_reference_edges(index))
+
+    # Both callers name `helper`, and neither names the other. A star over the three units
+    # would join `one` and `two` and pick a direction from whichever came first.
+    @test edges == Dict(("one", "helper") => 1.0, ("two", "helper") => 1.0)
+end
+
+@testitem "a file-scope definition is a reference edge target of its own" setup = [Fixtures] tags = [:corpus_graph] begin
+    index = Fixtures.idx(:julia, "const X = 1\none() = X\ntwo() = X\n")
+    name(i) = Dendro.unit_name(Dendro.units(index)[i], index)
+    edges = Dict((name(a), name(b)) => w for ((a, b), w) in Dendro.binding_reference_edges(index))
+
+    # `X` is a unit but not a callable, so the corpus graph's node set drops it. Here it is
+    # the node both readers point at, and reading a constant couples no reader to another.
+    @test edges == Dict(("one", "X") => 1.0, ("two", "X") => 1.0)
+end
+
+@testitem "a unit's references to itself draw no reference edge" setup = [Fixtures] tags = [:corpus_graph] begin
+    index = Fixtures.idx(:julia, "countdown(x) = x > 0 ? countdown(x - 1) : 0\n")
+    # Recursion couples a unit to nothing, the same rule `fan_out` applies to a unit's own
+    # name. A self edge would also become a self-loop once the edges reach the graph.
+    @test isempty(Dendro.binding_reference_edges(index))
+end
+
 @testitem "communities of one component ignore the rest of the graph" tags = [:corpus_graph] begin
     # A heavy cluster round node 1, a light one round node 8, and node 10 leaning 3 on the
     # heavy and 2 on the light. Which community node 10 joins turns on the modularity

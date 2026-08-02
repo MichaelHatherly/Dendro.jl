@@ -123,6 +123,46 @@ SUITE["stages"]["corpus_graph"] =
 SUITE["stages"]["cohesion"] =
     BenchmarkTools.@benchmarkable Dendro.cluster_low_cohesion($SYNTH_FILES, $SYNTH_GRAPH)
 
+# === Synthetic corpus for the within-file binding edges ===
+# The corpus above is one function per file, which carries no within-file binding edge at
+# all: a group of one member joins nothing, so it says nothing about what those edges cost.
+# This one is the shape they cost anything in. Each file holds two file-local helpers and
+# `BIND_UNITS` units that read both of them repeatedly, so every file contributes a dense
+# binding group, and each unit also reaches one definition in another file, so the units
+# have somewhere else to be pulled. Pinned like the rest.
+const BIND_N = 40
+const BIND_UNITS = 12
+
+function binding_file(i::Int)
+    io = IOBuffer()
+    println(io, "ha$(i)(x) = x + 1")
+    println(io, "hb$(i)(x) = x + 2")
+    for u in 1:BIND_UNITS
+        j = mod1(i + u, BIND_N)
+        println(io, "u$(i)_$(u)(x) = ha$(i)(x) + hb$(i)(x) + ha$(i)(x) + hb$(i)(x) + ha$(j)(x)")
+    end
+    return String(take!(io))
+end
+
+const BIND_DIR = let dir = mktempdir()
+    write(joinpath(dir, "mod.jl"), join("include(\"f$(i).jl\")\n" for i in 1:BIND_N))
+    for i in 1:BIND_N
+        write(joinpath(dir, "f$(i).jl"), binding_file(i))
+    end
+    dir
+end
+
+const BIND_FILES = Dendro.parse_corpus(Dendro.source_files(BIND_DIR))
+const BIND_TABLE = Dendro.corpus_symbols(BIND_FILES)
+const BIND_GRAPH = Dendro.build_corpus_graph(BIND_FILES, BIND_TABLE)
+
+# Building the graph covers what the binding edges cost to construct, and `:scattered`
+# what they cost to read: the Louvain pass runs over the view with them folded in.
+SUITE["stages"]["binding_graph"] =
+    BenchmarkTools.@benchmarkable Dendro.build_corpus_graph($BIND_FILES, $BIND_TABLE)
+SUITE["stages"]["scattered"] =
+    BenchmarkTools.@benchmarkable Dendro.cluster_scattered($BIND_FILES, $BIND_GRAPH)
+
 # === Pattern rules ===
 #
 # ADR-0001 asks for numbers before merge. The concern is `each_capture`, which

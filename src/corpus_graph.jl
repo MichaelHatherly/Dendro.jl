@@ -85,9 +85,10 @@ large file does not dominate by holding more overloads. Visibility comes from
 [`visible_defs`](@ref): a reference reaches only the names its file's linkage exposes.
 References to a cross-cutting definition, one reached by more than `CORPUS_UBIQUITY` of
 the units that can see it, are dropped so a shared helper does not pull a unit toward
-its file. The within edges star-link each [`binding_groups`](@ref) group to its first
-member, dropping a binding referenced by more than `within_ubiquity` of a file's units;
-a language with no scopes query carries none.
+its file. The within edges join every pair of units in a [`binding_groups`](@ref) group,
+weighting each pair by how many file-local definitions both reference, and dropping a
+binding referenced by more than `within_ubiquity` of a file's units; a language with no
+scopes query carries none.
 
 Pass a prebuilt `linkage` from [`resolve_linkage`](@ref) to share one resolution with
 another pass over the corpus, rather than resolving it twice.
@@ -148,19 +149,32 @@ function build_corpus_graph(
 end
 
 # The within-file binding edges across the corpus: each file's [`binding_groups`](@ref)
-# star-linked to its first member, local unit indices mapped to graph nodes. A language
-# with no scopes query carries none.
+# joined as a clique, local unit indices mapped to graph nodes, so an edge's weight is the
+# number of file-local definitions both its units reference. A language with no scopes
+# query carries none. The directed sibling reading of the same bindings is
+# `binding_reference_edges`, which the unit change diagram draws.
+#
+# A clique rather than a star round one member. A star has to pick a hub, and the weight it
+# gives each spoke is that spoke's reference count under that hub, so the same code yields
+# different weights depending on which unit was picked. Joining every pair is symmetric, and
+# counting each group once drops reference multiplicity: naming one helper three times is
+# not three times the coupling. Keys are `(lower, higher)`, so a pair is one entry.
 function within_binding_edges(files::Vector{ParsedFile}, unit_index::Dict{Tuple{String, Int}, Int}, ubiquity::Float64)
     within = Dict{Tuple{Int, Int}, Float64}()
+    nodes = Int[]
     for f in files
         scopes_query_for(f) === nothing && continue
         for members in binding_groups(f.index, ubiquity)
-            base = get(unit_index, (f.file, members[1]), 0)
-            base == 0 && continue
+            empty!(nodes)
             for m in members
                 node = get(unit_index, (f.file, m), 0)
-                (node == 0 || node == base) && continue
-                within[(base, node)] = get(within, (base, node), 0.0) + 1.0
+                node == 0 || push!(nodes, node)
+            end
+            sort!(nodes)
+            unique!(nodes)
+            for i in eachindex(nodes), j in (i + 1):lastindex(nodes)
+                key = (nodes[i], nodes[j])
+                within[key] = get(within, key, 0.0) + 1.0
             end
         end
     end
@@ -171,7 +185,7 @@ end
 # edge and its reverse fold into one neighbour weight. With `within = true` the
 # within-file binding edges fold in too, the view `:scattered` and `:low_cohesion` read.
 # Self-loops cannot arise: a cross-file edge always joins units in different files, and a
-# within edge skips `base != node` at build time.
+# within edge joins two distinct members of one group.
 function adjacency(graph::CorpusGraph; within::Bool = false)
     n = length(graph.units)
     adj = [Dict{Int, Float64}() for _ in 1:n]

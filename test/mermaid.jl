@@ -285,6 +285,29 @@ end
     @test !occursin("b.jl", out)
 end
 
+@testitem "unit change view draws only the pair the edit touched" setup = [Fixtures] tags = [:mermaid] begin
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "mod.jl"), "include(\"a.jl\")\n")
+    body(three) = string(
+        "export run\nhelper() = 2\none() = helper()\ntwo() = helper()\n",
+        three, "run() = one() + two() + three()\n"
+    )
+    write(joinpath(src, "a.jl"), body("three() = helper()\n"))
+    Fixtures.commit!(root, "base")
+    # `three` calls `helper` a second time and nothing else moves. Every other unit is
+    # byte-identical across the two revisions, so the diagram has one edge to report.
+    write(joinpath(src, "a.jl"), body("three() = helper() + helper()\n"))
+
+    io = IOBuffer()
+    Dendro.mermaid(io, src; graph = :change, base = "HEAD", granularity = :unit)
+    out = String(take!(io))
+    arrows = filter(l -> occursin("==>", l) || occursin("-.->", l), split(out, "\n"))
+    @test length(arrows) == 1
+    @test occursin("|+1|", only(arrows))
+    @test occursin("three", only(arrows))
+    @test occursin("helper", only(arrows))
+end
+
 @testitem "mermaid public entrypoint runs end to end on a folder" setup = [Fixtures] tags = [:mermaid] begin
     mktempdir() do dir
         write(joinpath(dir, "mod.jl"), "include(\"a.jl\")\ninclude(\"b.jl\")\n")

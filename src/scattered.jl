@@ -11,11 +11,22 @@
 
 # Absolute band on the count of distinct communities a file's units occupy that are
 # anchored in another file. Zero is a file whose units stay home; the band marks where
-# enough of them are pulled toward different modules to read regardless of the corpus. No
-# external standard sets it, so it sits above an idiomatic corpus's spread, our own
-# included, like the cohesion and placement bands. The percentile carries the
-# corpus-relative signal.
-const SCATTERED_BAND = (4, 6)
+# enough of them are pulled toward different modules to read regardless of the corpus.
+#
+# Measured over 261 scored files across Dendro, DataFrames.jl, HTTP.jl, Makie, flask,
+# requests, fastmcp, markitdown, ripgrep and Guava, the ten corpora `:hub` and
+# `:split_audience` cite. Most of the spread is low: the pooled median is 2, the p90 is 6,
+# and only Makie carries a file past 9. No external standard sets the level, so `warn` at 7
+# sits above the p90 of every corpus measured but requests, firing on 6.5% of scored files
+# in three of the ten. `high` at 10 enters the error floor every dogfooding package gates
+# on, so it marks a file whose units have separated beyond argument: it fires on 4 of
+# Makie's 145 files and on nothing else measured. The band this replaces, (4, 6), was
+# asserted rather than measured, and put 11.5% of scored files in five of the ten corpora
+# into that floor, which is a gate a layered corpus cannot satisfy and a level an ordinary
+# one reaches without being wrong. Below the band the percentile carries the
+# corpus-relative signal, which is what still reports the most scattered file in a corpus
+# whose worst is a 6.
+const SCATTERED_BAND = (7, 10)
 
 # A file with fewer units than this is too small to read as scattered.
 const MIN_SCATTERED_UNITS = 2

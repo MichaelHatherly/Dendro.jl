@@ -270,12 +270,16 @@ Measurement:
   `where`/typed unwrapping) are recognised by the language query, so a nested
   short-form def is its own unit and is excluded from its enclosing unit's metrics,
   clones, and tokens.
-- `graph_edges.jl` defines what a within-file binding edge is, the relation cohesion and
-  scattering share. `containing_unit` finds the innermost unit spanning a byte range;
-  `binding_groups` reads `index.bindings` into the groups of local units that share a
-  definition, dropping a binding referenced by more than `COHESION_UBIQUITY` of the
-  file's units. The corpus graph folds these into `within_edges`. Callee attribution
-  lives here beside the coupling substrate it complements: `callees_by_unit` reads
+- `graph_edges.jl` defines the two within-file edges a file's bindings imply.
+  `containing_unit` finds the innermost unit spanning a byte range. The undirected one is
+  `binding_groups`, which reads `index.bindings` into the groups of local units that share
+  a definition, dropping a binding referenced by more than `COHESION_UBIQUITY` of the
+  file's units; the corpus graph joins each group as a clique into `within_edges`, and
+  cohesion and scattering read those. The directed one is `binding_reference_edges`, one
+  edge per reference from the unit that named it to the unit holding the definition,
+  keeping every binding and every named unit rather than only the callables; the unit-level
+  change diagram diffs those, where an undirected relation has no arrow to draw. Callee
+  attribution lives here beside the coupling substrate it complements: `callees_by_unit` reads
   each unit's distinct `@callee` names in one pass (a call belongs to its innermost
   unit, a unit's own name never counts), the `fan_out` scalar is one entry's length,
   and the reimplementation fingerprints read them all. Included after `units.jl` (it
@@ -460,8 +464,11 @@ Reporting:
   more than `CORPUS_UBIQUITY` of the units that can see it (`ubiquity_threshold` over
   `definition_reach`) is dropped as cross-cutting. It also folds each
   file's within-file binding edges (`within_binding_edges` over `binding_groups`) into
-  `within_edges`. `adjacency(graph; within)` builds the undirected neighbour-weight view,
-  cross-file alone or with the within edges folded in; `communities` runs one level of
+  `within_edges`, joining every pair of units in a group so an edge's weight is the number
+  of file-local definitions both reference: symmetric by construction, where a star round
+  one member takes both its direction and its weights from whichever member came first.
+  `adjacency(graph; within)` builds the undirected neighbour-weight view, cross-file alone
+  or with the within edges folded in; `communities` runs one level of
   modularity optimisation (`local_moving!`, Louvain) for the neighbourhoods, once per
   connected component against that component's own degree sum, and
   `components` flood-fills the within view restricted to one file's nodes for cohesion.
@@ -647,9 +654,12 @@ Reporting:
   keeps the edges whose weight moved as `EdgeDelta`s, and `change_file` draws them with
   the state in the arrow (`==>` grown, `-.->` weakened). At `:unit` granularity it reads
   the level below, where a file edge cannot reach: `mermaid_change_unit` diffs each file's
-  `within_edges` keyed by `(file, unit name)` rather than by node index, `unit_renames`
-  pairs a vanished name with an appeared one sharing a `clone_features` digest so a rename
-  is one node, and `change_unit` boxes each file by subgraph, heaviest mover first.
+  reference edges, `reference_edges_by_key` keying `binding_reference_edges` by
+  `(file, unit name)` rather than by local index and dropping an unnamed unit, `unit_digests`
+  supplying the same key's `clone_features` digests, `unit_renames` pairing a vanished name
+  with an appeared one sharing a digest so a rename is one node, and `change_unit` boxing
+  each file by subgraph, heaviest mover first. It needs neither the symbol table nor the
+  corpus graph, since nothing it draws crosses a file boundary.
   Included after `corpus.jl`, whose `collect_corpus` and `parse_corpus` it reuses.
 - `main.jl` defines the CLI `main` behind `julia -m Dendro` and the `dendro` app:
   `parse_args` into `CLIOptions`, `run_cli` (discover config, `analyze`, emit, exit
@@ -1034,8 +1044,9 @@ The unit graph is the corpus graph's within view. `binding_groups` (`graph_edges
 reads `index.bindings`: two units link when they reference a common file-local binding,
 and a binding referenced by more than `COHESION_UBIQUITY` of the units is cross-cutting (a
 file-wide utility) and links nothing, so it cannot fold genuine concerns into one
-component. `build_corpus_graph` folds these into `within_edges`, and
-`cluster_low_cohesion` runs `components` over `adjacency(graph; within = true)` restricted
+component. `build_corpus_graph` joins each group as a clique into `within_edges`, weighting
+a pair by how many file-local definitions both reference, and `cluster_low_cohesion` runs
+`components` over `adjacency(graph; within = true)` restricted
 to one file's nodes: cross-file edges never join those nodes, so the components are the
 file's independent concerns. The component count is the score: one component is a cohesive
 file, several are independent concerns cohabiting, the LCOM4 reading. The finding's

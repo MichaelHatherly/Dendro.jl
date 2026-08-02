@@ -182,11 +182,17 @@ definitions and public roots classed.
 
 `:change` answers a reviewer's first question on a large diff, whether an edit stayed in
 one place or rewired the corpus. Only the edges whose weight moved are drawn, with the
-state in the arrow: `==>` for an edge added or grown, labelled with the definition names
-it gained, and `-.->` for one weakened or gone. It needs `base`, and it is file-level
-only, since a unit has no identity that survives a rename across revisions. A change that
-rewired nothing draws a header and no edges. Unlike the other diagrams it reads git, so
-`paths` must sit inside a repository and `base` must name a commit.
+state in the arrow: `==>` for an edge added or grown and `-.->` for one weakened or gone.
+At `:file` an edge is the references crossing from one file to another, and the arrow is
+labelled with the definition names it gained. At `:unit` it is one file's own references,
+drawn from the unit that named a definition to the unit holding it, so an edit that never
+left a file still shows; the node it points at already carries the definition's name, so
+the arrow carries only the weight. A unit is matched across the revisions by name, and by
+body digest where the
+name moved, so a rename reads as one node with a history rather than a deletion and an
+addition. It needs `base`, and a change that rewired nothing draws a header and no edges.
+Unlike the other diagrams it reads git, so `paths` must sit inside a repository and `base`
+must name a commit.
 
 `focus` trims the diagram to what the findings touch. `:findings` keeps only flagged nodes
 and the `context` hops of graph neighbours around them, drawn greyed, so a unit-level graph
@@ -671,12 +677,13 @@ const UnitKey = Tuple{String, String}
 """
     UnitDelta
 
-One within-file binding edge's movement between two revisions.
+One within-file reference edge's movement between two revisions.
 
-`from` and `to` are unit names inside `file`, and `base`/`head` the edge's weight at each
-revision, either zero where the edge did not exist. This is the companion to
-[`EdgeDelta`](@ref) at the granularity below it: the file graph goes quiet when an edit
-stays inside one file, and these are the edges it cannot see.
+`from` is the unit that named a definition and `to` the unit holding it, both inside
+`file`, and `base`/`head` how many times it was named at each revision, either zero where
+the edge did not exist. This is the companion to [`EdgeDelta`](@ref) at the granularity
+below it: the file graph goes quiet when an edit stays inside one file, and these are the
+edges it cannot see.
 """
 struct UnitDelta
     file::String
@@ -686,37 +693,41 @@ struct UnitDelta
     head::Float64
 end
 
-# Each corpus unit's key, and each key's set of exact subtree digests. The digests are what
-# lets a rename read as a rename: a name that vanished and a name that appeared with the
-# same body are one unit, not a deletion and an addition.
-function unit_keys_and_digests(files::Vector{ParsedFile}, graph::CorpusGraph, root::AbstractString)
-    keys = Dict{Int, UnitKey}()
+# Each unit key's set of exact subtree digests. The digests are what lets a rename read as
+# a rename: a name that vanished and a name that appeared with the same body are one unit,
+# not a deletion and an addition. An unnamed unit carries no identity across revisions, so
+# it is no node here, the same cut `reference_edges_by_key` makes on its endpoints.
+function unit_digests(files::Vector{ParsedFile}, root::AbstractString)
     digests = Dict{UnitKey, Set{UInt64}}()
     rels = Dict{String, String}()
     for f in files
         rel = relative_to(rels, f.file, root)
-        for (u, fu) in enumerate(f.index.units)
-            node = get(graph.unit_index, (f.file, u), 0)
-            node == 0 && continue
-            key = (rel, unit_name(fu, f.index))
-            keys[node] = key
+        for fu in units(f.index)
+            name = unit_name(fu, f.index)
+            isempty(name) && continue
             _, _, digest, _ = clone_features(fu, f.index)
-            push!(get!(() -> Set{UInt64}(), digests, key), digest)
+            push!(get!(() -> Set{UInt64}(), digests, (rel, name)), digest)
         end
     end
-    return keys, digests
+    return digests
 end
 
-# The within-file binding edges keyed by unit rather than by node index, overloads summed
-# into their shared name. An edge whose endpoints sit in different files is not a within
-# edge and cannot appear here.
-function within_by_key(graph::CorpusGraph, keys::Dict{Int, UnitKey})
+# Each file's within-file reference edges keyed by unit rather than by local index,
+# overloads summed into their shared name. An unnamed unit is not a node, and an edge whose
+# endpoints share a name is dropped, since overloads merge into one node and the edge would
+# be a self-loop.
+function reference_edges_by_key(files::Vector{ParsedFile}, root::AbstractString)
     out = Dict{Tuple{UnitKey, UnitKey}, Float64}()
-    for ((a, b), w) in graph.within_edges
-        (haskey(keys, a) && haskey(keys, b)) || continue
-        ka, kb = keys[a], keys[b]
-        ka == kb && continue
-        out[(ka, kb)] = get(out, (ka, kb), 0.0) + w
+    rels = Dict{String, String}()
+    for f in files
+        rel = relative_to(rels, f.file, root)
+        names = String[unit_name(u, f.index) for u in units(f.index)]
+        for ((a, b), w) in binding_reference_edges(f.index)
+            (isempty(names[a]) || isempty(names[b])) && continue
+            ka, kb = (rel, names[a]), (rel, names[b])
+            ka == kb && continue
+            out[(ka, kb)] = get(out, (ka, kb), 0.0) + w
+        end
     end
     return out
 end
@@ -823,19 +834,17 @@ function change_unit(io::IO, deltas::Vector{UnitDelta}, was::Dict{UnitKey, Strin
 end
 
 # The within-file change view over `roots`. Same two revisions as the file-level pass, read
-# one granularity down: each file's own binding edges, matched across the revisions by unit
-# name and then by body digest.
+# one granularity down: each file's own reference edges, matched across the revisions by
+# unit name and then by body digest. Nothing here crosses a file boundary, so it needs
+# neither the symbol table nor the corpus graph built over it.
 function mermaid_change_unit(io::IO, files::Vector{ParsedFile}, roots::Vector{String}, base, parse_at::P) where {P}
     root = git_toplevel(roots)
-    hgraph = build_corpus_graph(files, corpus_symbols(files))
-    hkeys, hdig = unit_keys_and_digests(files, hgraph, root)
-    hedges = within_by_key(hgraph, hkeys)
+    hedges = reference_edges_by_key(files, root)
+    hdig = unit_digests(files, root)
     bedges, bdig = with_base_corpus(roots, base, root) do troot, tpaths
         isempty(tpaths) && return (Dict{Tuple{UnitKey, UnitKey}, Float64}(), Dict{UnitKey, Set{UInt64}}())
         bfiles = parse_at(tpaths)
-        bgraph = build_corpus_graph(bfiles, corpus_symbols(bfiles))
-        bkeys, dig = unit_keys_and_digests(bfiles, bgraph, troot)
-        return (within_by_key(bgraph, bkeys), dig)
+        return (reference_edges_by_key(bfiles, troot), unit_digests(bfiles, troot))
     end
     renames = unit_renames(bdig, hdig)
     was = Dict{UnitKey, String}(v => k[2] for (k, v) in renames)
