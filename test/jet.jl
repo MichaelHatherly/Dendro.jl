@@ -251,6 +251,15 @@
 # dynamically and the helper is counted at its own signature too. `String[config.ignore;
 # ignore]` at the call site is four cheaper and says the same thing.
 #
+# Reading repositories through libgit2 raised sound from 1763 to 1774. The eleven are the
+# `ccall` layer and the tree walk: `git_patch_get_line_in_hunk` hands back a `Ptr{DiffLine}`
+# that `unsafe_load` reads, and `git_patch_from_diff` a `Ptr{Cvoid}` the free path takes, so
+# the pointer handling the subprocess hid behind `read(::Cmd, String)` is now frames JET can
+# see and count. The `treewalk` callback carries the rest: it is analysed at `::F` with the
+# blob write inside it, the same shape `with_base_corpus` was already charged for above.
+# Unlike the entries above this one, no narrowing was attempted or measured; the raise was
+# taken directly.
+#
 # The numbers here are what ubuntu CI reports. macOS runs one lower on the same code, so a
 # local check that lands one under the limit is at the limit, not below it.
 @testitem "JET" tags = [:jet] begin
@@ -260,7 +269,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1763  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1774  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

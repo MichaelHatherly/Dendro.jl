@@ -247,7 +247,7 @@ end
 # The target is named relative to the source file's own directory, the way the import being
 # removed already reads, and never as an absolute path. `fkey` (`gate.jl`) keys a finding on
 # each location's `unit` verbatim while it makes the `file` repo-relative, and the ratchet
-# scores the base revision in a `git archive` tempdir. An absolute target would differ
+# scores the base revision in a tempdir holding that revision's tree. An absolute target would differ
 # between the two roots, so every cut finding would miss its base key and re-report as new
 # on each run.
 function cut_location(fg::FileGraph, sub::CycleSub, arc::Tuple{Int, Int})

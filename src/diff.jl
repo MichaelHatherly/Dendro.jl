@@ -1,5 +1,6 @@
 # Diff-scoping. Score only the functions a change touched, the "did this edit
-# make things worse" question, rather than the whole file.
+# make things worse" question, rather than the whole file. The line numbers a scope is
+# built from come from `git.jl`; this is the vocabulary they are expressed in.
 
 intersects(ranges::Vector{UnitRange{Int}}, a::Int, b::Int) =
     any(r -> a <= last(r) && b >= first(r), ranges)
@@ -22,56 +23,4 @@ function coalesce_lines(lines::Vector{Int})
     end
     push!(ranges, start:prev)
     return ranges
-end
-
-# Effect of one diff body line, read from its prefix char: whether it is an added
-# line, and the step to the new-side cursor and the remaining old/new hunk counts. A
-# `\` line ("\ No newline at end of file") is not content and moves nothing.
-function body_line_effect(c::Char)
-    c == '+' && return (added = true, cur = 1, old = 0, new = -1)
-    c == '-' && return (added = false, cur = 0, old = -1, new = 0)
-    c == '\\' && return (added = false, cur = 0, old = 0, new = 0)
-    return (added = false, cur = 1, old = -1, new = -1)
-end
-
-"""
-    changed_ranges(diff) -> Dict{String,Vector{UnitRange{Int}}}
-
-Parse a unified diff into the new-file line ranges that each file added or
-changed, keyed by the new path.
-"""
-function changed_ranges(diff::AbstractString)
-    added = Dict{String, Vector{Int}}()
-    file = ""
-    curnew = 0
-    oldleft = 0
-    newleft = 0
-    for ln in eachline(IOBuffer(diff))
-        # A body line always carries a `+`/`-`/space prefix, so a line starting
-        # with `@@` is a hunk header wherever it appears. The header's line
-        # counts, not a line's text, then decide where the body ends, so body
-        # content that resembles a `+++` header is read by its column alone.
-        if startswith(ln, "@@")
-            m = match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", ln)
-            # A combined diff (`@@@`, from a merge conflict) is not the two-side
-            # format this reads. Skip its header rather than deref a failed match.
-            m === nothing && continue
-            oldcount, newstart, newcount = m.captures[1], m.captures[2], m.captures[3]
-            curnew = parse(Int, something(newstart))
-            oldleft = oldcount === nothing ? 1 : parse(Int, oldcount)
-            newleft = newcount === nothing ? 1 : parse(Int, newcount)
-        elseif oldleft > 0 || newleft > 0
-            e = body_line_effect(isempty(ln) ? ' ' : ln[1])
-            e.added && push!(get!(() -> Int[], added, file), curnew)
-            curnew += e.cur
-            oldleft += e.old
-            newleft += e.new
-        elseif startswith(ln, "+++ ")
-            # Git terminates a path that contains a space with a tab; keep only the
-            # path itself so the key matches the file's relative path.
-            path = first(split(ln[5:end], '\t'))
-            file = String(startswith(path, "b/") ? path[3:end] : path)
-        end
-    end
-    return Dict(f => coalesce_lines(ls) for (f, ls) in added)
 end

@@ -1,5 +1,7 @@
 module Dendro
 
+import LibGit2
+import LibGit2_jll
 import NearestNeighbors
 import RelocatableFolders
 import Scratch
@@ -30,6 +32,7 @@ include("baseline.jl")
 include("report.jl")
 include("scoring.jl")
 include("diff.jl")
+include("git.jl")
 include("naturalness.jl")
 include("linkage.jl")
 include("resolution.jl")
