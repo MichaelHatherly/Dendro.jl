@@ -11,6 +11,7 @@ makedocs(;
         "Metric reference" => "metric-reference.md",
         "Duplicate detection" => "duplicates.md",
         "Duplication against a library" => "libraries.md",
+        "Comparing against a library" => "libraries-howto.md",
         "Cohesion and placement" => "cohesion.md",
         "Diagrams" => "diagrams.md",
         "Gating CI" => "gating.md",

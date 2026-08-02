@@ -84,6 +84,7 @@ the ratchet against a base ref, and the pull-request annotations.
 - [Metric reference](@ref) tabulates every metric name, its default band, and whether it runs by default.
 - [Duplicate detection](@ref) covers exact clones and near-misses across the corpus.
 - [Duplication against a library](@ref) asks whether a dependency already does it.
+- [Comparing against a library](@ref) sets one up, in a config file or in CI.
 - [Cohesion and placement](@ref) covers cohesion, placement, scattering, and back edges.
 - [Diagrams](@ref) renders those graphs as mermaid flowcharts.
 - [Gating CI](@ref) is the error floor, the ratchet, and the GitHub Actions setup.

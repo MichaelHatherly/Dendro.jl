@@ -75,7 +75,7 @@ where that feature is:
 
 | Table | Declares | Read |
 | --- | --- | --- |
-| `[libraries.<name>]` | a reference corpus, by `path` or `paths` | [Duplication against a library](@ref) |
+| `[libraries.<name>]` | a reference corpus, by `path` or `paths` | [Comparing against a library](@ref) |
 | `[reimplementation]` | the vocabulary-overlap cutoff | [Duplicate detection](@ref) |
 | `[languages.<name>]` | a language to register, or a shipped query to replace | [Languages and limitations](@ref) |
 | `[patterns.<name>]` | a project's own rule, realised by a query under `patterns_dir` | [Pattern rules](patterns.md) |
