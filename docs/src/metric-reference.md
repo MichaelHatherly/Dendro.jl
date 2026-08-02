@@ -32,8 +32,7 @@ Scored against the band and the corpus percentile, and flagged when either fires
 | `fan_out` | 12, 20 | opt-in | distinct callables invoked |
 
 [^1]: Measures a definition only. Top-level code has no signature and no author-drawn
-    boundary, so these say nothing there rather than reading a number against a band
-    calibrated on definitions.
+    boundary, so these stay quiet there.
 
 ## Per-function flags
 
@@ -56,8 +55,7 @@ Presence is the finding. Every one reports `:high`, so every one reaches the gat
 
 ## Computed across the corpus
 
-Each of these reads the corpus rather than one unit. The band column is empty where the
-metric is a flag and always reports `:high`.
+The band column is empty where the metric is a flag and always reports `:high`.
 
 | metric | band | default | value is | explained in |
 | --- | --- | --- | --- | --- |
@@ -100,5 +98,5 @@ retunes exactly as a built-in does. See [Pattern rules](@ref) and
 [Custom rules](@ref).
 
 A name Dendro does not know warns wherever it appears, in a `dendro-ignore` directive or
-in a `[bands]` or `[rules]` table, so a typo is visible rather than silently disabling a
+in a `[bands]` or `[rules]` table, so a typo is visible instead of silently disabling a
 check.

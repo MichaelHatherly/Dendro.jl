@@ -48,8 +48,9 @@ src/clones.jl:190  cluster_duplicates  function_length 41 (ok; p99)
 ```
 
 Forty-one lines is unremarkable against a fixed target of fifty. It is also longer than
-99% of the functions around it. Neither reading is wrong, and only the second one tells
-you this function is unusual *here*. [Scoring and metrics](@ref) is why both are kept.
+99% of the functions around it. Neither reading is wrong. Only the second one says this
+function is unusual for the code around it. [Scoring and metrics](@ref) is why both are
+kept.
 
 ## Read the top, not the whole thing
 
@@ -73,8 +74,8 @@ in it depends on the corpus, so it does not move when you scan a different set o
 
 ## Accept one finding
 
-Some flagged code is fine, and the answer is to say so in the code rather than to lower a
-threshold for everyone:
+Some flagged code is fine. Say so in the code, and the threshold stays where it is for
+everything else:
 
 ```julia
 # dendro-ignore: parameter_count
@@ -89,9 +90,9 @@ Scan again and the report ends with a line like this one:
 ```
 
 Suppressed, not dropped. The count stays visible, so muting something is a decision
-someone can see and revisit. A misspelt metric name warns rather than silently doing
-nothing. [Suppressing findings](@ref) covers the rest, including whole-file and
-by-path exclusion.
+someone can see and revisit. A misspelt metric name warns instead of quietly doing
+nothing. [Suppressing findings](@ref) covers the rest, including whole-file and by-path
+exclusion.
 
 ## Ask about a change instead of a codebase
 
