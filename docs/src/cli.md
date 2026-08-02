@@ -21,6 +21,12 @@ view. `--check` instead gates on the `:high` floor, the error-severity findings,
 clean codebase exits 0 and a regression exits 1. That is the [Gating CI](@ref) floor read
 from a shell.
 
+The floor, not the ratchet. `--check` reports every error-severity finding in the tree,
+so a codebase that is not yet clean fails from the first run. The ratchet, that floor
+minus what a base ref already reported, is the `since` keyword on [`errors`](@ref) and
+has no flag; a gate that only asks what a change introduced runs from Julia. `--base` is
+a different question, scoping the report to the lines a change touched.
+
 ## Flags
 
 ```
@@ -31,16 +37,16 @@ from a shell.
 --library=<path>      index <path> as a library to report duplication against
 --library=<name>=<path>
 --format=<fmt>        output format: text (default) or github
---check               exit 1 when any finding is reported
+--check               exit 1 on any error-severity finding
 --check-patterns      check pattern rules against their fixtures and exit
 --version             print version and exit
 --help, -h            print this message and exit
 ```
 
 `--library` is repeatable and merges with whatever the config declares; see
-[Duplication against a library](@ref) for the recipe that generates one flag per
+[Comparing against a library](@ref) for the recipe that generates one flag per
 dependency. `--check-patterns` runs the fixture check described in
-[Pattern rules](patterns.md).
+[Pattern rules](@ref).
 
 A bad flag, a missing value, or a `--library` path that does not exist is a usage error
 rather than a silent clean run.

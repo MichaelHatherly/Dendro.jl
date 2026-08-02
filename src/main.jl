@@ -180,7 +180,7 @@ function print_help()
           --library=<name>=<path>
                            ... under the display name <name>
           --format=<fmt>   output format: text (default) or github
-          --check          exit 1 when any finding is reported
+          --check          exit 1 on any error-severity finding
           --check-patterns check pattern rules against their fixtures and exit
           --version        print version and exit
           --help, -h       print this message and exit

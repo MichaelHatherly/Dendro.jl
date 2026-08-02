@@ -38,7 +38,9 @@ lists the active findings and a footer counting the suppressed ones, and
 `dendro-ignore-file` mutes one file from inside it. Vendored and generated trees
 you do not own want the opposite: exclusion from the outside, by path, without
 touching the source. The `ignore` keyword takes gitignore-style patterns, matched
-against each path relative to the scanned folder.
+against each path relative to the scanned folder. It is a keyword on [`analyze`](@ref)
+and [`errors`](@ref) only: there is no `.dendro.toml` key and no command-line flag for
+it, so a scan that has to exclude a path runs from Julia.
 
 ```julia
 analyze("."; ignore = ["vendor/", "deps/**", "*.generated.jl"])
