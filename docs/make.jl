@@ -8,6 +8,7 @@ makedocs(;
     pages = [
         "Home" => "index.md",
         "Scoring and metrics" => "metrics.md",
+        "Metric reference" => "metric-reference.md",
         "Duplicate detection" => "duplicates.md",
         "Duplication against a library" => "libraries.md",
         "Cohesion and placement" => "cohesion.md",

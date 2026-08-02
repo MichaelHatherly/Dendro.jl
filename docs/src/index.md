@@ -81,6 +81,7 @@ the ratchet against a base ref, and the pull-request annotations.
 ## Where to read next
 
 - [Scoring and metrics](@ref) explains the two-score model and what each metric measures.
+- [Metric reference](@ref) tabulates every metric name, its default band, and whether it runs by default.
 - [Duplicate detection](@ref) covers exact clones and near-misses across the corpus.
 - [Duplication against a library](@ref) asks whether a dependency already does it.
 - [Cohesion and placement](@ref) covers cohesion, placement, scattering, and back edges.

@@ -19,6 +19,9 @@ calls a uniformly-weak codebase fine. Reporting both avoids each trap.
 
 ## Metrics
 
+[Metric reference](@ref) tabulates every name below with its default band and whether it
+runs by default. This section says what they measure.
+
 Scalar (per function): cyclomatic complexity, cognitive complexity (the same branch
 points weighted by the nesting they sit under, so a deeply-nested function scores
 worse than a flat one of the same path count), length, maximum nesting depth,
@@ -32,8 +35,9 @@ operands (`x == x`, `a && a`), a conditional whose branches are all identical
 (`if c then X else X`), unused parameters, unused locals, and broad catches (a bare
 `except:`, `except BaseException`, Java `catch (Throwable)`, C++ `catch (...)`,
 Ruby `rescue Exception`, PHP `catch (Throwable)`, the handlers that swallow
-interrupts and exits; the merely-wide `except Exception` tier is left alone). An
-optional rule flags code after an unconditional `return`, `break`, or `throw`.
+interrupts and exits; the merely-wide `except Exception` tier is left alone). The
+optional `unreachable_after_jump` flags code after an unconditional `return`, `break`,
+or `throw`.
 
 Unused parameters and locals read the lexical bindings: a parameter or local
 binding whose name nothing in its function references is dead weight. The use-test

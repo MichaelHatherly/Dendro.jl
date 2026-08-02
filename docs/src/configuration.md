@@ -46,10 +46,9 @@ npath = true               # enable an optional rule
 parameter_count = false    # disable a built-in rule
 ```
 
-`[bands]` keys are the scalar metric names plus the relational names (`unnatural`,
-`low_cohesion`, `scattered`, `split_audience`, `misplaced`, `back_edge`,
-`dependency_cycle`, `hub`, `incoherent_package`, `divisible_package`), each taking a
-`[warn, high]` pair. [Scoring and metrics](@ref) says what they measure.
+`[bands]` keys are the scalar metric names plus the relational metrics that carry a
+band, each taking a `[warn, high]` pair. [Metric reference](@ref) lists which names those
+are and what each defaults to.
 
 `[rules]` keys are any rule name, on or off. The opt-in passes are switched on here too:
 `reimplementation`, `incoherent_package`, `divisible_package`, `library_duplicate` and
