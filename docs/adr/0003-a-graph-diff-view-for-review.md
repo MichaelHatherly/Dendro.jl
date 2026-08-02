@@ -205,8 +205,12 @@ same `focus` machinery, because forty units in one file is a hairball at any zoo
 the arrow vocabulary identical to the corpus view, so someone who learned to read one
 reads the other with no second legend.
 
-Not sequenced. It needs the delivery question above settled first, since a per-file
-diagram is what a comment's size budget runs out on.
+The diff itself is built and the presentation is not. `granularity = :unit` draws every
+file whose within-file edges moved, ordered heaviest mover first, with renames matched by
+digest. The predicates, the one-line summary, the `<details>` and the cap all wait on the
+delivery question above, since a per-file diagram is what a comment's size budget runs out
+on. Until they land the view is honest and unscoped, which is fine on a focused diff and
+too much on a large one.
 
 ## Sequencing
 

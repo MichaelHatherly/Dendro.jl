@@ -55,10 +55,37 @@ much. That paired gain and loss is what an extraction looks like, and one shape 
 for ten hunks of diff. An edge nobody expected, or a pair of files that started pointing
 at each other, is the thing to ask about.
 
-`:change` is file-level: a function has no identity that survives a rename between two
-revisions, so `granularity = :unit` is an error here. It also reads git, so `paths` must
-sit inside a repository and `base` must name a commit. A change that rewired nothing
-draws a header and no edges, which is the honest answer rather than an empty file.
+`:change` reads git, so `paths` must sit inside a repository and `base` must name a
+commit. A change that rewired nothing draws a header and no edges, which is the honest
+answer rather than an empty file.
+
+### Inside one file
+
+A file edge is a reference that crossed a file boundary, so an edit that stays inside one
+file draws nothing at all. Splitting a 200-line function into five moves plenty of
+structure and moves no file edge. `granularity = :unit` reads the level below: each file's
+own binding edges, one subgraph per file, the same arrows.
+
+```julia
+mermaid("src"; graph = :change, base = "main", granularity = :unit)
+```
+
+Units are matched across the two revisions by name, and then by the body digest the clone
+passes already compute, so a function renamed with its body intact is one node labelled
+`new (was old)` and not a deletion beside an addition. Two identical stubs renamed at once
+are ambiguous, and Dendro will not guess: both report as a deletion and an addition.
+Overloads merge into one node per name, since a method's position in a file moves for
+reasons a reviewer does not care about.
+
+Files are drawn heaviest mover first, and a file whose units never moved is absent rather
+than drawn empty.
+
+!!! note "This view is not yet gated"
+
+    Every file with a moved edge is drawn, which on a large change is more diagram than
+    anyone reads. Deciding which files earn a picture, and collapsing the rest behind a
+    one-line summary, waits on where the output is delivered. Until then, prefer it on a
+    focused diff or a single directory.
 
 ```@docs
 mermaid

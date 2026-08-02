@@ -232,6 +232,15 @@
 # `base` keyword as a `Union` adds a split, each a frame of its own. The remainder is the six
 # functions the view is built from, counted at their own signatures.
 #
+# The within-file half of that diagram raised sound from 1722 to 1755. A first measurement
+# put it at 1772, of which `state_arrow` and `weight_label` were seventeen: both were
+# declared `::Real` so that every comparison and subtraction under them dispatched
+# dynamically, for the sake of two callers, one counting whole references and one counting
+# the fractions a split reference leaves. Both take `Float64` now and the file-level caller
+# converts. The remaining thirty-three are the unit pass reaching `clone_features` for the
+# body digests that let a rename read as a rename, and its callback returning a pair of
+# dictionaries where the file-level one returns a single dictionary.
+#
 # The numbers here are what ubuntu CI reports. macOS runs one lower on the same code, so a
 # local check that lands one under the limit is at the limit, not below it.
 @testitem "JET" tags = [:jet] begin
@@ -241,7 +250,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1722  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1755  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

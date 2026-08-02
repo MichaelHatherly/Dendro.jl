@@ -645,8 +645,12 @@ Reporting:
   git: `mermaid_change` builds the file graph at both revisions, `edges_by_path` keys each
   by repo-relative endpoints so two independently numbered graphs compare, `change_deltas`
   keeps the edges whose weight moved as `EdgeDelta`s, and `change_file` draws them with
-  the state in the arrow (`==>` grown, `-.->` weakened). Included after `corpus.jl`, whose
-  `collect_corpus` and `parse_corpus` it reuses.
+  the state in the arrow (`==>` grown, `-.->` weakened). At `:unit` granularity it reads
+  the level below, where a file edge cannot reach: `mermaid_change_unit` diffs each file's
+  `within_edges` keyed by `(file, unit name)` rather than by node index, `unit_renames`
+  pairs a vanished name with an appeared one sharing a `clone_features` digest so a rename
+  is one node, and `change_unit` boxes each file by subgraph, heaviest mover first.
+  Included after `corpus.jl`, whose `collect_corpus` and `parse_corpus` it reuses.
 - `main.jl` defines the CLI `main` behind `julia -m Dendro` and the `dendro` app:
   `parse_args` into `CLIOptions`, `run_cli` (discover config, `analyze`, emit, exit
   code), and the `@main` wiring. Included last, since it calls `analyze`, `active`,
