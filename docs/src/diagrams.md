@@ -5,9 +5,10 @@ CurrentModule = Dendro
 ```
 
 To see the structure rather than read it, [`mermaid`](@ref) renders one of the graphs
-Dendro builds as a mermaid `flowchart`: the reference graph behind `:misplaced` and
-`:scattered`, the reachability graph behind `:unreferenced`, the clone clusters, or what
-a change did to the file graph.
+Dendro builds as a mermaid `flowchart`. `graph` picks which: `:coupling` for the
+reference graph behind `:misplaced` and `:scattered`, `:reachability` for the graph
+behind `:unreferenced`, `:clones` for the clone clusters, and `:change` for what a
+change did to the file graph.
 
 ```julia
 using Dendro: mermaid
@@ -19,7 +20,9 @@ open(io -> mermaid(io, "src"; graph = :reachability), "dead.mmd", "w")
 A `:unit` graph of a real corpus is a hairball, one node per function, too dense to read
 and too large for the standard mermaid renderer, so `focus` trims it to what the findings
 touch. The default resolves that per granularity, and `focus = :all` opts back into the
-full graph.
+full graph. `context` sets how far a trimmed view reaches around each flagged node: `0`
+keeps the flagged nodes alone, `1` their immediate neighbours. A `:clones` graph is
+already finding-only, so neither keyword changes it.
 
 ## What a change did to the shape
 

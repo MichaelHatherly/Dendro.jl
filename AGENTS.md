@@ -304,7 +304,8 @@ metrics, fix the code, not the test.
   The suite is [TestItemRunner](https://github.com/julia-vscode/TestItemRunner.jl):
   each check is a tagged `@testitem`, shared helpers live in `@testmodule Fixtures`
   (`test/setup.jl`), reached qualified as `Fixtures.idx(...)`. Items run in any
-  order, each in its own module.
+  order, each in its own module. A test argument names a tag to run, and a `-` prefix
+  names one to skip, so `test_args=["-jet"]` is the suite without the JET item.
   The `:jet` item runs [JET](https://github.com/aviatesk/JET.jl) static analysis
   (`test/jet.jl`): basic mode is a zero-tolerance gate on every stable Julia version
   (JET ships only a stub on pre-release Julia, so the item skips there), so a
@@ -318,6 +319,12 @@ metrics, fix the code, not the test.
   macOS than on the ubuntu runner the numbers come from. Run it locally with
   `julia +1.12 --project=. -e 'using Pkg; Pkg.test(test_args=["jet"])'` before pushing;
   the default toolchain is likely older, and the item skips rather than fails there.
+  It is its own CI job, and the ordinary cells exclude it. Nine matrix cells ran the item
+  where at most one does the analysis the ratchet reads, and it shared a process, and on
+  ubuntu a capped heap, with the other 2965 tests. On its own it gets both to itself, and
+  the suite beside it drops from 11m15s to 7m22s. Coverage is not the reason: instrumented
+  the item measures 3m23s against 3m37s without, so the split is about the process and the
+  redundant cells.
 - Format with [Runic](https://github.com/fredrikekre/Runic.jl). CI checks it.
 
   ```bash

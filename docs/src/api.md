@@ -39,7 +39,7 @@ BUILTIN_RULES
 OPTIONAL_RULES
 ```
 
-## Pattern rules
+## Pattern rule types
 
 ```@docs
 PatternSpec

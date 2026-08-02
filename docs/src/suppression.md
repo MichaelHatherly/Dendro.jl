@@ -24,17 +24,10 @@ function build(a, b, c, d, e, f)   # one keyword per field, accepted
 end
 ```
 
-Metric names are the active rules' names plus the relational `duplicate` and
-`near_duplicate`: by default `cyclomatic`, `cognitive_complexity`,
-`function_length`, `nesting_depth`, `parameter_count`, `boolean_complexity`,
-`empty_catch`, `stub_marker`, `empty_body`, `return_in_finally`,
-`identical_operands`, `duplicate_branches`, `unused_parameter`, `unused_local`,
-`broad_catch`, `duplicate`, `near_duplicate`, `reimplementation`, `unnatural`,
-`low_cohesion`, `misplaced`, `scattered`, `split_audience`, `unreferenced`, `back_edge`,
-`dependency_cycle`, `hub`, `incoherent_package`, `divisible_package`. A custom rule's
-name is accepted too. An unknown name warns, so a typo does not silently disable a
-check. `dendro-ignore-file: low_cohesion` is the usual way to accept a file that is
-meant to be a grab-bag.
+A directive names the active rules and the relational metrics, listed in
+[Metric reference](@ref); a custom rule's name is accepted too. An unknown name warns,
+so a typo does not silently disable a check. `dendro-ignore-file: low_cohesion` is the
+usual way to accept a file that is meant to be a grab-bag.
 
 Suppression marks a finding rather than dropping it. Printing a findings vector
 lists the active findings and a footer counting the suppressed ones, and
@@ -50,6 +43,15 @@ against each path relative to the scanned folder.
 ```julia
 analyze("."; ignore = ["vendor/", "deps/**", "*.generated.jl"])
 ```
+
+The same patterns go in a `.dendro.toml`, which is the route a command-line scan has:
+
+```toml
+ignore = ["vendor/", "deps/**", "*.generated.jl"]
+```
+
+The keyword adds to what the file declares, so a caller narrows a scan further without
+restating the project's own exclusions.
 
 A leading `!` re-includes, a trailing `/` matches directories only, `*` and `?`
 stop at a separator, `**` spans them. As in gitignore, a file under an excluded

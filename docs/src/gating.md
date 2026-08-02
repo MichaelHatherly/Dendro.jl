@@ -35,6 +35,9 @@ Dendro adoptable on a codebase that is not yet clean.
 Set `DENDRO_BASE` in CI to the pull request's base (`origin/main`, or the merge base) and
 leave it unset locally, where [`errors`](@ref) falls back to the absolute floor.
 
+From a shell the same gate is `dendro --check --since=origin/main src`, described under
+[Command line](@ref).
+
 `since` is distinct from [`analyze`](@ref)'s `base`. `base` is spatial, scoping
 annotations to changed lines. `since` is a finding-set difference, the gate.
 

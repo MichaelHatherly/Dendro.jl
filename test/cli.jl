@@ -86,3 +86,44 @@ end
         @test occursin("::warning", out) || occursin("::error", out)
     end
 end
+
+@testitem "cli since ratchets the gate against a base ref" setup = [Fixtures] tags = [:cli] begin
+    import Dendro
+
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "m.jl"), Fixtures.modsrc(["big(0)"], Fixtures.deepfn("big")))
+    Fixtures.commit!(root, "already over band")
+
+    redirect_stdout(devnull) do
+        # The absolute floor holds the committed violation, so the plain gate fails.
+        @test Dendro.main(["--check", src]) == 1
+        # Every finding predates the ref, so the ratcheted gate is satisfiable.
+        @test Dendro.main(["--check", "--since=HEAD", src]) == 0
+    end
+
+    write(
+        joinpath(src, "m.jl"),
+        Fixtures.modsrc(["big(0)", "wide(0)"], Fixtures.deepfn("big") * Fixtures.deepfn("wide")),
+    )
+    redirect_stdout(devnull) do
+        @test Dendro.main(["--check", "--since=HEAD", src]) == 1
+    end
+end
+
+@testitem "cli rejects since with base" setup = [Fixtures] tags = [:cli] begin
+    import Dendro
+
+    # `base` scopes a report to changed lines and `since` differences two floors. A run
+    # naming both has asked two questions, so it is a usage error rather than a silent
+    # choice of one. The tree is clean, so exit 1 can only be the usage error.
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "m.jl"), Fixtures.modsrc(["clean(1)"], "clean(c) = c + 1\n"))
+    Fixtures.commit!(root, "clean base")
+
+    redirect_stdout(devnull) do
+        redirect_stderr(devnull) do
+            @test Dendro.main(["--check", src]) == 0
+            @test Dendro.main(["--check", "--since=HEAD", "--base=HEAD", src]) == 1
+        end
+    end
+end

@@ -56,7 +56,9 @@ ships, each a `LanguageProfile` naming where to load its grammar and queries fro
 `.dendro/patterns` beside the config); `library_threshold` and `library_gate_coverage`
 are the cross-corpus duplication thresholds and `library_anchor_grain` widens the near pass
 to compare blocks as well as whole functions; `libraries` holds the reference corpora a
-`[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name.
+`[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name; and
+`ignore` holds gitignore-style patterns dropping paths from the scan, which
+[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces.
 Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
@@ -84,6 +86,7 @@ struct Config
     patterns::Vector{PatternSpec}
     patterns_dir::String
     libraries::Vector{Library}
+    ignore::Vector{String}
 end
 
 """
@@ -413,7 +416,7 @@ end
 # apply differently run to run.
 const CONFIG_KEY_ORDER = (
     "patterns", "languages", "libraries", "cut", "clones", "reimplementation",
-    "patterns_dir", "bands", "rules",
+    "patterns_dir", "ignore", "bands", "rules",
 )
 
 function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
@@ -441,6 +444,8 @@ function apply_key!(acc, scalars, key, value, source)
         apply_rules!(acc, config_table(value, key, source), source)
     elseif key == "patterns_dir"
         scalars = merge(scalars, (patterns_dir = config_path(value, key, source),))
+    elseif key == "ignore"
+        scalars = merge(scalars, (ignore = string_list(value, key, source),))
     else
         applier = key == "languages" ? apply_language! :
             key == "libraries" ? apply_library! : apply_pattern!
@@ -513,6 +518,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         library_gate_coverage = DEFAULT_LIBRARY_GATE_COVERAGE,
         library_anchor_grain = false,
         patterns_dir = "",
+        ignore = String[],
     )
     if use_files
         for path in config_files(roots, explicit)
@@ -536,7 +542,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         scalars.reimpl_threshold, scalars.library_threshold, scalars.library_gate_coverage,
         scalars.library_anchor_grain, acc.languages,
         sort!(collect(values(acc.patterns)); by = s -> s.name), scalars.patterns_dir,
-        sort!(collect(values(acc.libraries)); by = l -> l.name),
+        sort!(collect(values(acc.libraries)); by = l -> l.name), scalars.ignore,
     )
 end
 
@@ -566,6 +572,6 @@ function override_config(
         radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
         config.reimpl_threshold, config.library_threshold, config.library_gate_coverage,
         config.library_anchor_grain, config.languages, config.patterns, config.patterns_dir,
-        libraries === nothing ? config.libraries : as_libraries(libraries),
+        libraries === nothing ? config.libraries : as_libraries(libraries), config.ignore,
     )
 end

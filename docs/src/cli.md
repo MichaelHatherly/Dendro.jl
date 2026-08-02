@@ -21,26 +21,39 @@ view. `--check` instead gates on the `:high` floor, the error-severity findings,
 clean codebase exits 0 and a regression exits 1. That is the [Gating CI](@ref) floor read
 from a shell.
 
+`--check` alone reports every error-severity finding in the tree, so a codebase that is
+not yet clean fails from the first run. `--since=<ref>` makes it the ratchet instead:
+that floor minus what the ref already reported, so only what a change introduced fails
+the build. It is the [`errors`](@ref) keyword of the same name.
+
+```bash
+dendro --check --since=origin/main src
+```
+
+`--base` asks a different question, scoping the report to the lines a change touched, so
+naming both is a usage error rather than a silent choice of one.
+
 ## Flags
 
 ```
 --base=<ref>          report only findings on lines changed against <ref>
+--since=<ref>         report only error-severity findings <ref> did not already have
 --config=<file>       read <file> instead of a discovered .dendro.toml
 --no-config           ignore .dendro.toml, score against built-in defaults
 --cut=<float>         percentile cutoff for corpus-relative flags (default 0.95)
 --library=<path>      index <path> as a library to report duplication against
 --library=<name>=<path>
 --format=<fmt>        output format: text (default) or github
---check               exit 1 when any finding is reported
+--check               exit 1 on any error-severity finding
 --check-patterns      check pattern rules against their fixtures and exit
 --version             print version and exit
 --help, -h            print this message and exit
 ```
 
 `--library` is repeatable and merges with whatever the config declares; see
-[Duplication against a library](@ref) for the recipe that generates one flag per
+[Comparing against a library](@ref) for the recipe that generates one flag per
 dependency. `--check-patterns` runs the fixture check described in
-[Pattern rules](patterns.md).
+[Pattern rules](@ref).
 
 A bad flag, a missing value, or a `--library` path that does not exist is a usage error
 rather than a silent clean run.

@@ -9,8 +9,9 @@ deliberate opinions, and a project retunes them from a `.dendro.toml` at its rep
 with no code changes.
 
 Only the flagging opinions are configurable: the bands, the percentile cut, the clone
-thresholds, which rules are active, which libraries a scan compares against, and which
-languages are registered. The corpus floors and the model internals are not.
+thresholds, which rules are active, which libraries a scan compares against, which
+languages are registered, and which paths are left out of the scan. The corpus floors and
+the model internals are not.
 
 ## The cascade
 
@@ -46,10 +47,9 @@ npath = true               # enable an optional rule
 parameter_count = false    # disable a built-in rule
 ```
 
-`[bands]` keys are the scalar metric names plus the relational names (`unnatural`,
-`low_cohesion`, `scattered`, `split_audience`, `misplaced`, `back_edge`,
-`dependency_cycle`, `hub`, `incoherent_package`, `divisible_package`), each taking a
-`[warn, high]` pair. [Scoring and metrics](@ref) says what they measure.
+`[bands]` keys are the scalar metric names plus the relational metrics that carry a
+band, each taking a `[warn, high]` pair. [Metric reference](@ref) lists which names those
+are and what each defaults to.
 
 `[rules]` keys are any rule name, on or off. The opt-in passes are switched on here too:
 `reimplementation`, `incoherent_package`, `divisible_package`, `library_duplicate` and
@@ -76,14 +76,24 @@ where that feature is:
 
 | Table | Declares | Read |
 | --- | --- | --- |
-| `[libraries.<name>]` | a reference corpus, by `path` or `paths` | [Duplication against a library](@ref) |
+| `[libraries.<name>]` | a reference corpus, by `path` or `paths` | [Comparing against a library](@ref) |
 | `[reimplementation]` | the vocabulary-overlap cutoff | [Duplicate detection](@ref) |
-| `[languages.<name>]` | a language to register, or a shipped query to replace | [Languages and limitations](@ref) |
-| `[patterns.<name>]` | a project's own rule, realised by a query under `patterns_dir` | [Pattern rules](patterns.md) |
+| `[languages.<name>]` | a language to register, or a shipped query to replace | [Adding a language](@ref) |
+| `[patterns.<name>]` | a project's own rule, realised by a query under `patterns_dir` | [Pattern rules](@ref) |
 
-`patterns_dir` is the one top-level key those leave here. It points at the directory
-holding the pattern queries, resolved against the config file that set it, and defaults to
-`.dendro/patterns` beside the config.
+Two top-level keys those leave here. `patterns_dir` points at the directory holding the
+pattern queries, resolved against the config file that set it, and defaults to
+`.dendro/patterns` beside the config. `ignore` takes gitignore-style patterns that drop
+paths before parsing, so a vendored or generated tree is neither flagged nor counted in
+the baseline:
+
+```toml
+ignore = ["vendor/", "deps/**", "*.generated.jl"]
+```
+
+[Suppressing findings](@ref) covers the pattern syntax and why an excluded tree has to
+leave the baseline too. [`analyze`](@ref)'s `ignore` keyword adds to this list rather
+than replacing it.
 
 ## When a key is wrong
 

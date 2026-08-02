@@ -259,3 +259,62 @@ end
         end
     end
 end
+
+# A top-level `ignore` is the config route to what `analyze`'s `ignore` keyword does, so
+# a vendored tree can be excluded from a shell gate as well as from Julia.
+
+@testitem "config: a top-level ignore excludes paths from every route" setup = [Fixtures] tags = [:config] begin
+    using Dendro
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(srcdir, "vendor"))
+    write(joinpath(srcdir, "vendor", "v.jl"), Fixtures.modsrc(["big(0)"], Fixtures.deepfn("big")))
+    write(joinpath(srcdir, "m.jl"), Fixtures.modsrc(["clean(1)"], "clean(c) = c + 1\n"))
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            # Unignored, the vendored function's nesting trips the floor.
+            @test !isempty(Dendro.errors(srcdir))
+
+            write(joinpath(root, ".dendro.toml"), "ignore = [\"vendor/\"]\n")
+            @test Dendro.discover_config([srcdir]).ignore == ["vendor/"]
+            @test isempty(Dendro.errors(srcdir))
+            redirect_stdout(devnull) do
+                @test Dendro.main(["--check", srcdir]) == 0
+            end
+        end
+    end
+end
+
+@testitem "config: the ignore keyword adds to the configured patterns" setup = [Fixtures] tags = [:config] begin
+    using Dendro
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(srcdir, "vendor"))
+    write(joinpath(srcdir, "vendor", "v.jl"), Fixtures.modsrc(["big(0)"], Fixtures.deepfn("big")))
+    write(joinpath(srcdir, "gen.jl"), Fixtures.modsrc(["deep(0)"], Fixtures.deepfn("deep")))
+    write(joinpath(root, ".dendro.toml"), "ignore = [\"vendor/\"]\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            # The config drops one violation and the keyword the other; neither replaces
+            # the other, so both routes have to apply for the floor to empty.
+            @test !isempty(Dendro.errors(srcdir))
+            @test isempty(Dendro.errors(srcdir; ignore = ["gen.jl"]))
+        end
+    end
+end
+
+@testitem "config: a malformed ignore is a config error" tags = [:config] begin
+    using Dendro: discover_config, ConfigError
+
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        write(f, "ignore = \"vendor/\"\n")   # a bare string where a list is required
+        mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                @test_throws ConfigError discover_config([dir]; explicit = f)
+            end
+        end
+    end
+end

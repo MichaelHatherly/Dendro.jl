@@ -14,6 +14,15 @@ ENV["DENDRO_CACHE_DIR"] = mktempdir(; cleanup = true)
 const SUITE_DIR = normpath(@__DIR__)
 in_suite(filename) = startswith(normpath(filename), SUITE_DIR)
 
-# Filter by tag when test args are given: `Pkg.test(test_args = ["suppress"])`
-# runs only items tagged :suppress. No args runs everything.
-@run_package_tests filter = ti -> in_suite(ti.filename) && (isempty(ARGS) || any(t -> String(t) in ARGS, ti.tags))
+# Filter by tag when test args are given: `Pkg.test(test_args = ["suppress"])` runs only
+# items tagged :suppress, and a `-` prefix excludes instead, so `["-jet"]` runs the suite
+# without the JET item. No args runs everything. CI splits along that line: JET is the
+# longest item and the only one whose cost is an inference workload, so it runs in its own
+# job rather than sharing a process, and on ubuntu a capped heap, with every other item.
+const SELECTED = [a for a in ARGS if !startswith(a, "-")]
+const EXCLUDED = [chop(a; head = 1, tail = 0) for a in ARGS if startswith(a, "-")]
+
+tagged(ti, names) = any(t -> String(t) in names, ti.tags)
+wanted(ti) = (isempty(SELECTED) || tagged(ti, SELECTED)) && !tagged(ti, EXCLUDED)
+
+@run_package_tests filter = ti -> in_suite(ti.filename) && wanted(ti)
