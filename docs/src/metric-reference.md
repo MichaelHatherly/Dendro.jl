@@ -70,11 +70,11 @@ metric is a flag and always reports `:high`.
 | `split_audience` | 3, 5 | on | consumer groups the file serves | [Cohesion and placement](@ref) |
 | `misplaced` | 60, 80 | on | coupling landing in one other file, percent | [Cohesion and placement](@ref) |
 | `unreferenced` | | on | nothing; the definition is the finding | [Cohesion and placement](@ref) |
-| `back_edge` | 85, 95 | on | dominance of the directory pair, percent | [Cohesion and placement](@ref) |
-| `dependency_cycle` | 5, 10 | on | files in the cyclic group | [Cohesion and placement](@ref) |
-| `hub` | 15, 30 | on | `min(fan_in, fan_out)` over distinct files | [Cohesion and placement](@ref) |
-| `incoherent_package` | 50, 75 | opt-in | the directory anchored elsewhere, percent | [Cohesion and placement](@ref) |
-| `divisible_package` | 60, 85 | opt-in | the best group's internal ratio, percent | [Cohesion and placement](@ref) |
+| `back_edge` | 85, 95 | on | dominance of the directory pair, percent | [Dependencies and layout](@ref) |
+| `dependency_cycle` | 5, 10 | on | files in the cyclic group | [Dependencies and layout](@ref) |
+| `hub` | 15, 30 | on | `min(fan_in, fan_out)` over distinct files | [Dependencies and layout](@ref) |
+| `incoherent_package` | 50, 75 | opt-in | the directory anchored elsewhere, percent | [Dependencies and layout](@ref) |
+| `divisible_package` | 60, 85 | opt-in | the best group's internal ratio, percent | [Dependencies and layout](@ref) |
 
 [^2]: Hundredths of a bit per token, so the default band is 4.00 and 5.00 bits. The
     value is rounded for reporting; the percentile ranks on the unrounded score.

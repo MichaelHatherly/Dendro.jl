@@ -85,7 +85,8 @@ the ratchet against a base ref, and the pull-request annotations.
 - [Duplicate detection](@ref) covers exact clones and near-misses across the corpus.
 - [Duplication against a library](@ref) asks whether a dependency already does it.
 - [Comparing against a library](@ref) sets one up, in a config file or in CI.
-- [Cohesion and placement](@ref) covers cohesion, placement, scattering, and back edges.
+- [Cohesion and placement](@ref) covers cohesion, placement, scattering, audiences, and dead private code.
+- [Dependencies and layout](@ref) covers hubs, back edges, cycles, and directory shape.
 - [Diagrams](@ref) renders those graphs as mermaid flowcharts.
 - [Gating CI](@ref) is the error floor, the ratchet, and the GitHub Actions setup.
 - [Command line](@ref) documents `julia -m Dendro`, its flags, and threading.

@@ -13,6 +13,7 @@ makedocs(;
         "Duplication against a library" => "libraries.md",
         "Comparing against a library" => "libraries-howto.md",
         "Cohesion and placement" => "cohesion.md",
+        "Dependencies and layout" => "dependencies.md",
         "Diagrams" => "diagrams.md",
         "Gating CI" => "gating.md",
         "Command line" => "cli.md",

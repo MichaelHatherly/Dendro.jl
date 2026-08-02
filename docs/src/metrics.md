@@ -58,8 +58,8 @@ Each metric is a [rule](@ref "Custom rules"). The set above is the default; a ca
 can add their own or opt into rules that are off by default.
 
 Relational (computed across the corpus, not per function): duplicates and opt-in
-reimplementation candidates ([below](@ref "Duplicate detection")), naturalness,
-within-file cohesion, and cross-file placement. Naturalness scores each function's token sequence against a
+reimplementation candidates ([Duplicate detection](@ref)), naturalness, within-file
+cohesion, and cross-file placement. Naturalness scores each function's token sequence against a
 per-language trigram model of the rest of the corpus, in bits per token. The corpus
 model is interpolated with a per-file cache model (after Tu et al., "On the Localness
 of Software"), so a function is read against its own file's idiom, not just the
@@ -68,8 +68,8 @@ surprising, unidiomatic function scores high, and surprise correlates with bugs.
 Reported as `:unnatural` with both scores, the absolute cross-entropy band and the
 corpus percentile. A language with too few tokens to model is skipped.
 
-Cohesion asks whether a file's functions group by usage
-([below](@ref "Cohesion and placement")). Placement asks whether a unit sits in the
-right file, scattering whether a file's units belong to one module, and reachability
-whether a private definition is dead, reported as `:unreferenced`
-([below](@ref "Cohesion and placement")).
+Cohesion asks whether a file's functions group by usage, placement whether a unit sits
+in the right file, scattering whether a file's units belong to one module, and
+reachability whether a private definition is dead, reported as `:unreferenced`. All four
+are in [Cohesion and placement](@ref). The readings taken one level up, over files
+depending on files, are in [Dependencies and layout](@ref).
