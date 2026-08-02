@@ -93,7 +93,8 @@ the ratchet against a base ref, and the pull-request annotations.
 - [Configuration file](@ref) is the `.dendro.toml` cascade and every key it takes.
 - [Suppressing findings](@ref) is about the inline directives and path ignores.
 - [Custom rules](@ref) shows how to extend or replace the rule set.
-- [Pattern rules](patterns.md) writes a project's own rule as a tree-sitter query.
+- [Pattern rules](@ref) writes a project's own rule as a tree-sitter query.
+- [Pattern query syntax](@ref) is the capture conventions, predicates, and fragments.
 - [Languages and limitations](@ref) lists what is supported and where the bargain shows.
 - [Adding a language](@ref) registers a grammar and queries Dendro does not ship.
 - [API reference](@ref) documents every public function and type.

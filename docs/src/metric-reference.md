@@ -96,7 +96,7 @@ Both are opt-in and both need a library to compare against. See
 
 A `[patterns.<name>]` table declares a rule whose name joins this namespace, and a
 [`Rule`](@ref) passed to [`analyze`](@ref) does the same. Either suppresses, toggles and
-retunes exactly as a built-in does. See [Pattern rules](patterns.md) and
+retunes exactly as a built-in does. See [Pattern rules](@ref) and
 [Custom rules](@ref).
 
 A name Dendro does not know warns wherever it appears, in a `dendro-ignore` directive or

@@ -78,7 +78,7 @@ where that feature is:
 | `[libraries.<name>]` | a reference corpus, by `path` or `paths` | [Comparing against a library](@ref) |
 | `[reimplementation]` | the vocabulary-overlap cutoff | [Duplicate detection](@ref) |
 | `[languages.<name>]` | a language to register, or a shipped query to replace | [Adding a language](@ref) |
-| `[patterns.<name>]` | a project's own rule, realised by a query under `patterns_dir` | [Pattern rules](patterns.md) |
+| `[patterns.<name>]` | a project's own rule, realised by a query under `patterns_dir` | [Pattern rules](@ref) |
 
 `patterns_dir` is the one top-level key those leave here. It points at the directory
 holding the pattern queries, resolved against the config file that set it, and defaults to

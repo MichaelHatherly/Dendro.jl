@@ -21,6 +21,7 @@ makedocs(;
         "Suppressing findings" => "suppression.md",
         "Custom rules" => "rules.md",
         "Pattern rules" => "patterns.md",
+        "Pattern query syntax" => "pattern-syntax.md",
         "Languages and limitations" => "languages.md",
         "Adding a language" => "languages-add.md",
         "API reference" => "api.md",
