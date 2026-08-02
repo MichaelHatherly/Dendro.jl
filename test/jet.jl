@@ -241,6 +241,16 @@
 # body digests that let a rename read as a rename, and its callback returning a pair of
 # dictionaries where the file-level one returns a single dictionary.
 #
+# A `--since` flag and a top-level `ignore` config key raised sound from 1755 to 1763, all
+# eight in the two frames that already dominate this list. `apply_key!` is four: one more
+# `elseif` over an `Any` TOML value, counted at both of its signatures, which is what every
+# branch beside it costs. `parse_args` is two and the `CLIOptions` constructor one, the flag
+# and the field it carries. The last is merging the configured patterns with the keyword's.
+# One narrowing was measured and reverted, costing five: a `scan_ignores(config, ignore)`
+# helper reads its second argument as `Any`, so `isempty` and `collect` under it dispatch
+# dynamically and the helper is counted at its own signature too. `String[config.ignore;
+# ignore]` at the call site is four cheaper and says the same thing.
+#
 # The numbers here are what ubuntu CI reports. macOS runs one lower on the same code, so a
 # local check that lands one under the limit is at the limit, not below it.
 @testitem "JET" tags = [:jet] begin
@@ -250,7 +260,7 @@
         JET.test_package(Dendro; target_defined_modules = true, mode = :basic)
 
         JET_JULIA = v"1.12"
-        SOUND_LIMIT = 1755  # JET.report_package(Dendro; mode = :sound).
+        SOUND_LIMIT = 1763  # JET.report_package(Dendro; mode = :sound).
         OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
         if (VERSION.major, VERSION.minor) == (JET_JULIA.major, JET_JULIA.minor)

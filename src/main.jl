@@ -13,6 +13,7 @@ end
 struct CLIOptions
     paths::Vector{String}
     base::Union{Nothing, String}
+    since::Union{Nothing, String}
     config_file::Union{Nothing, String}
     use_config::Bool
     cut::Union{Nothing, Float64}
@@ -59,7 +60,7 @@ end
 # an error and every bare token is a path.
 function parse_args(argv)
     paths = String[]
-    base = config_file = nothing
+    base = since = config_file = nothing
     use_config = true
     cut = nothing
     format = :text
@@ -81,6 +82,8 @@ function parse_args(argv)
             check_patterns = true
         elseif x == "--base"
             base = take_value!(argv, x, inline)
+        elseif x == "--since"
+            since = take_value!(argv, x, inline)
         elseif x == "--config"
             config_file = take_value!(argv, x, inline)
         elseif x == "--library"
@@ -98,7 +101,12 @@ function parse_args(argv)
     isempty(paths) && throw(CLIError("no paths given"))
     !use_config && config_file !== nothing &&
         throw(CLIError("--no-config and --config are contradictory"))
-    return CLIOptions(paths, base, config_file, use_config, cut, format, check, check_patterns, libraries)
+    # `--base` scopes a report to changed lines and `--since` differences two floors. A
+    # run naming both has asked two questions, and answering one silently is the kind of
+    # quiet wrong answer the gate exists to prevent.
+    base !== nothing && since !== nothing &&
+        throw(CLIError("--base and --since are contradictory"))
+    return CLIOptions(paths, base, since, config_file, use_config, cut, format, check, check_patterns, libraries)
 end
 
 # Check every declared rule against its fixtures and print the disagreements. Exits
@@ -153,6 +161,13 @@ function run_cli(options::CLIOptions)
     config = discover_config(options.paths; explicit = options.config_file, use_files = options.use_config)
     config = merge_libraries(config, options.libraries)
     options.check_patterns && return report_pattern_tests(config, options.paths)
+    # `--since` asks the ratchet's question, so it reads `errors` rather than filtering a
+    # report: the base revision has to be scored too, which no view of this scan holds.
+    if options.since !== nothing
+        gated = errors(options.paths; since = options.since, config = config)
+        emit_report(gated, options.format)
+        return options.check && !isempty(gated) ? 1 : 0
+    end
     findings = active(analyze(options.paths; base = options.base, config = config, cut = options.cut))
     if options.check
         gated = high_floor(findings)
@@ -173,6 +188,7 @@ function print_help()
 
         Options:
           --base=<ref>     report only findings on lines changed against <ref>
+          --since=<ref>    report only error-severity findings <ref> did not already have
           --config=<file>  read <file> instead of a discovered .dendro.toml
           --no-config      ignore .dendro.toml, score against built-in defaults
           --cut=<float>    percentile cutoff for corpus-relative flags (default 0.95)

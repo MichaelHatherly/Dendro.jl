@@ -284,7 +284,8 @@ generated source is neither flagged nor counted in the baseline:
 `analyze(path; ignore = ["vendor/", "*.generated.jl"])`. A leading `!` re-includes,
 a trailing `/` matches directories only. As in gitignore, a file under an excluded
 directory cannot be re-included. Patterns apply to folder scans, not a single named
-file.
+file. A `.dendro.toml` declares the same patterns under its top-level `ignore` key,
+which is the route a command-line scan has; the keyword adds to those.
 """
 function analyze(
         paths::Union{AbstractString, AbstractVector{<:AbstractString}};
@@ -299,7 +300,9 @@ function analyze(
     active_rules = rules === nothing ? resolve_rules(cfg) : collect(Rule, rules)
 
     profiles = resolve_profiles(cfg)
-    corpus = collect_corpus(roots, ignore, language; profiles)
+    # The config's patterns and the keyword's add up, so a repo excludes its vendored tree
+    # once in `.dendro.toml` and a caller narrows further without restating it.
+    corpus = collect_corpus(roots, String[cfg.ignore; ignore], language; profiles)
     references = reference_indices(
         active_libraries(cfg), corpus; min_size = cfg.min_size, profiles, grain = library_grain(cfg)
     )

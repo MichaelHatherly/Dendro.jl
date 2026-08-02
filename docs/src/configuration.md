@@ -9,8 +9,9 @@ deliberate opinions, and a project retunes them from a `.dendro.toml` at its rep
 with no code changes.
 
 Only the flagging opinions are configurable: the bands, the percentile cut, the clone
-thresholds, which rules are active, which libraries a scan compares against, and which
-languages are registered. The corpus floors and the model internals are not.
+thresholds, which rules are active, which libraries a scan compares against, which
+languages are registered, and which paths are left out of the scan. The corpus floors and
+the model internals are not.
 
 ## The cascade
 
@@ -80,9 +81,19 @@ where that feature is:
 | `[languages.<name>]` | a language to register, or a shipped query to replace | [Adding a language](@ref) |
 | `[patterns.<name>]` | a project's own rule, realised by a query under `patterns_dir` | [Pattern rules](@ref) |
 
-`patterns_dir` is the one top-level key those leave here. It points at the directory
-holding the pattern queries, resolved against the config file that set it, and defaults to
-`.dendro/patterns` beside the config.
+Two top-level keys those leave here. `patterns_dir` points at the directory holding the
+pattern queries, resolved against the config file that set it, and defaults to
+`.dendro/patterns` beside the config. `ignore` takes gitignore-style patterns that drop
+paths before parsing, so a vendored or generated tree is neither flagged nor counted in
+the baseline:
+
+```toml
+ignore = ["vendor/", "deps/**", "*.generated.jl"]
+```
+
+[Suppressing findings](@ref) covers the pattern syntax and why an excluded tree has to
+leave the baseline too. [`analyze`](@ref)'s `ignore` keyword adds to this list rather
+than replacing it.
 
 ## When a key is wrong
 

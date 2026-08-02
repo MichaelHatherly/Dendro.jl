@@ -21,16 +21,23 @@ view. `--check` instead gates on the `:high` floor, the error-severity findings,
 clean codebase exits 0 and a regression exits 1. That is the [Gating CI](@ref) floor read
 from a shell.
 
-The floor, not the ratchet. `--check` reports every error-severity finding in the tree,
-so a codebase that is not yet clean fails from the first run. The ratchet, that floor
-minus what a base ref already reported, is the `since` keyword on [`errors`](@ref) and
-has no flag; a gate that only asks what a change introduced runs from Julia. `--base` is
-a different question, scoping the report to the lines a change touched.
+`--check` alone reports every error-severity finding in the tree, so a codebase that is
+not yet clean fails from the first run. `--since=<ref>` makes it the ratchet instead:
+that floor minus what the ref already reported, so only what a change introduced fails
+the build. It is the [`errors`](@ref) keyword of the same name.
+
+```bash
+dendro --check --since=origin/main src
+```
+
+`--base` asks a different question, scoping the report to the lines a change touched, so
+naming both is a usage error rather than a silent choice of one.
 
 ## Flags
 
 ```
 --base=<ref>          report only findings on lines changed against <ref>
+--since=<ref>         report only error-severity findings <ref> did not already have
 --config=<file>       read <file> instead of a discovered .dendro.toml
 --no-config           ignore .dendro.toml, score against built-in defaults
 --cut=<float>         percentile cutoff for corpus-relative flags (default 0.95)
