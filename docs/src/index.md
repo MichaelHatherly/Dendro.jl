@@ -80,21 +80,31 @@ the ratchet against a base ref, and the pull-request annotations.
 
 ## Where to read next
 
-- [Scoring and metrics](@ref) explains the two-score model and what each metric measures.
-- [Metric reference](@ref) tabulates every metric name, its default band, and whether it runs by default.
-- [Duplicate detection](@ref) covers exact clones and near-misses across the corpus.
-- [Duplication against a library](@ref) asks whether a dependency already does it.
-- [Comparing against a library](@ref) sets one up, in a config file or in CI.
-- [Cohesion and placement](@ref) covers cohesion, placement, scattering, audiences, and dead private code.
-- [Dependencies and layout](@ref) covers hubs, back edges, cycles, and directory shape.
-- [Diagrams](@ref) renders those graphs as mermaid flowcharts.
+New here, [Your first scan](@ref) runs one and reads the report line by line.
+
+To get something done:
+
 - [Gating CI](@ref) is the error floor, the ratchet, and the GitHub Actions setup.
+- [Suppressing findings](@ref) is the inline directives and path ignores.
+- [Comparing against a library](@ref) points a scan at a dependency's source.
+- [Pattern rules](@ref) writes a project's own rule as a tree-sitter query.
+- [Custom rules](@ref) extends or replaces the rule set from Julia.
+- [Adding a language](@ref) registers a grammar Dendro does not ship.
+- [Diagrams](@ref) draws the graphs behind the findings.
+
+To look something up:
+
+- [Metric reference](@ref) is every metric name, its default band, and whether it runs by default.
 - [Command line](@ref) documents `julia -m Dendro`, its flags, and threading.
 - [Configuration file](@ref) is the `.dendro.toml` cascade and every key it takes.
-- [Suppressing findings](@ref) is about the inline directives and path ignores.
-- [Custom rules](@ref) shows how to extend or replace the rule set.
-- [Pattern rules](@ref) writes a project's own rule as a tree-sitter query.
 - [Pattern query syntax](@ref) is the capture conventions, predicates, and fragments.
-- [Languages and limitations](@ref) lists what is supported and where the bargain shows.
-- [Adding a language](@ref) registers a grammar and queries Dendro does not ship.
+- [Languages and limitations](@ref) lists what is supported and how far resolution reaches.
 - [API reference](@ref) documents every public function and type.
+
+To understand what a finding means:
+
+- [Scoring and metrics](@ref) explains the two-score model and what each metric measures.
+- [Duplicate detection](@ref) covers exact clones, near-misses, and reimplementations.
+- [Duplication against a library](@ref) asks whether a dependency already does it.
+- [Cohesion and placement](@ref) reads units referencing units.
+- [Dependencies and layout](@ref) reads files depending on files.
