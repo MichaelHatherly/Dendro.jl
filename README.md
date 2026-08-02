@@ -72,9 +72,10 @@ apply.
 
 ## Documentation
 
-The [documentation](https://MichaelHatherly.github.io/Dendro.jl/stable) covers the rest:
-the two-score model and every metric, duplicate and near-duplicate detection, duplication
-against a library the project already depends on, cohesion, placement, scattering, back
-edges, dependency cycles, hub files, dead private code, the CI gate and its ratchet, the
-command line, configuration, suppression, custom and pattern rules, and the public API
-reference.
+The [documentation](https://MichaelHatherly.github.io/Dendro.jl/stable) covers the rest.
+Start with the first-scan lesson if Dendro is new to you. The guides cover the CI gate
+and its ratchet, suppression, comparing against a library, custom and pattern rules,
+adding a language, and the diagrams. The reference covers every metric with its band,
+the command line, the configuration file, the query syntax, the supported languages, and
+the public API. The remaining pages explain what each reading means: the two-score model,
+duplicate detection, cohesion and placement, and the file dependency graph.

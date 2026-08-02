@@ -4,6 +4,12 @@
 CurrentModule = Dendro
 ```
 
+Readings of the graph of units referencing units: whether a file's functions group by
+usage, whether a unit sits in the file it belongs in, whether a file's units are pulled
+apart, who outside the file consumes what it defines, and whether a private definition
+is reached at all. The level above, files depending on files, is
+[Dependencies and layout](@ref).
+
 ## Within-file cohesion
 
 [`analyze`](@ref) reports files whose functions split into independent concerns, as
