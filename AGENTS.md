@@ -285,6 +285,19 @@ metrics, fix the code, not the test.
   and update it when the structure moves.
 - Behaviour, scoring, metrics, languages, limitations: `README.md`.
 - Per-symbol contracts: docstrings in `src/`, exercised by `test/`.
+- Anything a user can reach is documented in `docs/`, a Documenter site whose page
+  order lives in `docs/make.jl`. A new metric, rule, language, config key, CLI
+  option, or diagram is not finished until it has prose on the page that covers its
+  neighbours, or a new page plus a `pages` entry. A docstring is the contract, not
+  the documentation: it says what the symbol does, and the page says when to reach
+  for it and how to read the result. `checkdocs = :public` with `warnonly = false`
+  makes a public symbol missing from the manual and a broken `@ref` hard errors, so
+  build it before pushing:
+
+  ```bash
+  julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+  julia --project=docs docs/make.jl
+  ```
 - Run the suite: `julia --project=. -e 'using Pkg; Pkg.test()'`. Language parsers
   live in `test/Project.toml`, so parsing only works under `Pkg.test()`, not a
   bare package-env REPL. Redirect test output to a file and read it on failure.

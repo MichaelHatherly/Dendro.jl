@@ -349,10 +349,12 @@ Reporting:
   that turns a git diff into per-file line ranges, plus `inrange`/`intersects`.
 - `gate.jl` defines `errors`, the gate view over `analyze`: `high_floor` keeps the
   `:high`-band findings, applied after `active`. With `since`, `base_floor_counts`
-  archives the base revision and `ratchet` subtracts its floor by `fkey`, a
+  analyzes the base revision and `ratchet` subtracts its floor by `fkey`, a
   line-independent location-set key. Built on plain `analyze`, it adds no branch to
-  the pipeline. `git_toplevel` (`analyze.jl`) resolves the repo root for both the
-  ratchet base and the spatial `base` scope.
+  the pipeline. `git_toplevel` (`analyze.jl`) resolves the repo root for the ratchet
+  base, the spatial `base` scope, and the `:change` diagram; `with_base_corpus`
+  (`analyze.jl`) materialises a revision of the corpus with `git archive` for the
+  ratchet and that diagram alike.
 - `clones.jl` defines both duplicate passes over a shared subtree index. `subtrees`
   hashes every named subtree of a function bottom-up. Exact: `anchor_floor` and `cluster_duplicates`
   bucket function- and block-shaped subtrees by hash, with `subsumed` as the
@@ -633,12 +635,17 @@ Reporting:
   `split_audience.jl` so everything
   it calls is defined first.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
-  graph, the dead-code reachability graph, and the clone clusters into mermaid
-  `flowchart` text, with `:file` and `:unit` granularity and active findings overlaid.
+  graph, the dead-code reachability graph, the clone clusters, and the file graph's
+  movement across two revisions into mermaid `flowchart` text, with `:file` and `:unit`
+  granularity and active findings overlaid.
   `focus` trims a view to the flagged nodes grown `context` hops over the graph, so the
   unit views stay legible and renderable; `neighbourhood` does the growth, generic over
   the unit-index and file-path node ids. A graph renderer rebuilds the structure it draws
-  from the corpus rather than from `Findings`. Included after `corpus.jl`, whose
+  from the corpus rather than from `Findings`. The `:change` view is the one that reads
+  git: `mermaid_change` builds the file graph at both revisions, `edges_by_path` keys each
+  by repo-relative endpoints so two independently numbered graphs compare, `change_deltas`
+  keeps the edges whose weight moved as `EdgeDelta`s, and `change_file` draws them with
+  the state in the arrow (`==>` grown, `-.->` weakened). Included after `corpus.jl`, whose
   `collect_corpus` and `parse_corpus` it reuses.
 - `main.jl` defines the CLI `main` behind `julia -m Dendro` and the `dendro` app:
   `parse_args` into `CLIOptions`, `run_cli` (discover config, `analyze`, emit, exit
@@ -759,8 +766,9 @@ the diff-scoping passes dispatch statically rather than over an ad-hoc NamedTupl
 a dozen passes scope their findings against one `Scope`, and the architecture rules carry
 many locations apiece, so resolving per location would repeat the same file's syscall
 through a whole run. Building it before the per-file scan is also what keeps it read-only,
-so the parallel pass shares it with no lock. The gate's `fkey` memoizes the same resolution
-per keying pass, through `relative_to` (`gate.jl`), where the corpus is not to hand.
+so the parallel pass shares it with no lock. The gate's `fkey` and the `:change` diagram's
+`edges_by_path` memoize the same resolution per keying pass, through `relative_to`
+(`analyze.jl`), where the corpus is not to hand.
 
 `Location` (`report.jl`). A code site: file, 1-based line, enclosing unit name, and an
 optional label. A `Finding` carries one or more. A finding about something larger than a unit
