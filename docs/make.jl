@@ -22,6 +22,7 @@ makedocs(;
         "Custom rules" => "rules.md",
         "Pattern rules" => "patterns.md",
         "Languages and limitations" => "languages.md",
+        "Adding a language" => "languages-add.md",
         "API reference" => "api.md",
     ],
     checkdocs = :public,

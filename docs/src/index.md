@@ -95,4 +95,5 @@ the ratchet against a base ref, and the pull-request annotations.
 - [Custom rules](@ref) shows how to extend or replace the rule set.
 - [Pattern rules](patterns.md) writes a project's own rule as a tree-sitter query.
 - [Languages and limitations](@ref) lists what is supported and where the bargain shows.
+- [Adding a language](@ref) registers a grammar and queries Dendro does not ship.
 - [API reference](@ref) documents every public function and type.
