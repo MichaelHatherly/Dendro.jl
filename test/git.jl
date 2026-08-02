@@ -103,38 +103,53 @@ end
     @test occursin("no-such-ref", err.msg)
 end
 
-# The libgit2 reading has to agree with the unified-diff parser it replaces, over the
-# shapes a real edit produces: several hunks in one file, an added file, a deleted one, a
-# path with a space, and a binary file with no hunks at all. A wrong `DiffLine` layout
-# reads plausible-looking line numbers rather than failing, so this equivalence is the
-# check that catches it.
-@testitem "changed_ranges agrees with the git diff parser" tags = [:git] setup = [Fixtures] begin
+# Every shape a real edit produces, against hand-computed line numbers: two separated
+# hunks in one file, an insertion that displaces later lines, a deletion, an added file, a
+# path with a space, a binary file, a file with no trailing newline, and added content
+# that reads like diff syntax. A wrong `DiffLine` layout reads plausible-looking numbers
+# rather than failing, so the numbers here are what catches it.
+@testitem "changed_ranges reads the new-side lines a change adds" tags = [:git] setup = [Fixtures] begin
     root, src = Fixtures.gitrepo()
-    write(joinpath(src, "many.jl"), string("f() = 1\n", "x\n"^20))
-    write(joinpath(src, "gone.jl"), "g() = 1\n")
+    write(joinpath(src, "many.jl"), join('a':'j', "\n") * "\n")
+    write(joinpath(src, "m.jl"), "keep\ngone\nalso gone\n")
     write(joinpath(src, "a name.jl"), "h() = 1\n")
+    write(joinpath(src, "dropped.jl"), "g() = 1\n")
+    write(joinpath(src, "tricky.txt"), "intro\n")
+    write(joinpath(src, "trailing.txt"), "one\n")
     write(joinpath(src, "bin.dat"), UInt8[0x00, 0x01, 0x02, 0x00])
     Fixtures.commit!(root, "init")
 
-    # Two separated hunks, so a single-hunk reading would not pass.
-    lines = collect(eachline(joinpath(src, "many.jl")))
-    insert!(lines, 2, "added_near_top")
-    insert!(lines, 15, "added_lower")
-    write(joinpath(src, "many.jl"), join(lines, "\n") * "\n")
-    rm(joinpath(src, "gone.jl"))
+    # Far enough apart that the default three lines of context cannot merge them.
+    write(joinpath(src, "many.jl"), "a\nNEW1\nb\nc\nd\ne\nf\ng\nh\nNEW2\ni\nj\n")
+    # Two lines removed and one added: `fresh` lands at new-side line 2.
+    write(joinpath(src, "m.jl"), "keep\nfresh\n")
     write(joinpath(src, "a name.jl"), "h() = 1\nh2() = 2\n")
+    rm(joinpath(src, "dropped.jl"))
+    # Added content that resembles a diff header and a hunk header. Structured hunk data
+    # cannot confuse the two, and this stays as a guard against going back to text.
+    write(joinpath(src, "tricky.txt"), "intro\nnormal\n+++ looks like a header\n@@ looks like a hunk\n")
+    write(joinpath(src, "trailing.txt"), "one\ntwo")
     write(joinpath(src, "bin.dat"), UInt8[0x00, 0x09, 0x02, 0x00])
-    write(joinpath(src, "fresh.jl"), "k() = 1\nk2() = 2\n")
+    # A staged addition is in scope, an untracked one is not: the comparison folds the
+    # index in, the way `git diff <ref>` reads it.
+    write(joinpath(src, "staged.jl"), "k() = 1\nk2() = 2\n")
+    run(pipeline(`git -C $root add src/staged.jl`; stdout = devnull, stderr = devnull))
+    write(joinpath(src, "untracked.jl"), "u() = 1\n")
 
-    expected = Dendro.changed_ranges(read(`git -C $root diff HEAD`, String))
     got = withenv("PATH" => "/nonexistent") do
         Dendro.changed_ranges(realpath(root), "HEAD")
     end
-    @test got == expected
-    # Guard the oracle itself: an empty `expected` would make the comparison vacuous.
-    @test haskey(expected, "src/many.jl")
-    @test haskey(expected, "src/a name.jl")
-    @test !haskey(expected, "src/gone.jl")
+
+    @test got["src/many.jl"] == [2:2, 10:10]
+    @test got["src/m.jl"] == [2:2]
+    @test got["src/a name.jl"] == [2:2]
+    @test got["src/tricky.txt"] == [2:4]
+    @test got["src/trailing.txt"] == [2:2]
+    @test got["src/staged.jl"] == [1:2]
+    # A pure deletion adds no line, and a binary change carries no hunks at all.
+    @test !haskey(got, "src/dropped.jl")
+    @test !haskey(got, "src/bin.dat")
+    @test !haskey(got, "src/untracked.jl")
 end
 
 # A working tree matching the ref has nothing to report, and an empty result must be an
