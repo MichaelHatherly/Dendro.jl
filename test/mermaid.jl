@@ -131,6 +131,160 @@ end
     end
 end
 
+# The change view: the file graph at a base ref against the file graph at the working
+# tree. Only the edges whose weight moved are drawn, with the state carried by the arrow.
+
+@testitem "change deltas report an added, dropped, and reweighted edge" tags = [:mermaid] begin
+    edge(w, names) = Dendro.FileEdge(w, names, length(names), Dendro.Location[])
+    base = Dict(("a.jl", "b.jl") => edge(3, ["old"]), ("a.jl", "c.jl") => edge(2, ["gone"]), ("b.jl", "c.jl") => edge(1, ["same"]))
+    head = Dict(("a.jl", "b.jl") => edge(5, ["old", "fresh"]), ("d.jl", "b.jl") => edge(1, ["born"]), ("b.jl", "c.jl") => edge(1, ["same"]))
+
+    deltas = Dendro.change_deltas(base, head)
+    # The unchanged edge is absent: a diagram of everything is the coupling view.
+    @test [(d.from, d.to) for d in deltas] == [("a.jl", "b.jl"), ("a.jl", "c.jl"), ("d.jl", "b.jl")]
+    @test [(d.base, d.head) for d in deltas] == [(3, 5), (2, 0), (0, 1)]
+    # Only the names the edge gained, so a thickened edge says what arrived on it.
+    @test deltas[1].names == ["fresh"]
+    @test deltas[3].names == ["born"]
+end
+
+@testitem "change view draws growth thick and shrinkage dotted" tags = [:mermaid] begin
+    deltas = [
+        Dendro.EdgeDelta("a.jl", "b.jl", 0, 2, ["born"]),
+        Dendro.EdgeDelta("a.jl", "c.jl", 3, 5, ["fresh"]),
+        Dendro.EdgeDelta("b.jl", "c.jl", 4, 1, String[]),
+        Dendro.EdgeDelta("c.jl", "d.jl", 2, 0, String[]),
+    ]
+    io = IOBuffer()
+    Dendro.change_file(io, deltas)
+    out = String(take!(io))
+
+    @test startswith(out, "flowchart LR")
+    @test occursin("==>|new: born|", out)
+    @test occursin("==>|+2 fresh|", out)
+    @test occursin("-.->|-3|", out)
+    @test occursin("-.->|gone|", out)
+end
+
+@testitem "change view reports a reference that crossed a new file boundary" setup = [Fixtures] tags = [:mermaid] begin
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "mod.jl"), "include(\"a.jl\")\ninclude(\"b.jl\")\n")
+    write(joinpath(src, "a.jl"), "export entry\nentry() = 1\n")
+    write(joinpath(src, "b.jl"), "export shared\nshared() = 1\n")
+    Fixtures.commit!(root, "base")
+    # `entry` now reaches into `b.jl`, which is one new file-graph edge.
+    write(joinpath(src, "a.jl"), "export entry\nentry() = shared()\n")
+
+    io = IOBuffer()
+    Dendro.mermaid(io, src; graph = :change, base = "HEAD")
+    out = String(take!(io))
+    @test startswith(out, "flowchart LR")
+    @test occursin("==>", out)
+    @test occursin("new: shared", out)
+    @test occursin("a.jl", out)
+    @test occursin("b.jl", out)
+end
+
+@testitem "change view draws nothing when the corpus is untouched" setup = [Fixtures] tags = [:mermaid] begin
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "mod.jl"), "include(\"a.jl\")\ninclude(\"b.jl\")\n")
+    write(joinpath(src, "a.jl"), "export entry\nentry() = shared()\n")
+    write(joinpath(src, "b.jl"), "export shared\nshared() = 1\n")
+    Fixtures.commit!(root, "base")
+
+    io = IOBuffer()
+    Dendro.mermaid(io, src; graph = :change, base = "HEAD")
+    out = String(take!(io))
+    @test startswith(out, "flowchart LR")
+    @test !occursin("==>", out)
+    @test !occursin("-.->", out)
+end
+
+@testitem "change view requires a base ref" tags = [:mermaid] begin
+    @test_throws ErrorException Dendro.mermaid(IOBuffer(), "src"; graph = :change)
+end
+
+# The within-file half of the change view. The file graph goes quiet when an edit stays
+# inside one file, so `granularity = :unit` diffs each file's own binding edges instead.
+
+@testitem "unit deltas key by name and keep the file they sit in" tags = [:mermaid] begin
+    base = Dict((("a.jl", "run"), ("a.jl", "helper")) => 2.0, (("a.jl", "run"), ("a.jl", "gone")) => 1.0)
+    head = Dict((("a.jl", "run"), ("a.jl", "helper")) => 5.0, (("a.jl", "run"), ("a.jl", "born")) => 1.0)
+
+    deltas = Dendro.unit_deltas(base, head)
+    @test [(d.file, d.from, d.to) for d in deltas] ==
+        [("a.jl", "run", "born"), ("a.jl", "run", "gone"), ("a.jl", "run", "helper")]
+    @test [(d.base, d.head) for d in deltas] == [(0.0, 1.0), (1.0, 0.0), (2.0, 5.0)]
+end
+
+@testitem "a renamed unit with an unchanged body is one node, not two" tags = [:mermaid] begin
+    # `old` becomes `new` with the same body, so the digests match and the pair is one unit.
+    basedig = Dict(("a.jl", "old") => Set(UInt64[7]), ("a.jl", "run") => Set(UInt64[9]))
+    headdig = Dict(("a.jl", "new") => Set(UInt64[7]), ("a.jl", "run") => Set(UInt64[9]))
+
+    renames = Dendro.unit_renames(basedig, headdig)
+    @test renames == Dict(("a.jl", "old") => ("a.jl", "new"))
+
+    # A rename alone leaves the edge set unmoved, so the file has nothing to report.
+    base = Dict((("a.jl", "run"), ("a.jl", "old")) => 1.0)
+    head = Dict((("a.jl", "run"), ("a.jl", "new")) => 1.0)
+    @test isempty(Dendro.unit_deltas(Dendro.apply_renames(base, renames), head))
+end
+
+@testitem "a digest shared by two units is no evidence of a rename" tags = [:mermaid] begin
+    # Two identical stubs renamed at once: the pairing is ambiguous, so neither is claimed.
+    basedig = Dict(("a.jl", "one") => Set(UInt64[7]), ("a.jl", "two") => Set(UInt64[7]))
+    headdig = Dict(("a.jl", "uno") => Set(UInt64[7]), ("a.jl", "dos") => Set(UInt64[7]))
+    @test isempty(Dendro.unit_renames(basedig, headdig))
+end
+
+@testitem "unit change view boxes each file and shares the arrow vocabulary" tags = [:mermaid] begin
+    deltas = [
+        Dendro.UnitDelta("a.jl", "run", "born", 0.0, 1.0),
+        Dendro.UnitDelta("a.jl", "run", "helper", 2.0, 5.0),
+        Dendro.UnitDelta("b.jl", "main", "dropped", 1.0, 0.0),
+    ]
+    io = IOBuffer()
+    Dendro.change_unit(io, deltas, Dict{Tuple{String, String}, String}())
+    out = String(take!(io))
+
+    @test startswith(out, "flowchart LR")
+    @test occursin("subgraph", out)
+    @test occursin("a.jl", out)
+    @test occursin("b.jl", out)
+    @test occursin("==>|new|", out)
+    @test occursin("==>|+3|", out)
+    @test occursin("-.->|gone|", out)
+end
+
+@testitem "unit change view names the unit a rename came from" tags = [:mermaid] begin
+    deltas = [Dendro.UnitDelta("a.jl", "run", "renamed", 0.0, 1.0)]
+    was = Dict(("a.jl", "renamed") => "original")
+    io = IOBuffer()
+    Dendro.change_unit(io, deltas, was)
+    @test occursin("renamed (was original)", String(take!(io)))
+end
+
+@testitem "unit change view reports a call added inside one file" setup = [Fixtures] tags = [:mermaid] begin
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "mod.jl"), "include(\"a.jl\")\ninclude(\"b.jl\")\n")
+    write(joinpath(src, "a.jl"), "export run\nrun() = 1\nhelper() = 2\n")
+    write(joinpath(src, "b.jl"), "export other\nother() = 3\n")
+    Fixtures.commit!(root, "base")
+    # `run` now calls `helper`, a binding edge wholly inside `a.jl` that the file graph
+    # cannot see.
+    write(joinpath(src, "a.jl"), "export run\nrun() = helper()\nhelper() = 2\n")
+
+    io = IOBuffer()
+    Dendro.mermaid(io, src; graph = :change, base = "HEAD", granularity = :unit)
+    out = String(take!(io))
+    @test occursin("a.jl", out)
+    @test occursin("==>", out)
+    @test occursin("helper", out)
+    # `b.jl` never moved, so it is not drawn at all.
+    @test !occursin("b.jl", out)
+end
+
 @testitem "mermaid public entrypoint runs end to end on a folder" setup = [Fixtures] tags = [:mermaid] begin
     mktempdir() do dir
         write(joinpath(dir, "mod.jl"), "include(\"a.jl\")\ninclude(\"b.jl\")\n")

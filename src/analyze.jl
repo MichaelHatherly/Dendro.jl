@@ -11,6 +11,60 @@ function git_toplevel(paths::Union{AbstractString, AbstractVector{<:AbstractStri
     return String(strip(read(pipeline(`git -C $dir rev-parse --show-toplevel`; stderr = devnull), String)))
 end
 
+# One path made repo-relative, memoized across a whole keying pass. `realpath` is a
+# syscall and the callers resolve the same corpus file many times over: the ratchet keys
+# every location of every finding, and a `:back_edge` finding names every reference site
+# across its edge, so one file is resolved dozens of times over a run without this.
+function relative_to(rels::Dict{String, String}, path::String, root::AbstractString)
+    hit = get(rels, path, "")
+    isempty(hit) || return hit
+    resolved = relpath(realpath(path), root)
+    rels[path] = resolved
+    return resolved
+end
+
+# `roots` as they stood at `ref`, materialised into a tempdir, passed to `f` as the
+# tempdir root and the subset of `roots` that existed there. `git archive` reads the ref
+# without a worktree or an index mutation.
+#
+# The archive is scoped to `roots`, never the whole tree: a whole-tree archive would give
+# the base a different corpus from HEAD's, shifting the baseline, the clone corpus, and
+# every graph built over it, which manufactures differences the change never made. Paths
+# absent at `ref` are dropped, so `f` sees an empty vector rather than a phantom corpus.
+# The ref is checked first, since a broken ref is misconfiguration and must not degrade
+# into an empty base that reads as "everything is new". `keyword` names the caller's own
+# option in that error, so the message points at what the user typed.
+#
+# `f` is annotated `::F` to force a specialisation per callback. Julia does not specialise
+# on a bare function argument, so without it every caller compiles to the same dynamic
+# call and static analysis cannot see through the block. `keyword` is positional for the
+# same reason: a keyword argument splits the method into a `kwcall` wrapper and a body,
+# and every report against the body is then raised twice.
+function with_base_corpus(f::F, roots::Vector{String}, ref, root::AbstractString, keyword::AbstractString = "base") where {F}
+    refspec = string(ref, "^{commit}")
+    verified = success(pipeline(`git -C $root rev-parse --verify --quiet $refspec`; stdout = devnull, stderr = devnull))
+    verified || error("Dendro: `$keyword` ref not found: $ref")
+
+    rels = [relpath(realpath(p), root) for p in roots]
+    # `mktempdir` with a block would wrap `f` in a second closure that its own signature
+    # types as `Any`, which costs every caller a call no static analysis can see through.
+    # The `try` does the same cleanup one layer down.
+    tmp = mktempdir()
+    try
+        # git archive errors when no path matches at `ref`, which is the paths-are-new
+        # case, not a failure.
+        archive = pipeline(`git -C $root archive $ref -- $rels`; stderr = devnull)
+        archived = success(pipeline(archive, pipeline(`tar -x -C $tmp`; stderr = devnull)))
+        # macOS maps /tmp to /private/tmp; resolve the tempdir root so its relative paths
+        # match HEAD's, or every path keyed against it misaligns.
+        troot = realpath(tmp)
+        tpaths = archived ? String[joinpath(troot, r) for r in rels if ispath(joinpath(troot, r))] : String[]
+        return f(troot, tpaths)
+    finally
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 # A diff scope: the git toplevel, the changed line ranges per file relative to that root,
 # and each corpus file's path already resolved against it. Mirrors the per-file shape
 # `changed_ranges` returns.

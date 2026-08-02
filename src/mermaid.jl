@@ -174,10 +174,19 @@ end
 Render one of Dendro's graphs over `paths` as a mermaid `flowchart`, written to `io`.
 `graph` selects the diagram: `:coupling` the corpus reference graph behind `:misplaced`
 and `:scattered`, `:reachability` the dead-code graph behind `:unreferenced`, `:clones`
-the duplicate clusters. `granularity` is `:file` (units collapsed to their file) or `:unit`
-(one node per function). Active findings overlay onto the diagram: misplaced and scattered
-nodes are classed, the misplaced suggested home drawn as a dashed edge, dead definitions
-and public roots classed.
+the duplicate clusters, `:change` the file graph at a `base` git ref against the file
+graph at the working tree. `granularity` is `:file` (units collapsed to their file) or
+`:unit` (one node per function). Active findings overlay onto the diagram: misplaced and
+scattered nodes are classed, the misplaced suggested home drawn as a dashed edge, dead
+definitions and public roots classed.
+
+`:change` answers a reviewer's first question on a large diff, whether an edit stayed in
+one place or rewired the corpus. Only the edges whose weight moved are drawn, with the
+state in the arrow: `==>` for an edge added or grown, labelled with the definition names
+it gained, and `-.->` for one weakened or gone. It needs `base`, and it is file-level
+only, since a unit has no identity that survives a rename across revisions. A change that
+rewired nothing draws a header and no edges. Unlike the other diagrams it reads git, so
+`paths` must sit inside a repository and `base` must name a commit.
 
 `focus` trims the diagram to what the findings touch. `:findings` keeps only flagged nodes
 and the `context` hops of graph neighbours around them, drawn greyed, so a unit-level graph
@@ -199,27 +208,33 @@ graph over a language a `.dendro.toml` registers, which `analyze` does from its 
 function mermaid(
         io::IO, paths::Union{AbstractString, AbstractVector{<:AbstractString}};
         graph::Symbol = :coupling, granularity::Symbol = :file,
-        focus::Symbol = :auto, context::Integer = 1,
+        focus::Symbol = :auto, context::Integer = 1, base = nothing,
         ignore = String[], language = nothing, rules = BUILTIN_RULES, cut::Real = 0.95,
         min_size::Integer = DEFAULT_MIN_SIZE, threshold::Real = DEFAULT_THRESHOLD,
         radius_factor::Real = DEFAULT_RADIUS_FACTOR,
         profiles::Dict{Symbol, LanguageProfile} = PROFILES
     )
-    graph in (:coupling, :reachability, :clones) ||
-        error("Dendro: graph must be :coupling, :reachability or :clones, got :$graph")
+    graph in (:coupling, :reachability, :clones, :change) ||
+        error("Dendro: graph must be :coupling, :reachability, :clones or :change, got :$graph")
     granularity in (:file, :unit) ||
         error("Dendro: granularity must be :file or :unit, got :$granularity")
     focus in (:auto, :all, :findings) ||
         error("Dendro: focus must be :auto, :all or :findings, got :$focus")
     context >= 0 || error("Dendro: context must be >= 0, got $context")
+    graph === :change && base === nothing &&
+        error("Dendro: graph :change needs a `base` git ref to compare against")
     resolved = focus === :auto ? (granularity === :unit ? :findings : :all) : focus
     roots::Vector{String} = paths isa AbstractString ? [paths] : paths
-    files = parse_corpus(collect_corpus(roots, ignore, language; profiles); language, rules, profiles)
+    parse_at(at) = parse_corpus(collect_corpus(at, ignore, language; profiles); language, rules, profiles)
+    files = parse_at(roots)
     if graph === :coupling
         table = corpus_symbols(files)
         mermaid_coupling(io, files, build_corpus_graph(files, table), table, granularity, cut, resolved, context)
     elseif graph === :reachability
         mermaid_reachability(io, files, corpus_symbols(files), granularity, resolved, context)
+    elseif graph === :change
+        granularity === :unit ? mermaid_change_unit(io, files, roots, base, parse_at) :
+            mermaid_change(io, files, roots, base, parse_at)
     else
         mermaid_clones(io, files, granularity, min_size, threshold, radius_factor)
     end
@@ -536,4 +551,293 @@ function clones_file(io::IO, clusters::Vector{Finding})
         println(io, "  ", fids[a], exact ? " --- " : " -.- ", fids[b])
     end
     return nothing
+end
+
+# --- Change ---------------------------------------------------------------------------
+
+"""
+    EdgeDelta
+
+One file-to-file dependency's movement between two revisions of the corpus.
+
+`base` and `head` are the edge's weight at each revision, either of them zero where the
+edge did not exist. `names` holds the definitions the edge gained, so a thickened arrow
+says what arrived on it and not only that the coupling grew. An edge that lost references
+names nothing: the definitions behind the drop are gone from head, and naming them sends
+a reader to code that is not there.
+"""
+struct EdgeDelta
+    from::String
+    to::String
+    base::Int
+    head::Int
+    names::Vector{String}
+end
+
+# A file graph's edges keyed by repo-relative endpoint paths. Two revisions number their
+# nodes independently, so a path is the only key that means the same thing in both.
+function edges_by_path(graph::FileGraph, root::AbstractString)
+    out = Dict{Tuple{String, String}, FileEdge}()
+    rels = Dict{String, String}()
+    for ((a, b), e) in graph.edges
+        out[(relative_to(rels, graph.files[a], root), relative_to(rels, graph.files[b], root))] = e
+    end
+    return out
+end
+
+# The file graph over a parsed corpus, the structure the change view diffs.
+file_corpus_graph(files::Vector{ParsedFile}) = build_file_graph(files, corpus_symbols(files), Corpus(files))
+
+# The edges whose weight moved between the two revisions, ordered by endpoint. An edge
+# standing at the same weight in both is dropped: drawing every edge is the coupling view,
+# and the question here is what the change did.
+function change_deltas(base::Dict{Tuple{String, String}, FileEdge}, head::Dict{Tuple{String, String}, FileEdge})
+    out = EdgeDelta[]
+    for key in sort!(collect(union(keys(base), keys(head))))
+        b = get(base, key, nothing)
+        h = get(head, key, nothing)
+        bw = b === nothing ? 0 : b.weight
+        hw = h === nothing ? 0 : h.weight
+        bw == hw && continue
+        gained = h === nothing ? String[] : sort!(setdiff(h.names, b === nothing ? String[] : b.names))
+        push!(out, EdgeDelta(key[1], key[2], bw, hw, gained))
+    end
+    return out
+end
+
+# A weight for a label: whole numbers plain, split references to one decimal. A reference
+# matching several visible definitions splits its weight, so a within-file edge can land on
+# a fraction, and "+1.5" is honest where "+2" would not be.
+# Concrete rather than `::Real`: the file pass counts references as integers and the unit
+# pass as split fractions, so an abstract signature would leave every comparison and
+# subtraction below here dispatching dynamically for the sake of two callers.
+weight_label(x::Float64) = isinteger(x) ? string(Int(x)) : string(round(x; digits = 1))
+
+# The arrow and label an edge's movement draws with, shared by both granularities. Mermaid
+# styles a link by its ordinal index (`linkStyle N`), so drawing state in colour would make
+# every emitter count its links; the arrow shape carries it instead and survives being read
+# without colour.
+function state_arrow(base::Float64, head::Float64, names::Vector{String})
+    head == 0 && return ("-.->", "gone")
+    head < base && return ("-.->", string("-", weight_label(base - head)))
+    named = isempty(names) ? "" : string(": ", join(names, ", "))
+    base == 0 && return ("==>", string("new", named))
+    return ("==>", string("+", weight_label(head - base), isempty(names) ? "" : string(" ", join(names, ", "))))
+end
+
+delta_arrow(d::EdgeDelta) = state_arrow(Float64(d.base), Float64(d.head), d.names)
+
+# The change view: the edges that moved, drawn between their endpoint files. An untouched
+# corpus draws a header and nothing else, which is the honest picture of a change that
+# rewired nothing.
+function change_file(io::IO, deltas::Vector{EdgeDelta})
+    mmd_header(io, Pair{String, String}[])
+    fileset = Set{String}()
+    for d in deltas
+        push!(fileset, d.from)
+        push!(fileset, d.to)
+    end
+    fids = file_ids(fileset)
+    file_nodes(io, fids, Set(keys(fids)))
+    for d in deltas
+        arrow, label = delta_arrow(d)
+        println(io, "  ", fids[d.from], " ", arrow, "|", mmd_label(label), "| ", fids[d.to])
+    end
+    return nothing
+end
+
+# The change view over `roots`: the file graph at `base` against the file graph at the
+# working tree. `parse_at` is the caller's own parse of a corpus, so the base revision is
+# read with the same language, rule, and ignore settings as head without this carrying a
+# copy of each of them.
+function mermaid_change(io::IO, files::Vector{ParsedFile}, roots::Vector{String}, base, parse_at::P) where {P}
+    root = git_toplevel(roots)
+    head = edges_by_path(file_corpus_graph(files), root)
+    prior = with_base_corpus(roots, base, root) do troot, tpaths
+        isempty(tpaths) && return Dict{Tuple{String, String}, FileEdge}()
+        return edges_by_path(file_corpus_graph(parse_at(tpaths)), troot)
+    end
+    return change_file(io, change_deltas(prior, head))
+end
+
+# --- Change, inside one file ----------------------------------------------------------
+
+# A unit's identity across two revisions: the file it sits in and its name, both
+# repo-relative. Overloads merge into one node, since a reader of a file thinks in function
+# names, and a method's position in the file moves for reasons the reader does not care
+# about.
+const UnitKey = Tuple{String, String}
+
+"""
+    UnitDelta
+
+One within-file binding edge's movement between two revisions.
+
+`from` and `to` are unit names inside `file`, and `base`/`head` the edge's weight at each
+revision, either zero where the edge did not exist. This is the companion to
+[`EdgeDelta`](@ref) at the granularity below it: the file graph goes quiet when an edit
+stays inside one file, and these are the edges it cannot see.
+"""
+struct UnitDelta
+    file::String
+    from::String
+    to::String
+    base::Float64
+    head::Float64
+end
+
+# Each corpus unit's key, and each key's set of exact subtree digests. The digests are what
+# lets a rename read as a rename: a name that vanished and a name that appeared with the
+# same body are one unit, not a deletion and an addition.
+function unit_keys_and_digests(files::Vector{ParsedFile}, graph::CorpusGraph, root::AbstractString)
+    keys = Dict{Int, UnitKey}()
+    digests = Dict{UnitKey, Set{UInt64}}()
+    rels = Dict{String, String}()
+    for f in files
+        rel = relative_to(rels, f.file, root)
+        for (u, fu) in enumerate(f.index.units)
+            node = get(graph.unit_index, (f.file, u), 0)
+            node == 0 && continue
+            key = (rel, unit_name(fu, f.index))
+            keys[node] = key
+            _, _, digest, _ = clone_features(fu, f.index)
+            push!(get!(() -> Set{UInt64}(), digests, key), digest)
+        end
+    end
+    return keys, digests
+end
+
+# The within-file binding edges keyed by unit rather than by node index, overloads summed
+# into their shared name. An edge whose endpoints sit in different files is not a within
+# edge and cannot appear here.
+function within_by_key(graph::CorpusGraph, keys::Dict{Int, UnitKey})
+    out = Dict{Tuple{UnitKey, UnitKey}, Float64}()
+    for ((a, b), w) in graph.within_edges
+        (haskey(keys, a) && haskey(keys, b)) || continue
+        ka, kb = keys[a], keys[b]
+        ka == kb && continue
+        out[(ka, kb)] = get(out, (ka, kb), 0.0) + w
+    end
+    return out
+end
+
+# Base units matched to the head units they were renamed into. A name present on one side
+# only, whose body digest is shared with exactly one name present on the other side only
+# and in the same file, is that unit under a new name. The uniqueness test is what keeps
+# this honest: two identical stubs renamed together offer no evidence about which became
+# which, so neither is claimed and both report as a deletion and an addition.
+function unit_renames(base::Dict{UnitKey, Set{UInt64}}, head::Dict{UnitKey, Set{UInt64}})
+    gone = [k for k in keys(base) if !haskey(head, k)]
+    born = [k for k in keys(head) if !haskey(base, k)]
+    out = Dict{UnitKey, UnitKey}()
+    for g in sort!(gone)
+        hits = [b for b in born if b[1] == g[1] && !isdisjoint(base[g], head[b])]
+        length(hits) == 1 || continue
+        # The head name must be as unambiguous as the base one, or two units are claiming it.
+        back = [x for x in gone if x[1] == g[1] && !isdisjoint(base[x], head[hits[1]])]
+        length(back) == 1 && (out[g] = hits[1])
+    end
+    return out
+end
+
+# The base edge set with every renamed endpoint spelled as its head name, so a rename alone
+# leaves the two sets equal and reports nothing.
+function apply_renames(edges::Dict{Tuple{UnitKey, UnitKey}, Float64}, renames::Dict{UnitKey, UnitKey})
+    isempty(renames) && return edges
+    out = Dict{Tuple{UnitKey, UnitKey}, Float64}()
+    for ((a, b), w) in edges
+        key = (get(renames, a, a), get(renames, b, b))
+        out[key] = get(out, key, 0.0) + w
+    end
+    return out
+end
+
+# The within-file edges whose weight moved, ordered by file then endpoint. Same rule as the
+# file-level pass: an edge standing at the same weight in both revisions says nothing.
+function unit_deltas(base::Dict{Tuple{UnitKey, UnitKey}, Float64}, head::Dict{Tuple{UnitKey, UnitKey}, Float64})
+    out = UnitDelta[]
+    for key in sort!(collect(union(keys(base), keys(head))))
+        bw = get(base, key, 0.0)
+        hw = get(head, key, 0.0)
+        bw == hw && continue
+        push!(out, UnitDelta(key[1][1], key[1][2], key[2][2], bw, hw))
+    end
+    return out
+end
+
+# A mermaid id per unit key, the file's basename and the unit name, numbered where two keys
+# slug the same so an id is never reused across files.
+function unit_ids(keys::Vector{UnitKey})
+    ids = Dict{UnitKey, String}()
+    used = Set{String}()
+    for k in sort!(copy(keys))
+        slug = replace(string(basename(k[1]), "_", k[2]), r"[^A-Za-z0-9]" => "_")
+        id = slug
+        n = 1
+        while id in used
+            n += 1
+            id = string(slug, "_", n)
+        end
+        push!(used, id)
+        ids[k] = id
+    end
+    return ids
+end
+
+# The within-file change view: one subgraph per file that moved, its units as nodes and the
+# binding edges that changed between them. Files whose units never moved are absent rather
+# than drawn empty, since a box with nothing in it still costs the reader a look. `was`
+# names the unit a node was renamed from, so a rename reads as one node with a history and
+# not as a stranger.
+function change_unit(io::IO, deltas::Vector{UnitDelta}, was::Dict{UnitKey, String})
+    mmd_header(io, Pair{String, String}[])
+    keyset = UnitKey[]
+    for d in deltas
+        push!(keyset, (d.file, d.from))
+        push!(keyset, (d.file, d.to))
+    end
+    sort!(unique!(keyset))
+    ids = unit_ids(keyset)
+    subs = Tuple{String, String, Vector{String}}[]
+    # Heaviest mover first. A reviewer reads top to bottom and stops when the budget of
+    # attention runs out, so the order decides what gets read, not just what gets drawn.
+    moved = Dict{String, Int}()
+    for d in deltas
+        moved[d.file] = get(moved, d.file, 0) + 1
+    end
+    for file in sort!(unique!([k[1] for k in keyset]); by = f -> (-moved[f], f))
+        lines = String[]
+        for k in keyset
+            k[1] == file || continue
+            label = haskey(was, k) ? string(k[2], " (was ", was[k], ")") : k[2]
+            push!(lines, mmd_node(ids[k], label))
+        end
+        push!(subs, (replace(file, r"[^A-Za-z0-9]" => "_"), mmd_label(file), lines))
+    end
+    emit_subgraphs(io, subs)
+    for d in deltas
+        arrow, label = state_arrow(d.base, d.head, String[])
+        println(io, "  ", ids[(d.file, d.from)], " ", arrow, "|", mmd_label(label), "| ", ids[(d.file, d.to)])
+    end
+    return nothing
+end
+
+# The within-file change view over `roots`. Same two revisions as the file-level pass, read
+# one granularity down: each file's own binding edges, matched across the revisions by unit
+# name and then by body digest.
+function mermaid_change_unit(io::IO, files::Vector{ParsedFile}, roots::Vector{String}, base, parse_at::P) where {P}
+    root = git_toplevel(roots)
+    hgraph = build_corpus_graph(files, corpus_symbols(files))
+    hkeys, hdig = unit_keys_and_digests(files, hgraph, root)
+    hedges = within_by_key(hgraph, hkeys)
+    bedges, bdig = with_base_corpus(roots, base, root) do troot, tpaths
+        isempty(tpaths) && return (Dict{Tuple{UnitKey, UnitKey}, Float64}(), Dict{UnitKey, Set{UInt64}}())
+        bfiles = parse_at(tpaths)
+        bgraph = build_corpus_graph(bfiles, corpus_symbols(bfiles))
+        bkeys, dig = unit_keys_and_digests(bfiles, bgraph, troot)
+        return (within_by_key(bgraph, bkeys), dig)
+    end
+    renames = unit_renames(bdig, hdig)
+    was = Dict{UnitKey, String}(v => k[2] for (k, v) in renames)
+    return change_unit(io, unit_deltas(apply_renames(bedges, renames), hedges), was)
 end

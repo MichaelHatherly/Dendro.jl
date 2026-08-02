@@ -285,6 +285,19 @@ metrics, fix the code, not the test.
   and update it when the structure moves.
 - Behaviour, scoring, metrics, languages, limitations: `README.md`.
 - Per-symbol contracts: docstrings in `src/`, exercised by `test/`.
+- Anything a user can reach is documented in `docs/`, a Documenter site whose page
+  order lives in `docs/make.jl`. A new metric, rule, language, config key, CLI
+  option, or diagram is not finished until it has prose on the page that covers its
+  neighbours, or a new page plus a `pages` entry. A docstring is the contract, not
+  the documentation: it says what the symbol does, and the page says when to reach
+  for it and how to read the result. `checkdocs = :public` with `warnonly = false`
+  makes a public symbol missing from the manual and a broken `@ref` hard errors, so
+  build it before pushing:
+
+  ```bash
+  julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+  julia --project=docs docs/make.jl
+  ```
 - Run the suite: `julia --project=. -e 'using Pkg; Pkg.test()'`. Language parsers
   live in `test/Project.toml`, so parsing only works under `Pkg.test()`, not a
   bare package-env REPL. Redirect test output to a file and read it on failure.
@@ -296,10 +309,15 @@ metrics, fix the code, not the test.
   (`test/jet.jl`): basic mode is a zero-tolerance gate on every stable Julia version
   (JET ships only a stub on pre-release Julia, so the item skips there), so a
   type-level regression fails the run. Sound mode and the optimization analyzer are
-  ratcheted instead: their report counts are capped at the current value and may only
-  fall. Lower a limit (`SOUND_LIMIT`, `OPT_LIMIT`) when reports are trimmed; the suite
-  prints the new value when a count drops. The ratchet is pinned to one Julia version,
-  since JET counts shift across versions.
+  ratcheted instead: their report counts are capped at the current value. Lower a limit
+  (`SOUND_LIMIT`, `OPT_LIMIT`) when reports are trimmed; the suite prints the new value
+  when a count drops. Raising one is allowed and answerable: the comment block above the
+  item records what each move cost and which narrowing attempts were measured and
+  reverted, so a raise arrives with that evidence or not at all. The ratchet is pinned to
+  one Julia version, since JET counts shift across versions, and it reports one lower on
+  macOS than on the ubuntu runner the numbers come from. Run it locally with
+  `julia +1.12 --project=. -e 'using Pkg; Pkg.test(test_args=["jet"])'` before pushing;
+  the default toolchain is likely older, and the item skips rather than fails there.
 - Format with [Runic](https://github.com/fredrikekre/Runic.jl). CI checks it.
 
   ```bash
