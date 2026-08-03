@@ -308,7 +308,7 @@ metrics, fix the code, not the test.
   build it before pushing:
 
   ```bash
-  julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+  julia --project=docs -e 'using Pkg; Pkg.instantiate()'
   julia --project=docs docs/make.jl
   ```
 - Run the suite: `julia --project=. -e 'using Pkg; Pkg.test()'`. Language parsers
@@ -318,26 +318,32 @@ metrics, fix the code, not the test.
   each check is a tagged `@testitem`, shared helpers live in `@testmodule Fixtures`
   (`test/setup.jl`), reached qualified as `Fixtures.idx(...)`. Items run in any
   order, each in its own module. A test argument names a tag to run, and a `-` prefix
-  names one to skip, so `test_args=["-jet"]` is the suite without the JET item.
-  The `:jet` item runs [JET](https://github.com/aviatesk/JET.jl) static analysis
-  (`test/jet.jl`): basic mode is a zero-tolerance gate on every stable Julia version
-  (JET ships only a stub on pre-release Julia, so the item skips there), so a
-  type-level regression fails the run. Sound mode and the optimization analyzer are
-  ratcheted instead: their report counts are capped at the current value. Lower a limit
-  (`SOUND_LIMIT`, `OPT_LIMIT`) when reports are trimmed; the suite prints the new value
-  when a count drops. Raising one is allowed and answerable: the comment block above the
-  item records what each move cost and which narrowing attempts were measured and
-  reverted, so a raise arrives with that evidence or not at all. The ratchet is pinned to
-  one Julia version, since JET counts shift across versions, and it reports one lower on
-  macOS than on the ubuntu runner the numbers come from. Run it locally with
-  `julia +1.12 --project=. -e 'using Pkg; Pkg.test(test_args=["jet"])'` before pushing;
-  the default toolchain is likely older, and the item skips rather than fails there.
-  It is its own CI job, and the ordinary cells exclude it. Nine matrix cells ran the item
-  where at most one does the analysis the ratchet reads, and it shared a process, and on
-  ubuntu a capped heap, with the other 2965 tests. On its own it gets both to itself, and
-  the suite beside it drops from 11m15s to 7m22s. Coverage is not the reason: instrumented
-  the item measures 3m23s against 3m37s without, so the split is about the process and the
-  redundant cells.
+  names one to skip, so `test_args=["-clones"]` is the suite without the clone items.
+- Static analysis is [JET](https://github.com/aviatesk/JET.jl), run by `just jet` over
+  the environment in `jet/`:
+
+  ```bash
+  just jet
+  ```
+
+  JET 0.12 needs Julia 1.12, which the environment declares, so a default toolchain older
+  than that fails to resolve and the gate has to be run under a newer one. Basic mode is a
+  zero-tolerance gate, so a type-level regression fails there instead of at runtime. Sound mode and the optimization analyzer are ratcheted: their report counts
+  are capped at the current value. Lower a limit (`SOUND_LIMIT`, `OPT_LIMIT`) when reports
+  are trimmed; the run prints the new value when a count drops. Raising one is allowed and
+  answerable: the comment block at the top of `jet/run.jl` records what each move cost and
+  which narrowing attempts were measured and reverted, so a raise arrives with that
+  evidence or not at all. The counts are what one Julia and JET pairing produces, so the
+  CI job runs the current stable release alone, and a toolchain bump is answered by
+  re-measuring and recording what moved, the same as a code change.
+
+  It sits outside the suite because sound analysis is an inference workload rather than a
+  test, and the longest single check by a wide margin. As a tagged item it ran in nine
+  matrix cells where at most one produced the counts the ratchet reads, and it shared a
+  process, and on ubuntu a capped heap, with the other 2965 tests. Splitting it took the
+  suite from 11m15s to 7m22s. The cost of the split is that basic mode no longer gates
+  the 1.11 compat floor, since JET 0.12 needs Julia 1.12; the ordinary suite still runs
+  there.
 - Format with [Runic](https://github.com/fredrikekre/Runic.jl). CI checks it.
 
   ```bash

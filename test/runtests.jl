@@ -15,10 +15,8 @@ const SUITE_DIR = normpath(@__DIR__)
 in_suite(filename) = startswith(normpath(filename), SUITE_DIR)
 
 # Filter by tag when test args are given: `Pkg.test(test_args = ["suppress"])` runs only
-# items tagged :suppress, and a `-` prefix excludes instead, so `["-jet"]` runs the suite
-# without the JET item. No args runs everything. CI splits along that line: JET is the
-# longest item and the only one whose cost is an inference workload, so it runs in its own
-# job rather than sharing a process, and on ubuntu a capped heap, with every other item.
+# items tagged :suppress, and a `-` prefix excludes instead, so `["-clones"]` runs the
+# suite without them. No args runs everything.
 const SELECTED = [a for a in ARGS if !startswith(a, "-")]
 const EXCLUDED = [chop(a; head = 1, tail = 0) for a in ARGS if startswith(a, "-")]
 
