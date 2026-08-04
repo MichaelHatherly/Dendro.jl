@@ -30,8 +30,8 @@ file, and appends the corpus-relational findings: cross-file duplicates, natural
 outliers, low-cohesion files, misplaced units, scattered files, unreferenced private
 definitions, files serving disjoint audiences, dependencies running against a directory
 pair's grain, dependency cycles, hub files, and, when the config enables it, incoherent
-packages. The active rule set is a value it carries, resolved from a
-`Config` (see Configuration)
+packages and definitions distant from their use. The active rule set is a value it
+carries, resolved from a `Config` (see Configuration)
 unless the `rules` keyword overrides it, and it threads through baseline sampling, per-file
 scoring, and suppression validation, so a caller extends the checks without touching the
 pipeline. The baseline-from-the-corpus step is what makes relative scoring work with no
@@ -59,6 +59,8 @@ reference sites among them, so a scan resolves the corpus once rather than six t
 travels through the keyword slot the bare visibility map used to occupy, so no pass grew a
 parameter to take it. Cohesion, placement,
 scattering, reachability, and the opt-in `:incoherent_package` run over the unit graph;
+the opt-in `:distant_definition` needs neither graph, reading one file's bindings against
+the symbol table;
 `:back_edge`, `:dependency_cycle`, `:hub` and the opt-in `:divisible_package` run over the
 one file graph, the substrate
 for the rules that read the corpus as files depending on files. It is built before the
@@ -530,6 +532,17 @@ Reporting:
   coupling landing in the one other file it leans toward most, carrying the absolute
   `MISPLACED_BAND` and the corpus percentile, gated by the community anchor. Included
   before `analyze.jl`, which calls it.
+- `distant_definition.jl` defines within-file placement, the opt-in pass `analyze` gates on
+  `cfg.rules`. Where `:misplaced` asks which file a unit belongs in, this asks where in the
+  file a definition belongs. `toplevel_ordinals` numbers each unit by the top-level unit
+  holding it, so a nested short-form definition does not read as one more thing between two
+  definitions; `nearest_uses` walks `index.bindings` for the closest unit referencing each
+  of `table.defs`' definitions, ties going to the earlier unit so the result does not follow
+  the binding map's iteration order; and `cluster_distant_definition` emits a
+  `:distant_definition` finding per definition through `scored_findings`, scored on the
+  count of definitions between the two against `DISTANT_DEFINITION_BAND` and the corpus
+  percentile. Nearest rather than mean or median is what leaves a file-wide helper unscored
+  without a ubiquity cut. Included after `placement.jl`, before `analyze.jl` calls it.
 - `scattered.jl` defines cross-file scattering, the file-level companion to
   `:low_cohesion`. `cluster_scattered` reads `communities(adjacency(graph; within = true))`,
   the corpus graph with each file's within-file binding edges folded in, so `communities`

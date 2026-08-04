@@ -149,10 +149,11 @@ function append_gated!(findings::Vector{Finding}, cfg::Config, metric::Symbol, s
     return findings
 end
 
-# Every corpus-relational pass, scoped, in the order a report reads them. The two opt-in
-# directory passes are gated here for the same reason the vocabulary one is: each proposes a
-# rearrangement rather than a bounded edit, so they stay out of the default set and out of
-# the gate floor.
+# Every corpus-relational pass, scoped, in the order a report reads them. The opt-in passes
+# are gated here for the reason the vocabulary one is: each reports a proposal rather than a
+# measurement, the two directory ones because they name a rearrangement rather than a bounded
+# edit and `:distant_definition` because nothing syntactic separates the declaration order it
+# reads from a defect. All stay out of the default set and out of the gate floor.
 function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res::CorpusResolution)
     ecut = cfg.cut
     table, linkage = res.table, res.linkage
@@ -160,6 +161,10 @@ function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res:
     findings = scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope)
     append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = ecut, band = cfg.low_cohesion), scope))
     append!(findings, scope_clusters(cluster_misplaced(files, graph, table; cut = ecut, band = cfg.misplaced), scope))
+    append_gated!(
+        findings, cfg, RELATIONAL.distant_definition, scope,
+        () -> cluster_distant_definition(files, table; cut = ecut, band = cfg.distant_definition)
+    )
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
     append!(findings, scope_clusters(cluster_unreferenced(files, table; linkage), scope))
     append!(

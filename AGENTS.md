@@ -168,6 +168,27 @@ within one file for cohesion, keep the score the count of communities a file's u
 occupy that are anchored elsewhere, and keep it name-based and lexical like the rest of
 placement.
 
+Placement asked once more, of a definition against its own file. `:misplaced` asks which
+file a unit belongs in; `:distant_definition` asks where in the file, scoring how many
+top-level definitions lie between a definition and the nearest unit naming it. Nearest, not
+mean and not median, and that is the whole of what keeps the rule quiet on a file-wide
+helper with no ubiquity cut to write: a name most of the file reaches for has a use close
+by wherever it sits, where a median would score it by the distance to the middle of the
+file and report every one of them. Distance counts definitions rather than lines, since a
+reader crossing one 200-line function has crossed one thing and `function_length` is what
+reads the 200. It ships off by default, and the measurement is the argument rather than
+caution: over 5798 scored definitions in nine corpora half sit within one definition of a
+use, the per-corpus p95 runs from 12 to 44, and hand reading everything this package
+separates by 4 to 15 found ordinary declaration order throughout, a helper or a documented
+constant written above the one function that reads it. Nothing syntactic separates a helper
+hoisted for reading order from one stranded by an edit, so the size of the gap is all there
+is to read and a band low enough to catch what a reviewer writes a comment about would
+report a tenth of a corpus's definitions. The opinion belongs in the project's
+`.dendro.toml`, which is why the band is a config key. Answer a request to make the rule
+smarter by reading which definitions sit between the two with that measurement: the
+intervening code is as related to the definition in the healthy case as in the defective
+one, which is why nearest distance and a tunable band is the whole model.
+
 A diagram of that relation needs the direction the clique drops, so the unit-level change
 view reads the same bindings a second way: one edge per reference, from the unit that named
 a definition to the unit holding it, over every named unit rather than only the callables

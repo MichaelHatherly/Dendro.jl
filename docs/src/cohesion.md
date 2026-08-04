@@ -119,6 +119,46 @@ Two units pulled toward the same file is the useful reading there: it says where
 between the two files is currently drawn wrongly. Recovering that without the labels means
 rebuilding the corpus graph by hand, which is work the pass has already done.
 
+## Within-file placement
+
+Reported as `:distant_definition`: a definition sitting a long way from the code that
+uses it, the within-file companion to `:misplaced`. Where placement asks which file a
+unit belongs in, this asks where in the file a definition belongs. The score is how many
+top-level definitions lie between a definition and the nearest unit in its file that
+references it, so a definition written beside a use scores zero. The first location is
+the definition, the second the use nearest it.
+
+```
+src/linkage.jl:60  is_type_kind  distant_definition 57 (high; p99)
+    also at src/linkage.jl:830  file_symbols!  [nearest use of is_type_kind]
+```
+
+Nearest rather than mean or median, and that choice is what keeps the rule quiet on a
+file-wide helper without a ubiquity cut. A name most of the file reaches for has a use
+close by wherever it sits, so it scores low on its own; a median would score it by the
+distance to the middle of the file and report every such helper. What survives is a
+definition whose uses all sit together somewhere else, which is the case with a home to
+move to. Distance counts definitions rather than lines, because a reader crossing one
+200-line function has crossed one thing, and `function_length` is the rule that reads
+the 200.
+
+The rule is off by default, and the reason is measurement rather than caution. Over 5798
+scored definitions in nine corpora, half sit within one definition of a use, but the tail
+is long: the pooled p95 is 28 and the per-corpus p95 runs from 12 to 44. Reading every
+definition this package separates by 4 to 15 by hand found ordinary declaration order
+throughout, a helper or a documented constant written above the one function that reads
+it. Nothing syntactic separates a helper hoisted for reading order from one stranded by
+an edit, so the size of the gap is all there is to read, and the default band marks only
+what is beyond argument. Turn it on and set the band to the convention the project keeps:
+
+```toml
+[rules]
+distant_definition = true
+
+[bands]
+distant_definition = [5, 10]
+```
+
 ## Audience splits
 
 Reported as `:split_audience`: a file whose definitions serve two or more groups of

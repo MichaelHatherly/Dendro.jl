@@ -273,12 +273,20 @@
 # change is the module filter: 0.12 removed `target_defined_modules`, and `target_modules`
 # is the replacement it names. Dendro is one module with no submodules, so the two select
 # the same frames.
+#
+# The `:distant_definition` pass raised sound from 1371 to 1377 and left opt at 33. Five of
+# the six name `distant_definition.jl` and all five are the keyword-argument lowering every
+# `cluster_*` pass carries: three `getfield(::NamedTuple, ...)` reads for `band`, `cut` and
+# `min_defs`, the `diff_names` check over the keyword names, and the kwarg body method at
+# `::Any` arguments. The sixth is the call edge `relational_clusters` gained. No new kind,
+# and no narrowing is available short of dropping the keyword interface every sibling pass
+# is written to, so the raise was taken directly.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1371  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1377  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

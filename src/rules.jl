@@ -176,6 +176,7 @@ const RELATIONAL = (
     scattered = :scattered,
     split_audience = :split_audience,
     misplaced = :misplaced,
+    distant_definition = :distant_definition,
     unreferenced = :unreferenced,
     reimplementation = :reimplementation,
     back_edge = :back_edge,
