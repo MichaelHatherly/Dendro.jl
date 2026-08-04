@@ -52,8 +52,8 @@ band, each taking a `[warn, high]` pair. [Metric reference](@ref) lists which na
 are and what each defaults to.
 
 `[rules]` keys are any rule name, on or off. The opt-in passes are switched on here too:
-`reimplementation`, `incoherent_package`, `divisible_package`, `library_duplicate` and
-`library_near_duplicate`.
+`reimplementation`, `incoherent_package`, `divisible_package`, `distant_definition`,
+`library_duplicate` and `library_near_duplicate`.
 
 ## Clone detection
 

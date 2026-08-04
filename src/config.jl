@@ -21,7 +21,8 @@ const DEFAULT_CUT = 0.95
 # positional and every band shares a type.
 const RELATIONAL_BANDS = (
     :unnatural, :low_cohesion, :scattered, :split_audience, :misplaced,
-    :back_edge, :dependency_cycle, :hub, :incoherent_package, :divisible_package,
+    :distant_definition, :back_edge, :dependency_cycle, :hub, :incoherent_package,
+    :divisible_package,
 )
 
 # A malformed `.dendro.toml` value: a band that is not two integers, a `cut` that is
@@ -69,6 +70,7 @@ struct Config
     scattered::Tuple{Int, Int}
     split_audience::Tuple{Int, Int}
     misplaced::Tuple{Int, Int}
+    distant_definition::Tuple{Int, Int}
     back_edge::Tuple{Int, Int}
     dependency_cycle::Tuple{Int, Int}
     hub::Tuple{Int, Int}
@@ -113,7 +115,7 @@ scalar_metric_names(acc) = union(
 # gated in `analyze` rather than resolved into the rule set, so `resolve_rules`
 # ignores these names.
 const TOGGLEABLE_RELATIONAL = (
-    :reimplementation, :incoherent_package, :divisible_package,
+    :reimplementation, :incoherent_package, :divisible_package, :distant_definition,
     :library_duplicate, :library_near_duplicate,
 )
 
@@ -532,6 +534,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         get(acc.relational, :scattered, SCATTERED_BAND),
         get(acc.relational, :split_audience, SPLIT_AUDIENCE_BAND),
         get(acc.relational, :misplaced, MISPLACED_BAND),
+        get(acc.relational, :distant_definition, DISTANT_DEFINITION_BAND),
         get(acc.relational, :back_edge, BACK_EDGE_BAND),
         get(acc.relational, :dependency_cycle, DEPENDENCY_CYCLE_BAND),
         get(acc.relational, :hub, HUB_BAND),
@@ -565,8 +568,8 @@ function override_config(
     return Config(
         cut === nothing ? config.cut : Float64(cut), config.bands,
         config.unnatural, config.low_cohesion, config.scattered, config.split_audience,
-        config.misplaced, config.back_edge, config.dependency_cycle, config.hub,
-        config.incoherent_package, config.divisible_package, config.rules,
+        config.misplaced, config.distant_definition, config.back_edge, config.dependency_cycle,
+        config.hub, config.incoherent_package, config.divisible_package, config.rules,
         min_size === nothing ? config.min_size : Int(min_size),
         threshold === nothing ? config.threshold : Float64(threshold),
         radius_factor === nothing ? config.radius_factor : Float64(radius_factor),

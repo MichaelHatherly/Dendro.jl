@@ -77,6 +77,7 @@ end
             scattered = [31, 32]
             split_audience = [36, 37]
             misplaced = [41, 42]
+            distant_definition = [46, 47]
             back_edge = [51, 52]
             dependency_cycle = [61, 62]
             hub = [71, 72]
@@ -94,6 +95,7 @@ end
         @test cfg.scattered == (31, 32)
         @test cfg.split_audience == (36, 37)
         @test cfg.misplaced == (41, 42)
+        @test cfg.distant_definition == (46, 47)
         @test cfg.back_edge == (51, 52)
         @test cfg.dependency_cycle == (61, 62)
         @test cfg.hub == (71, 72)
@@ -106,7 +108,8 @@ end
             Set(
             [
                 :unnatural, :low_cohesion, :scattered, :split_audience, :misplaced,
-                :back_edge, :dependency_cycle, :hub, :incoherent_package, :divisible_package,
+                :distant_definition, :back_edge, :dependency_cycle, :hub,
+                :incoherent_package, :divisible_package,
             ]
         )
     end

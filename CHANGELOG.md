@@ -43,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory of folders grouping under new parents. The score is the best proposed folder's
   internal reference ratio, and the finding names the children each folder takes.
   `[rules] divisible_package = true` enables it; banded `[60, 85]`.
+- Opt-in corpus finding `:distant_definition`: a definition separated from the code that
+  uses it, the within-file companion to `:misplaced`. The score is how many top-level
+  definitions lie between a definition and the nearest unit in its file that references it,
+  so a definition written beside a use scores zero. Nearest rather than mean or median, and
+  that is what keeps the rule quiet on a file-wide helper without a ubiquity cut: such a
+  name has a use close by wherever it sits. The finding names the definition and the use
+  nearest it. Measured over 5798 scored definitions in nine corpora, separation is ordinary
+  and the tail is long, so the band marks only what is beyond argument and the rule ships
+  off. `[rules] distant_definition = true` enables it; banded `[25, 50]`.
 
 ### Changed
 

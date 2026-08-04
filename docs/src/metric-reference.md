@@ -67,6 +67,7 @@ The band column is empty where the metric is a flag and always reports `:high`.
 | `scattered` | 7, 10 | on | modules the file's units are pulled toward | [Cohesion and placement](@ref) |
 | `split_audience` | 3, 5 | on | consumer groups the file serves | [Cohesion and placement](@ref) |
 | `misplaced` | 60, 80 | on | coupling landing in one other file, percent | [Cohesion and placement](@ref) |
+| `distant_definition` | 25, 50 | opt-in | definitions between it and its nearest use | [Cohesion and placement](@ref) |
 | `unreferenced` | | on | nothing; the definition is the finding | [Cohesion and placement](@ref) |
 | `back_edge` | 85, 95 | on | dominance of the directory pair, percent | [Dependencies and layout](@ref) |
 | `dependency_cycle` | 5, 10 | on | files in the cyclic group | [Dependencies and layout](@ref) |
@@ -77,7 +78,7 @@ The band column is empty where the metric is a flag and always reports `:high`.
 [^2]: Hundredths of a bit per token, so the default band is 4.00 and 5.00 bits. The
     value is rounded for reporting; the percentile ranks on the unrounded score.
 
-The ten with a band are the relational names `[bands]` accepts. The rest carry no band
+The eleven with a band are the relational names `[bands]` accepts. The rest carry no band
 to retune.
 
 ## Against a library
