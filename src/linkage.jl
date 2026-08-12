@@ -779,9 +779,21 @@ function qualified_name(d::CorpusDef, access::Union{ModuleAccess, Nothing}, spli
     return string(last(splice), access.separator, d.name)
 end
 
+# The namespace a definition sits in, outermost first: the module path its file was spliced
+# into, then the module regions enclosing it within that file. A per-file module path can
+# only record the second half, since the `module` a splice lands in is declared in the
+# includer and never in the file itself.
+def_namespace(d::CorpusDef, splices::Dict{String, Vector{String}}) =
+    vcat(get(splices, d.file, NO_NAMESPACE), d.module_path)
+
 # The cross-file names a file sees from a set of candidate definitions: every member's
 # name, its own file's excluded. Shared by the splice model, whose members are an
 # inclusion component, and the directory model, whose members are a package directory.
+# A member is named bare when the language exports it across the boundary, and also when
+# it shares the namespace the reading file was spliced into: a definition in a module body
+# and a file that module includes sit in one namespace, so the bare name is the only form a
+# reference there writes. Without that reading, a const or helper declared beside the
+# `include` that pulls its callers in is reachable from nothing.
 # Where the language reaches a namespace by qualifying it, a member also answers to its
 # qualified name: that is the only form for a member the language does not export across
 # the boundary, and a second form for one spliced into a module, which a caller in
@@ -789,10 +801,12 @@ end
 function member_visible(f::ParsedFile, vi::VisibilityIndex, link::Linkage, members::Vector{Int})
     names = Dict{String, Vector{Int}}()
     access = get(MODULE_ACCESS, f.language, nothing)
+    here = get(vi.splices, f.file, NO_NAMESPACE)
     for di in members
         d = vi.table.defs[di]
         d.file == f.file && continue
-        link.is_exported(d, Set{String}())::Bool && push!(get!(() -> String[], names, d.name), di)
+        (link.is_exported(d, Set{String}())::Bool || def_namespace(d, vi.splices) == here) &&
+            push!(get!(() -> String[], names, d.name), di)
         key = qualified_name(d, access, get(vi.splices, d.file, NO_NAMESPACE))
         key === nothing && continue
         push!(get!(() -> String[], names, key), di)

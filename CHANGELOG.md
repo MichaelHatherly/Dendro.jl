@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A definition in a module's own body is now visible by bare name to the files that module
+  includes. The two sit in one namespace, so a reference in an included file writes the
+  bare name, but resolution offered only the qualified form and matched nothing. A const or
+  helper declared beside the `include` that pulls its callers in was reported
+  `:unreferenced`, and every cross-file reference to it was missing from both graphs.
 - A `[languages.<name>] queries` path now resolves against the config file that declared
   it rather than the process working directory, so a scan started from a subdirectory finds
   the queries. `patterns_dir` behaves the same way.
