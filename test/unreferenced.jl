@@ -98,6 +98,19 @@ end
     @test isempty(Fixtures.unref_sites([mod, a, b]))
 end
 
+@testitem ":unreferenced follows a bare reference back into the module body" setup = [Fixtures] tags = [:unreferenced] begin
+    # `SCALE` sits in `M`'s own body and `a.jl` is spliced into `M`, so the bare name
+    # `a.jl` writes is the one that reaches it. Resolving only the qualified form would
+    # call a const the corpus reads on every call dead.
+    mod = Fixtures.parsedfile(
+        :julia,
+        "module M\npublic entry\nconst SCALE = 2\ninclude(\"a.jl\")\nend\n";
+        file = "mod.jl",
+    )
+    a = Fixtures.parsedfile(:julia, "entry(x) = x * SCALE\n"; file = "a.jl")
+    @test isempty(Fixtures.unref_sites([mod, a]))
+end
+
 @testitem ":unreferenced reads a nested splice as the innermost module" setup = [Fixtures] tags = [:unreferenced] begin
     # `y.jl` is spliced into `X`, itself spliced into `M`, so `deep` answers to `X.deep`.
     mod = Fixtures.parsedfile(

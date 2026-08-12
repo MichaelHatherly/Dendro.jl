@@ -91,6 +91,24 @@ end
     @test "M.helper" in names
 end
 
+@testitem "a module body's definition is visible bare to the files it splices in" setup = [Fixtures] tags = [:linkage] begin
+    # `M` declares `helper` in its own body and includes `b.jl` into that same namespace,
+    # so `b.jl` names it bare, the form a reference there writes. `nested` sits one
+    # namespace deeper than anything `b.jl` holds, so it stays qualified.
+    mod = Fixtures.parsedfile(
+        :julia,
+        "module M\nhelper() = 1\nmodule A\nnested() = 2\nend\ninclude(\"b.jl\")\nend\n";
+        file = "mod.jl",
+    )
+    b = Fixtures.parsedfile(:julia, "f() = 1\n"; file = "b.jl")
+    files = [mod, b]
+    names = keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["b.jl"])
+    @test "helper" in names
+    @test "M.helper" in names
+    @test !("nested" in names)
+    @test "A.nested" in names
+end
+
 @testitem "a splice inside a submodule qualifies under that submodule" setup = [Fixtures] tags = [:linkage] begin
     # The namespace a file lands in is the one enclosing the `include` that pulled it in,
     # taken through the whole chain: `y.jl` is spliced into `X`, itself spliced into `M`.

@@ -69,7 +69,9 @@ walks through can be declared in a file the definition's own module path never s
 A definition at file scope answers to both forms. Its file was spliced into whatever
 module the `include` sits inside, a namespace the file itself never declares, so the
 corpus walks the splice chain to find the module path each file lands in. A file-scope
-name is then visible bare and qualified. Reading a qualified reference this way also
+name is then visible bare and qualified, and so is a name the module's own body declares,
+read from the file it includes: the two sit in one namespace, so a reference there writes
+the bare name. Reading a qualified reference this way also
 stops a field read (`row.total`) resolving as a bare `total`: the two are the same syntax,
 and a value's field matches no namespace.
 
