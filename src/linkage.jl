@@ -806,10 +806,10 @@ function member_visible(f::ParsedFile, vi::VisibilityIndex, link::Linkage, membe
         d = vi.table.defs[di]
         d.file == f.file && continue
         (link.is_exported(d, Set{String}())::Bool || def_namespace(d, vi.splices) == here) &&
-            push!(get!(() -> String[], names, d.name), di)
+            push!(get!(() -> Int[], names, d.name), di)
         key = qualified_name(d, access, get(vi.splices, d.file, NO_NAMESPACE))
         key === nothing && continue
-        push!(get!(() -> String[], names, key), di)
+        push!(get!(() -> Int[], names, key), di)
     end
     return names
 end
@@ -829,7 +829,7 @@ function import_visible(
                 d.file == f.file && continue
                 link.is_exported(d, exports)::Bool || continue
                 (isempty(statement.names) || d.name in statement.names) || continue
-                push!(get!(() -> String[], names, d.name), di)
+                push!(get!(() -> Int[], names, d.name), di)
             end
         end
     end
