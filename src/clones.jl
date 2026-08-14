@@ -139,6 +139,40 @@ function clone_similarity(a::Vector{UInt64}, b::Vector{UInt64})
     return lcs_length(a, b) / denom
 end
 
+# A sequence's first `LCS_CAP` hashes, sorted: the form `multiset_overlap` merges. The
+# prefix is the one `lcs_length` reads, so the bound is taken over exactly the elements
+# the verdict compares; taken over more, it could reject a pair the LCS would have kept.
+sorted_prefix(sequence::Vector{UInt64}) = sort(sequence[1:min(length(sequence), LCS_CAP)])
+
+"""
+    multiset_overlap(a, b) -> Int
+
+How many hashes two sorted prefixes share counting repeats, an upper bound on their LCS.
+
+A common subsequence is a sub-multiset of both sides, so a pair whose shared multiset
+already falls short of a cutoff can never reach it. That makes this a prefilter and never
+a verdict: it is order-blind where the LCS is not, so every pair it lets through is still
+decided by [`clone_similarity`](@ref). It is linear where the LCS is quadratic, which is
+what keeps the near passes off the `O(n*m)` work for a pair that cannot match.
+"""
+function multiset_overlap(a::Vector{UInt64}, b::Vector{UInt64})
+    i = j = shared = 0
+    la, lb = length(a), length(b)
+    while i < la && j < lb
+        x, y = a[i + 1], b[j + 1]
+        if x == y
+            i += 1
+            j += 1
+            shared += 1
+        elseif x < y
+            i += 1
+        else
+            j += 1
+        end
+    end
+    return shared
+end
+
 # The size floor for a whole function to anchor a clone. A function with no control
 # flow is boilerplate that coincides across unrelated code, a dispatch stub or a
 # forwarding overload rather than a meaningful unit, so it clears the block floor
@@ -341,14 +375,19 @@ const DEFAULT_THRESHOLD = 0.85
 const DEFAULT_RADIUS_FACTOR = 0.5
 
 # One function carried through near-miss detection: where it is, whether an author
-# accepted it, its pre-order node-type sequence (for the LCS verdict), its node-type
-# histogram (the characteristic vector), its exact digest (to skip exact clones), and
-# its size.
+# accepted it, its pre-order node-type sequence (for the LCS verdict), that sequence
+# sorted (for the multiset bound that prefilters the LCS), its node-type histogram (the
+# characteristic vector), its exact digest (to skip exact clones), and its size.
+#
+# The sorted prefix is a second reading of `sequence` rather than a replacement: the LCS
+# needs the source order and the bound needs it gone. Carried on the record because each
+# is read once per candidate pair and a unit sits in many pairs.
 struct CloneUnit
     language::Symbol
     location::Location
     suppressed::Bool
     sequence::Vector{UInt64}
+    sorted::Vector{UInt64}
     histogram::Dict{String, Int}
     digest::UInt64
     size::Int
@@ -464,7 +503,12 @@ function pair_similarity(units::Vector{CloneUnit}, i::Int, j::Int, threshold::Fl
     lb = min(length(b), LCS_CAP)
     # Similarity is `|LCS| / max` and `|LCS|` is at most the shorter length, so a pair
     # whose size ratio is already under the threshold can never clear it.
-    min(la, lb) < threshold * max(la, lb) && return 0.0
+    needed = threshold * max(la, lb)
+    min(la, lb) < needed && return 0.0
+    # `|LCS|` is at most the shared multiset too, and that costs a linear merge where the
+    # LCS costs `O(n*m)`. The banded query proposes generously, so most proposed pairs are
+    # decided here rather than by the DP.
+    multiset_overlap(units[i].sorted, units[j].sorted) < needed && return 0.0
     return clone_similarity(a, b)
 end
 
@@ -527,7 +571,13 @@ function clone_units(files::Vector{ParsedFile}, min_size::Integer, metric::Symbo
             size < unit_floor(unit, f.index, min_size) && continue
             loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
             sup = is_suppressed(f.directives, unit.firstline, metric)
-            push!(out, CloneUnit(f.language, loc, sup, sequence, histogram, digest, size))
+            push!(
+                out,
+                CloneUnit(
+                    f.language, loc, sup, sequence, sorted_prefix(sequence),
+                    histogram, digest, size
+                )
+            )
         end
     end
     return out

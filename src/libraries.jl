@@ -533,6 +533,7 @@ struct ProjectRegion
     location::Location
     suppressed::Bool
     sequence::Vector{UInt64}
+    sorted::Vector{UInt64}
     histogram::Dict{String, Int}
     digest::UInt64
     whole::Bool
@@ -542,7 +543,7 @@ end
 
 # A whole function is its own enclosing unit, so its location's line is that unit's line.
 ProjectRegion(u::CloneUnit) = ProjectRegion(
-    u.language, u.location, u.suppressed, u.sequence, u.histogram, u.digest,
+    u.language, u.location, u.suppressed, u.sequence, u.sorted, u.histogram, u.digest,
     true, u.size, u.location.line,
 )
 
@@ -573,12 +574,13 @@ function project_regions(files::Vector{ParsedFile}, min_size::Integer, grain::Sy
                 whole = is_function(s.node, f.index)
                 sub = whole ? st : anchor_subtrees(s.node, f.index)
                 line = Int(TreeSitter.start_point(s.node).row) + 1
+                sequence = preorder_hashes(sub)
                 push!(
                     regions, ProjectRegion(
                         f.language, Location(f.file, line, name),
                         is_suppressed(f.directives, line, metric),
-                        preorder_hashes(sub), histogram_of(sub), s.hash, whole, total,
-                        unit.firstline,
+                        sequence, sorted_prefix(sequence), histogram_of(sub), s.hash,
+                        whole, total, unit.firstline,
                     )
                 )
             end
@@ -688,9 +690,20 @@ function library_pairs!(
         Int[a.size for (_, a) in pool],
     )
     pairs = banded_candidates(query, search, radius_factor, CROSS_BANDS)
+    # Sorted once per library anchor rather than per pair: the reference side is queried
+    # against every project region in its band, so an anchor takes part in many pairs.
+    # The project side carries its own on the region.
+    anchors = Vector{UInt64}[sorted_prefix(a.sequence) for (_, a) in pool]
     lengths = Vector{Int}(undef, length(pairs))
     parallel_map!(lengths) do k
-        lcs_length(regions[idxs[pairs[k][1]]].sequence, pool[pairs[k][2]][2].sequence)
+        region = regions[idxs[pairs[k][1]]]
+        anchor = pool[pairs[k][2]][2]
+        # The cross-corpus test reads `|LCS|` against the shorter side, so the bound a
+        # pair has to clear is `threshold * min`, where the within-corpus one reads `max`.
+        # Below it the multiset cannot reach the cutoff and neither can the LCS.
+        needed = threshold * min(min(length(region.sequence), LCS_CAP), min(length(anchor.sequence), LCS_CAP))
+        multiset_overlap(region.sorted, anchors[pairs[k][2]]) < needed && return 0
+        lcs_length(region.sequence, anchor.sequence)
     end
     for k in eachindex(pairs)
         i = idxs[pairs[k][1]]
