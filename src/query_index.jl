@@ -156,6 +156,13 @@ struct QueryIndex
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
     # fields.
     by_name::Dict{String, Concept}
+    # The `@def_name` capture each node holds as a direct child, keyed by that node's
+    # identity and filled by `index_def_name_parents!`. `binder_def_name` asks this of a
+    # unit's parent; a top-level definition's parent is the whole file, so answering it by
+    # scanning that parent's children costs every unit a walk over every other top-level
+    # node. Resolved from the captures instead, which is linear in them. Empty for a
+    # language whose query tags no `@def_name`.
+    def_name_parents::Dict{NodeId, TreeSitter.Node}
     # Each reference identifier's identity mapped to the in-file definition it
     # resolves to, filled by `resolve_bindings!` when a scopes query is supplied.
     bindings::Dict{NodeId, NodeId}
@@ -201,7 +208,8 @@ struct QueryIndex
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
-            callee, toplevel, declaration, by_name, Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
+            callee, toplevel, declaration, by_name, Dict{NodeId, TreeSitter.Node}(),
+            Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,
         )
     end
@@ -266,7 +274,23 @@ function build_index(
         Base.push!(idx.units, Unit(n, Int(sp.row) + 1, Int(ep.row) + 1))
     end
     append_toplevel_units!(idx)
+    index_def_name_parents!(idx)
     (!bindings || isempty(caps.scopes)) || resolve_bindings!(idx.bindings, caps, source)
+    return idx
+end
+
+# Key each `@def_name` capture by the node holding it, so `binder_def_name` reads a
+# lookup where it used to scan a parent's children. Where one node holds several, the
+# earliest by position wins, which is the one a scan in child order reached first.
+function index_def_name_parents!(idx::QueryIndex)
+    for n in idx.def_name.nodes
+        p = TreeSitter.parent(n)
+        TreeSitter.is_null(p) && continue
+        key = nodeid(p)
+        held = get(idx.def_name_parents, key, nothing)
+        (held === nothing || preorder_key(n) < preorder_key(held)) &&
+            (idx.def_name_parents[key] = n)
+    end
     return idx
 end
 

@@ -54,13 +54,17 @@ is_function(node::TreeSitter.Node, index::QueryIndex) = hasid(index.function_ids
 # The defining name tagged on `node`'s binder, a sibling outside its subtree, or "".
 # An anonymous callable bound to a name (a JS arrow `const f = () => ...`) carries its
 # name on the enclosing binder, so a unit holding no name of its own takes the binder's.
+#
+# Read off the index's parent-keyed `@def_name` map rather than by scanning the binder's
+# children. A top-level definition's binder is the file itself, so the scan cost every
+# unit a walk over every other top-level node, which is quadratic in the definitions a
+# file holds and was measured at four fifths of all `unit_name` time.
 function binder_def_name(node::TreeSitter.Node, index::QueryIndex)
     p = TreeSitter.parent(node)
     TreeSitter.is_null(p) && return ""
-    for c in TreeSitter.children(p)
-        c in index.def_name && return String(strip(TreeSitter.slice(index.source, c)))
-    end
-    return ""
+    held = get(index.def_name_parents, nodeid(p), nothing)
+    held === nothing && return ""
+    return String(strip(TreeSitter.slice(index.source, held)))
 end
 
 # Label a function node by its name, or "" when no name node is found. A qualified

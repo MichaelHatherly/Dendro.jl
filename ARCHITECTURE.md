@@ -249,8 +249,12 @@ Resolution and configuration:
   `build_index`, which runs a language's query over a tree once and files every
   capture under its concept. Identification lives here: metric code asks whether a
   node was tagged, never matches a node-type string. An unhandled capture name
-  throws rather than dropping silently. Given a scopes query, `build_index` runs a
-  second pass through `resolve_bindings!` and fills `index.bindings`.
+  throws rather than dropping silently. `index_def_name_parents!` then keys each
+  `@def_name` capture by the node holding it, so `binder_def_name` (`units.jl`) reads a
+  lookup rather than scanning a binder's children: a top-level definition's binder is the
+  file, which made naming a unit cost a walk over every other top-level node. Given a
+  scopes query, `build_index` runs a second pass through `resolve_bindings!` and fills
+  `index.bindings`.
 - `bindings.jl` defines tier-1 lexical scope resolution: `ScopeEntry`, the helpers
   `owning_scope` and `lookup_definition`, and
   `resolve_bindings!`, which runs a language's scopes query over a tree and binds

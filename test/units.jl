@@ -183,3 +183,26 @@ end
     i = Fixtures.idx(:python, "import os\nx = 1\ndef f():\n    return x\n")
     @test all(u -> Dendro.is_callable(u, i), Dendro.units(i))
 end
+
+@testitem "def_name captures are keyed by the node holding them" setup = [Fixtures] tags = [:units] begin
+    # `binder_def_name` reads this map rather than scanning a parent's children. A
+    # top-level definition's parent is the whole file, so the scan cost every unit a walk
+    # over every other top-level node.
+    i = Fixtures.idx(:javascript, "const f = key => key;\nconst g = (a, b) => a + b;\n")
+    units = Dendro.units(i)
+    @test [Dendro.unit_name(u, i) for u in units] == ["f", "g"]
+
+    # One entry per binder, keyed by the binder rather than by the file, so two arrows
+    # declared side by side do not resolve to each other's name.
+    binders = [
+        Dendro.nodeid(Dendro.TreeSitter.parent(Dendro.unit_node(u))) for u in units
+    ]
+    @test length(Set(binders)) == 2
+    @test all(haskey(i.def_name_parents, b) for b in binders)
+
+    # A language whose query tags no `@def_name` carries no entries, and its units are
+    # named by the lexical scan alone.
+    bash = Fixtures.idx(:bash, "f() {\n  echo 1\n}\n")
+    @test isempty(bash.def_name_parents)
+    @test Dendro.unit_name(only(Dendro.units(bash)), bash) == "f"
+end
