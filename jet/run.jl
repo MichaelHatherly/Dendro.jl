@@ -282,26 +282,31 @@
 # and no narrowing is available short of dropping the keyword interface every sibling pass
 # is written to, so the raise was taken directly.
 #
-# The near-miss multiset bound raised sound from 1377 to 1379 and left opt at 33. Both are
-# one report twice over: `CloneUnit` and `ProjectRegion` each gained a field, so the
-# all-`::Any` constructor calls those two records already reported carry one more argument,
-# and one further `UnanalyzedCallReport` falls out of the wider `CloneUnit`. The `@def_name`
-# parent map that landed beside it added none.
-# Dumping every report before and after confirms it: keyed without line numbers,
-# the whole diff is `CloneUnit(::Any x7)` becoming `(::Any x8)` and `ProjectRegion(::Any x9)`
-# becoming `(::Any x10)`. The field types are not why, and no narrowing follows from fixing
-# them: both records are built inside `clone_units`/`project_regions`, which sound mode
-# enters at `::Integer` and `::Symbol`, so every field reads as `::Any` whatever it is
-# declared as. Holding the sorted prefixes outside the records instead would take
-# `near_miss_edges!` to six parameters and trip `parameter_count`, trading one gate for
-# another.
+# The near-miss multiset bound raised sound from 1377 to 1379 and left opt at 33. It is one
+# report twice over: `CloneUnit` and `ProjectRegion` each gained a field, and JET emits one
+# report per constructor argument, so the all-`::Any` constructor call each record already
+# reported carries one more. The `@def_name` parent map that landed beside it added none.
+# Dumping every report before and after confirms it: keyed without line numbers, the whole
+# diff is two added `UnanalyzedCallReport`s, one per record, each a
+# `convert(::Type{Vector{UInt64}}, ::Any)` for the new field, with nothing removed and
+# everything else only renumbered. The field types are not why, and no narrowing follows
+# from fixing them: both records are built inside `clone_units`/`project_regions`, which
+# sound mode enters at `::Integer` and `::Symbol`, so every field reads as `::Any` whatever
+# it is declared as. Holding the sorted prefixes outside the records instead would take
+# `near_miss_edges!` from five parameters to six. That is worth stating precisely, because
+# it is not a gate: `parameter_count`'s band is (5, 8) and `test/dogfood.jl` gates on
+# `errors`, the `:high` floor alone, so five already reports `:warn` today and six reports
+# the same `:warn`. `library_pairs!` takes six beside it with no suppression and a green
+# gate. The prefix stays on the record because that is where a unit's derived state lives,
+# next to `histogram` and `digest`, not to dodge a threshold.
 #
-# That dump also showed this count is not stable to the report. Two runs over the identical
-# tree gave 1378 and 1379, and the two disagree on the printed signature of
-# `with_base_corpus` and of `mermaid`'s kwarg body, and on one `fold_branches` report, none
-# of which either change touches. So the number carries about one report of run-to-run
-# variance and the limit is the higher observation, not the lower. Read a rise of one as
-# noise and re-measure before recording it; a rise of several is a real move.
+# The count is stable under the order this file runs, basic mode then sound. Repeated runs
+# over an identical tree return 1379 every time, and dumping every report gives a
+# byte-identical file each run. An earlier note here recorded about one report of
+# run-to-run variance and told a reader to discount a rise of one. That was measured with
+# the basic pass skipped, where what moves between runs is the printed signature of a
+# report rather than how many there are, so it was wrong to generalise from it. Treat a
+# rise of one as a real move and find the report behind it.
 
 using Dendro
 using JET
