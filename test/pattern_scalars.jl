@@ -52,7 +52,7 @@ end
     end
     """
     index = Fixtures.idx(:julia, src)
-    tree = Dendro.TreeSitter.parse(Dendro.parser_for(:julia), src)
+    tree = Dendro.parse_source(Dendro.parser_for(:julia), src)
     g = Dendro.language_grammar(Dendro.PROFILES[:julia])
     q = Dendro.compile_pattern_query(g, "(integer_literal) @lit\n", "julia.patterns.scm")
     Dendro.index_patterns!(index, tree, q, src)

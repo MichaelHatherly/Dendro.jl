@@ -157,7 +157,7 @@ end
         src = "def f(a, b):\n    return a + b\n"
         @test scopes_query_for(profile) === nothing
 
-        tree = TreeSitter.parse(parser_for(profile), src)
+        tree = Dendro.parse_source(parser_for(profile), src)
         index = build_index(tree, :mylang, src, query_for(profile), scopes_query_for(profile))
         @test isempty(unused_parameters(index))
     end

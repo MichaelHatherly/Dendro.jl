@@ -219,12 +219,16 @@ Resolution and configuration:
   grammars itself. `query_for` reads `<queries>/<lang>.scm` and compiles it against that
   grammar. A missing grammar errors with an install hint. `scopes_query_for` and
   `imports_query_for` read the optional `.scopes.scm` and `.imports.scm` the same way,
-  returning `nothing` for a language that ships none. Every cache is keyed by the whole
-  profile, not the language name, so two projects registering one name against different
-  grammars or queries never share a compiled query. `language_for_path` resolves an
-  extension through an `extension_map` of the scan's registry, built once per scan rather
-  than per file. The caches are guarded by `CACHE_LOCK`; `warm_languages` fills them for a
-  profile set up front so fan-out tasks find them warm.
+  returning `nothing` for a language that ships none. `parse_source` is the one parse
+  every pass reads from, and it declines injection resolution: a grammar's injections
+  query finds where another language is embedded, a docstring, a comment, a regex
+  literal, and parses each into a layer of its own, but Dendro reads one language per
+  file and no pass reaches for a tree's `children` or `unresolved`. Every cache is keyed
+  by the whole profile, not the language name, so two projects registering one name
+  against different grammars or queries never share a compiled query. `language_for_path`
+  resolves an extension through an `extension_map` of the scan's registry, built once per
+  scan rather than per file. The caches are guarded by `CACHE_LOCK`; `warm_languages`
+  fills them for a profile set up front so fan-out tasks find them warm.
 - `parallel.jl` defines the threading primitives the corpus fan-outs share:
   `PARALLEL_MIN` and `parallel_enabled`, `chunk_indices` (round-robin partition
   into strided ranges), `parallel_map!` (one value per item into a preallocated

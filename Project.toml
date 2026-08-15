@@ -23,7 +23,7 @@ Pkg = "1"
 RelocatableFolders = "1"
 Scratch = "1"
 TOML = "1"
-TreeSitter = "0.3"
+TreeSitter = "0.3.1"
 julia = "1.11"
 
 [apps.dendro]

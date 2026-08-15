@@ -277,7 +277,7 @@ end
         ]
         queries = pattern_queries(PROFILES[:julia], [global_dir, repo_dir], specs)
         index = Fixtures.idx(:julia, src)
-        tree = Dendro.TreeSitter.parse(Dendro.parser_for(:julia), src)
+        tree = Dendro.parse_source(Dendro.parser_for(:julia), src)
         index_all_patterns!(index, tree, queries, src)
 
         line(name) = sort!([Int(Dendro.TreeSitter.start_point(n).row) + 1 for n in pattern_hits(index, name)])
@@ -304,7 +304,7 @@ end
         src = "function f(x)\n    while x\n    end\nend\n"
         specs = [PatternSpec(:shared, "m", :warn, :flag, nothing)]
         index = Fixtures.idx(:julia, src)
-        tree = Dendro.TreeSitter.parse(Dendro.parser_for(:julia), src)
+        tree = Dendro.parse_source(Dendro.parser_for(:julia), src)
         index_all_patterns!(index, tree, pattern_queries(PROFILES[:julia], [global_dir, repo_dir], specs), src)
         @test isempty(pattern_hits(index, :shared))
     end

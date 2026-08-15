@@ -113,7 +113,7 @@ end
     # `cyclomatic`, so a rule that fires says something about scope and not size.
     body = join(("a$(n) = $(n) > 1 ? $(n) : 0" for n in 1:120), "\n")
     src = body * "\n"
-    tree = TreeSitter.parse(Dendro.parser_for(:julia), src)
+    tree = Dendro.parse_source(Dendro.parser_for(:julia), src)
     i = Dendro.build_index(tree, :julia, src, Dendro.query_for(:julia), Dendro.scopes_query_for(:julia))
     top = Dendro.Unit(
         TreeSitter.Node[
