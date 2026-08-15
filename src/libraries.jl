@@ -673,6 +673,14 @@ end
 # nothing.
 const NO_REF_UNITS = Tuple{String, RefAnchor}[]
 
+# What a cross-corpus `|LCS|` is measured against: the shorter of the two capped lengths,
+# where the within-corpus `clone_similarity` takes the longer. Deliberate, and the reason
+# is in `AGENTS.md`: a library function sitting almost wholly inside one of yours is still
+# the author re-implementing it. The bound and the verdict both read this, so neither can
+# be retuned without the other.
+cross_denominator(mine::Vector{UInt64}, theirs::Vector{UInt64}) =
+    min(capped_length(mine), capped_length(theirs))
+
 # Confirm one language's proposed pairs and record each project region's evidence. The LCS
 # is the dominant cost, so it runs in parallel over the proposed pairs, written to a
 # preallocated vector and read back in pair order, so the evidence is identical to the
@@ -690,6 +698,7 @@ function library_pairs!(
         Int[a.size for (_, a) in pool],
     )
     pairs = banded_candidates(query, search, radius_factor, CROSS_BANDS)
+    isempty(pairs) && return matches
     # Sorted once per library anchor rather than per pair: the reference side is queried
     # against every project region in its band, so an anchor takes part in many pairs.
     # The project side carries its own on the region.
@@ -698,21 +707,23 @@ function library_pairs!(
     parallel_map!(lengths) do k
         region = regions[idxs[pairs[k][1]]]
         anchor = pool[pairs[k][2]][2]
-        # The cross-corpus test reads `|LCS|` against the shorter side, so the bound a
-        # pair has to clear is `threshold * min`, where the within-corpus one reads `max`.
-        # Below it the multiset cannot reach the cutoff and neither can the LCS.
-        needed = threshold * min(min(length(region.sequence), LCS_CAP), min(length(anchor.sequence), LCS_CAP))
-        multiset_overlap(region.sorted, anchors[pairs[k][2]]) < needed && return 0
+        # The cross-corpus test reads `|LCS|` against the shorter side, so the bound divides
+        # by the shorter length where the within-corpus one divides by the longer. Below the
+        # cutoff the multiset cannot reach it and neither can the LCS. Dividing by the same
+        # denominator the verdict below uses, rather than comparing against
+        # `threshold * denom`, keeps the two answers the same in floating point.
+        denom = cross_denominator(region.sequence, anchor.sequence)
+        denom == 0 && return 0
+        multiset_overlap(region.sorted, anchors[pairs[k][2]]) / denom < threshold && return 0
         lcs_length(region.sequence, anchor.sequence)
     end
     for k in eachindex(pairs)
         i = idxs[pairs[k][1]]
         library, anchor = pool[pairs[k][2]]
         regions[i].digest == anchor.hash && continue
-        mine = min(length(regions[i].sequence), LCS_CAP)
-        theirs = min(length(anchor.sequence), LCS_CAP)
-        (mine == 0 || theirs == 0) && continue
-        max(lengths[k] / mine, lengths[k] / theirs) >= threshold || continue
+        denom = cross_denominator(regions[i].sequence, anchor.sequence)
+        denom == 0 && continue
+        lengths[k] / denom >= threshold || continue
         push!(
             get!(() -> RefMatch[], matches, i),
             RefMatch(

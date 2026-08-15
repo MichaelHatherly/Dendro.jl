@@ -387,11 +387,11 @@ Reporting:
   bucket function- and block-shaped subtrees by hash, with `subsumed` as the
   maximality filter. Near-miss: `clone_features` (a unit's pre-order hash sequence,
   histogram, digest, and size from one walk), `lcs_length`/`clone_similarity` (the
-  order-aware LCS verdict), `sorted_prefix`/`multiset_overlap` (the linear bound that
-  keeps a pair that cannot match off the quadratic verdict), `near_miss_edges!` (the
-  size-banded characteristic-vector prefilter over `NearestNeighbors`, confirmed by
-  `pair_similarity`), and
-  `cluster_near_duplicates` (union-find over confirmed pairs into `:near_duplicate`
+  order-aware LCS verdict), `capped_length` (the one length every bound and denominator
+  is measured over), `sorted_prefix`/`multiset_overlap` (the linear bound that keeps a
+  pair that cannot match off the quadratic verdict), `near_miss_edges!` (the size-banded
+  characteristic-vector prefilter over `NearestNeighbors`, confirmed by
+  `pair_similarity`), and `cluster_near_duplicates` (union-find over confirmed pairs into `:near_duplicate`
   findings). It also defines the ranking the three clone passes share: `ModulePlacement`
   resolves a corpus file to its module node and that module to its community, and
   `rank_clones!` sorts a pass's findings by `clone_distance`. Included after
@@ -932,9 +932,12 @@ unchanged.
    beside its sequence. A common subsequence is a sub-multiset of both sides, so a pair
    whose shared multiset falls short of the cutoff cannot reach it; the merge is linear
    where the LCS is quadratic. Both are prefilters and neither is a verdict, and the
-   order-blindness that makes the multiset a poor score is exactly what makes it a
-   sound bound. The cross-corpus pass applies the same bound against `threshold * min`,
-   since its match test reads `|LCS|` off the shorter side.
+   order-blindness that makes the multiset a poor score is what makes it a sound bound.
+   Each bound divides by the denominator its own verdict uses rather than comparing
+   against `threshold * denominator`, since the two disagree in floating point and a
+   bound must never skip a pair the verdict would have kept. The cross-corpus pass
+   divides by the shorter side (`cross_denominator`) where this one divides by the
+   longer, since its match test reads `|LCS|` off the shorter side.
 4. Prefilter. Comparing every pair is O(n²). `near_miss_edges!` densifies the
    histograms over a per-language vocabulary and runs a `NearestNeighbors` radius
    query (L1, `Cityblock`) to propose candidate pairs, which tier 3 confirms. The

@@ -107,11 +107,16 @@ preorder_hashes(st::Vector{Subtree}) = UInt64[s.hash for s in sort(st; by = s ->
 # functions is judged on that prefix.
 const LCS_CAP = 400
 
+# How much of a sequence the LCS reads. Every bound on `|LCS|` and every denominator a
+# similarity divides by is measured over this same length, so they are read from here
+# rather than each site capping for itself.
+capped_length(sequence::Vector{UInt64}) = min(length(sequence), LCS_CAP)
+
 # Length of the longest common subsequence of two hash sequences, order-preserving,
 # over a single rolling row. Reads at most `LCS_CAP` elements of each.
 function lcs_length(a::Vector{UInt64}, b::Vector{UInt64})
-    m = min(length(a), LCS_CAP)
-    n = min(length(b), LCS_CAP)
+    m = capped_length(a)
+    n = capped_length(b)
     (m == 0 || n == 0) && return 0
     prev = zeros(Int, n + 1)
     curr = zeros(Int, n + 1)
@@ -134,15 +139,17 @@ below its multiset overlap. `1.0` means one sequence is a subsequence of the oth
 `0.0` no shared order. Empty inputs return `0.0`.
 """
 function clone_similarity(a::Vector{UInt64}, b::Vector{UInt64})
-    denom = max(min(length(a), LCS_CAP), min(length(b), LCS_CAP))
+    denom = max(capped_length(a), capped_length(b))
     denom == 0 && return 0.0
     return lcs_length(a, b) / denom
 end
 
 # A sequence's first `LCS_CAP` hashes, sorted: the form `multiset_overlap` merges. The
-# prefix is the one `lcs_length` reads, so the bound is taken over exactly the elements
-# the verdict compares; taken over more, it could reject a pair the LCS would have kept.
-sorted_prefix(sequence::Vector{UInt64}) = sort(sequence[1:min(length(sequence), LCS_CAP)])
+# prefix has to cover every element `lcs_length` reads. Cover fewer and the overlap stops
+# bounding the LCS from above, so the pass would reject a pair the LCS would have kept;
+# cover more and the bound only loosens, at the cost of a longer sort and merge. So the
+# cap here tracks the one in `lcs_length`, and it is that direction that matters.
+sorted_prefix(sequence::Vector{UInt64}) = sort!(sequence[1:capped_length(sequence)])
 
 """
     multiset_overlap(a, b) -> Int
@@ -493,22 +500,29 @@ function banded_candidates(
     return out
 end
 
-# The near-miss similarity of two clone units, or zero when the size ratio alone rules
-# a clone out, cheaper than the LCS. Concrete-typed, so the per-pair work stays static
-# while the caller reaches it through a single dynamically-typed call.
+# The near-miss similarity of two clone units, or zero when a bound on `|LCS|` already
+# rules a clone out, cheaper than the LCS itself. Two such bounds run, the size ratio and
+# the shared multiset. Concrete-typed, so the per-pair work stays static while the caller
+# reaches it through a single dynamically-typed call.
 function pair_similarity(units::Vector{CloneUnit}, i::Int, j::Int, threshold::Float64)
     a = units[i].sequence
     b = units[j].sequence
-    la = min(length(a), LCS_CAP)
-    lb = min(length(b), LCS_CAP)
+    la = capped_length(a)
+    lb = capped_length(b)
+    denom = max(la, lb)
+    denom == 0 && return 0.0
+    # Each bound is divided by the same denominator the verdict uses rather than compared
+    # against `threshold * denom`. The two are not equivalent in floating point: at a
+    # threshold of 0.55 and a denominator of 100, `0.55 * 100` is 55.00000000000001, so a
+    # bound of exactly 55 reads as short of a cutoff that `55 / 100` clears. A bound may
+    # only skip a pair the verdict would have scored below the threshold.
     # Similarity is `|LCS| / max` and `|LCS|` is at most the shorter length, so a pair
     # whose size ratio is already under the threshold can never clear it.
-    needed = threshold * max(la, lb)
-    min(la, lb) < needed && return 0.0
+    min(la, lb) / denom < threshold && return 0.0
     # `|LCS|` is at most the shared multiset too, and that costs a linear merge where the
     # LCS costs `O(n*m)`. The banded query proposes generously, so most proposed pairs are
     # decided here rather than by the DP.
-    multiset_overlap(units[i].sorted, units[j].sorted) < needed && return 0.0
+    multiset_overlap(units[i].sorted, units[j].sorted) / denom < threshold && return 0.0
     return clone_similarity(a, b)
 end
 
@@ -535,8 +549,8 @@ end
 
 # Candidate pairs within one language, confirmed by LCS similarity, appended as weighted
 # edges. `candidate_pairs` proposes cheaply; the LCS verdict is the dominant cost, so it
-# runs in parallel over the proposed pairs (a size-ratio prefilter inside `pair_similarity`
-# drops mismatched lengths before the O(n*m) work). Scores are written to a preallocated
+# runs in parallel over the proposed pairs (the two bounds inside `pair_similarity` drop
+# most of them before the O(n*m) work). Scores are written to a preallocated
 # vector and read back in pair order, so the edge set is identical to the serial path.
 # Exact clones (equal digest) are already dropped by `candidate_pairs`, never re-reported.
 function near_miss_edges!(
