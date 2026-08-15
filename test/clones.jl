@@ -431,3 +431,95 @@ end
         end
     end
 end
+
+@testitem "multiset_overlap bounds the LCS it prefilters" tags = [:clones] begin
+    # A common subsequence is a sub-multiset of both sides, so the overlap can never sit
+    # below the LCS. That inequality is the whole warrant for skipping the DP on a pair
+    # whose overlap already falls short of the cutoff.
+    cases = [
+        (UInt64[1, 2, 3, 4], UInt64[1, 2, 3, 4]),
+        (UInt64[1, 2, 3], UInt64[3, 2, 1]),
+        (UInt64[1, 1, 2], UInt64[1, 2, 2]),
+        (UInt64[1, 2], UInt64[7, 8]),
+        (UInt64[], UInt64[1, 2]),
+        (UInt64[5, 5, 5], UInt64[5]),
+        (UInt64[1, 2, 3, 4], UInt64[1, 2, 9, 3, 4]),
+    ]
+    for (a, b) in cases
+        bound = Dendro.multiset_overlap(Dendro.sorted_prefix(a), Dendro.sorted_prefix(b))
+        @test bound >= Dendro.lcs_length(a, b)
+    end
+
+    # The bound is order-blind where the verdict is not, which is why it can only skip
+    # work and never decide a pair: a reversal shares every element and sequences one.
+    @test Dendro.multiset_overlap(UInt64[1, 2, 3], UInt64[1, 2, 3]) == 3
+    @test Dendro.lcs_length(UInt64[1, 2, 3], UInt64[3, 2, 1]) == 1
+
+    # A repeated element counts once per copy present on both sides, not once per pair.
+    @test Dendro.multiset_overlap(UInt64[1, 1, 1], UInt64[1, 1]) == 2
+end
+
+@testitem "sorted_prefix reads the elements the LCS compares" tags = [:clones] begin
+    # `lcs_length` reads the first `LCS_CAP` of each side, so the bound has to be taken
+    # over those same elements. Sorting the whole sequence and then truncating would take
+    # the smallest `LCS_CAP` hashes instead, which the verdict never sees, and the overlap
+    # would stop bounding the LCS from above. The fixture descends because an ascending one
+    # cannot tell the two apart: both readings would give the same answer on it.
+    long = UInt64[i for i in (Dendro.LCS_CAP + 50):-1:1]
+    @test length(Dendro.sorted_prefix(long)) == Dendro.LCS_CAP
+    @test Dendro.sorted_prefix(long) == sort(long[1:Dendro.LCS_CAP])
+    @test Dendro.sorted_prefix(long) != sort(long)[1:Dendro.LCS_CAP]
+
+    # Prefix first, sort second, over a sequence shorter than the cap.
+    @test Dendro.sorted_prefix(UInt64[3, 1, 2]) == UInt64[1, 2, 3]
+    @test isempty(Dendro.sorted_prefix(UInt64[]))
+
+    # The direction that matters: read fewer elements than the LCS does and the overlap
+    # stops being an upper bound, which is the failure the cap is written to avoid.
+    a = UInt64[[i for i in 1000:1399]; [i for i in 1:100]]
+    b = UInt64[[i for i in 1000:1399]; [i for i in 501:600]]
+    @test Dendro.multiset_overlap(Dendro.sorted_prefix(a), Dendro.sorted_prefix(b)) >=
+        Dendro.lcs_length(a, b)
+    @test Dendro.clone_similarity(a, b) == 1.0
+    @test Dendro.multiset_overlap(sort(a)[1:Dendro.LCS_CAP], sort(b)[1:Dendro.LCS_CAP]) <
+        Dendro.lcs_length(a, b)
+end
+
+@testitem "a bound sitting exactly on the cutoff is not skipped" tags = [:clones] begin
+    # Each bound divides by the verdict's own denominator instead of being compared
+    # against `threshold * denom`, because the two disagree in floating point. At a
+    # threshold of 0.55 and a denominator of 100, `0.55 * 100` is 55.00000000000001, so a
+    # pair whose LCS is exactly 55 reads as short of a cutoff that `55 / 100` clears.
+    @test 55 < 0.55 * 100          # what comparing against the product would answer
+    @test 55 / 100 >= 0.55         # what the verdict answers
+
+    # 55 shared hashes in order, then 45 that differ, so both sides cap at 100 and the LCS
+    # is exactly 55 against a denominator of 100.
+    shared = UInt64[i for i in 1:55]
+    a = UInt64[shared; [i for i in 100:144]]
+    b = UInt64[shared; [i for i in 200:244]]
+    @test Dendro.lcs_length(a, b) == 55
+    @test Dendro.clone_similarity(a, b) == 0.55
+
+    unit(seq) = Dendro.CloneUnit(
+        :julia, Dendro.Location("f.jl", 1, "u", ""), false, seq, Dendro.sorted_prefix(seq),
+        Dict{String, Int}(), zero(UInt64), length(seq),
+    )
+    units = Dendro.CloneUnit[unit(a), unit(b)]
+    @test Dendro.pair_similarity(units, 1, 2, 0.55) == 0.55
+end
+
+@testitem "the near-miss prefilter keeps the pairs the LCS confirms" setup = [Fixtures] tags = [:clones] begin
+    # The prefilter sits between the size ratio and the DP, so a genuine near-miss has to
+    # survive both gates. `pair_similarity` is where they compose.
+    units = Dendro.clone_units(
+        [
+            Fixtures.parsedfile(:julia, Fixtures.chain("f", 11); file = "a.jl"),
+            Fixtures.parsedfile(:julia, Fixtures.chain("g", 12); file = "b.jl"),
+        ], 10, :near_duplicate
+    )
+    @test length(units) == 2
+    scored = Dendro.pair_similarity(units, 1, 2, Dendro.DEFAULT_THRESHOLD)
+    @test scored >= Dendro.DEFAULT_THRESHOLD
+    @test scored == Dendro.clone_similarity(units[1].sequence, units[2].sequence)
+end

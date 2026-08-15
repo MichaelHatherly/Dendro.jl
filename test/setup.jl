@@ -12,14 +12,14 @@
     # carries bindings for languages that ship one.
     idx(lang, src) =
         Dendro.build_index(
-        TreeSitter.parse(Dendro.parser_for(lang), src), Symbol(lang), String(src),
+        Dendro.parse_source(Dendro.parser_for(lang), src), Symbol(lang), String(src),
         Dendro.query_for(lang), Dendro.scopes_query_for(Symbol(lang))
     )
 
     # A ParsedFile for one source, the corpus record clone and naturalness tests need.
     function parsedfile(lang, src; file = "f." * string(lang), directives = Dendro.Directive[])
         profile = Dendro.PROFILES[Symbol(lang)]
-        tree = TreeSitter.parse(Dendro.parser_for(profile), src)
+        tree = Dendro.parse_source(Dendro.parser_for(profile), src)
         index = Dendro.build_index(
             tree, Symbol(lang), String(src), Dendro.query_for(profile),
             Dendro.scopes_query_for(profile)
@@ -30,7 +30,7 @@
     # The bindings resolved for `src`, the type-stable entry the binding test asserts
     # inference on. Narrows the scopes query past its `nothing` case before the call.
     function resolve(lang, src)
-        tree = TreeSitter.parse(Dendro.parser_for(lang), src)
+        tree = Dendro.parse_source(Dendro.parser_for(lang), src)
         query = Dendro.scopes_query_for(Symbol(lang))
         query === nothing && error("no scopes query for $lang")
         return Dendro.resolve_bindings!(Dict{Dendro.NodeId, Dendro.NodeId}(), tree, query, String(src))
@@ -199,7 +199,7 @@
     function pattern_lines(lang, src, name::Symbol, query::AbstractString)
         profile = Dendro.PROFILES[Symbol(lang)]
         grammar = Dendro.language_grammar(profile)
-        tree = TreeSitter.parse(Dendro.parser_for(profile), String(src))
+        tree = Dendro.parse_source(Dendro.parser_for(profile), String(src))
         index = idx(lang, src)
         compiled = Dendro.compile_pattern_query(grammar, query, "$(lang).patterns.scm")
         Dendro.index_patterns!(index, tree, compiled, String(src))

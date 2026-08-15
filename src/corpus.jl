@@ -88,7 +88,7 @@ function parse_chunk!(
             continue
         end
         parser = get!(() -> parser_for(profile), parsers, profile)
-        tree = parse(parser, source)
+        tree = parse_source(parser, source)
         index = build_index(
             tree, profile.name, source, query_for(profile), scopes_query_for(profile);
             bindings = options.bindings

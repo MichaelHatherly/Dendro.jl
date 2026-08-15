@@ -219,12 +219,16 @@ Resolution and configuration:
   grammars itself. `query_for` reads `<queries>/<lang>.scm` and compiles it against that
   grammar. A missing grammar errors with an install hint. `scopes_query_for` and
   `imports_query_for` read the optional `.scopes.scm` and `.imports.scm` the same way,
-  returning `nothing` for a language that ships none. Every cache is keyed by the whole
-  profile, not the language name, so two projects registering one name against different
-  grammars or queries never share a compiled query. `language_for_path` resolves an
-  extension through an `extension_map` of the scan's registry, built once per scan rather
-  than per file. The caches are guarded by `CACHE_LOCK`; `warm_languages` fills them for a
-  profile set up front so fan-out tasks find them warm.
+  returning `nothing` for a language that ships none. `parse_source` is the one parse
+  every pass reads from, and it declines injection resolution: a grammar's injections
+  query finds where another language is embedded, a docstring, a comment, a regex
+  literal, and parses each into a layer of its own, but Dendro reads one language per
+  file and no pass reaches for a tree's `children` or `unresolved`. Every cache is keyed
+  by the whole profile, not the language name, so two projects registering one name
+  against different grammars or queries never share a compiled query. `language_for_path`
+  resolves an extension through an `extension_map` of the scan's registry, built once per
+  scan rather than per file. The caches are guarded by `CACHE_LOCK`; `warm_languages`
+  fills them for a profile set up front so fan-out tasks find them warm.
 - `parallel.jl` defines the threading primitives the corpus fan-outs share:
   `PARALLEL_MIN` and `parallel_enabled`, `chunk_indices` (round-robin partition
   into strided ranges), `parallel_map!` (one value per item into a preallocated
@@ -249,8 +253,12 @@ Resolution and configuration:
   `build_index`, which runs a language's query over a tree once and files every
   capture under its concept. Identification lives here: metric code asks whether a
   node was tagged, never matches a node-type string. An unhandled capture name
-  throws rather than dropping silently. Given a scopes query, `build_index` runs a
-  second pass through `resolve_bindings!` and fills `index.bindings`.
+  throws rather than dropping silently. `index_def_name_parents!` then keys each
+  `@def_name` capture by the node holding it, so `binder_def_name` (`units.jl`) reads a
+  lookup rather than scanning a binder's children: a top-level definition's binder is the
+  file, which made naming a unit cost a walk over every other top-level node. Given a
+  scopes query, `build_index` runs a second pass through `resolve_bindings!` and fills
+  `index.bindings`.
 - `bindings.jl` defines tier-1 lexical scope resolution: `ScopeEntry`, the helpers
   `owning_scope` and `lookup_definition`, and
   `resolve_bindings!`, which runs a language's scopes query over a tree and binds
@@ -379,9 +387,11 @@ Reporting:
   bucket function- and block-shaped subtrees by hash, with `subsumed` as the
   maximality filter. Near-miss: `clone_features` (a unit's pre-order hash sequence,
   histogram, digest, and size from one walk), `lcs_length`/`clone_similarity` (the
-  order-aware LCS verdict), `near_miss_edges!` (the size-banded characteristic-vector
-  prefilter over `NearestNeighbors`, confirmed by `pair_similarity`), and
-  `cluster_near_duplicates` (union-find over confirmed pairs into `:near_duplicate`
+  order-aware LCS verdict), `capped_length` (the one length every bound and denominator
+  is measured over), `sorted_prefix`/`multiset_overlap` (the linear bound that keeps a
+  pair that cannot match off the quadratic verdict), `near_miss_edges!` (the size-banded
+  characteristic-vector prefilter over `NearestNeighbors`, confirmed by
+  `pair_similarity`), and `cluster_near_duplicates` (union-find over confirmed pairs into `:near_duplicate`
   findings). It also defines the ranking the three clone passes share: `ModulePlacement`
   resolves a corpus file to its module node and that module to its community, and
   `rank_clones!` sorts a pass's findings by `clone_distance`. Included after
@@ -917,7 +927,17 @@ unchanged.
    `|LCS| / max(|a|, |b|)`, after NiCad. A pair clears the `threshold` (default 0.85)
    to count as a near-miss. The LCS is order-aware: a reordering of the same subtrees,
    or a short fragment inside a long function, scores low where a multiset overlap
-   would not. A size-ratio prefilter skips the O(n*m) LCS on mismatched lengths.
+   would not. Two bounds inside `pair_similarity` skip the O(n*m) LCS before it runs:
+   the size ratio, and `multiset_overlap` over the `sorted_prefix` each unit carries
+   beside its sequence. A common subsequence is a sub-multiset of both sides, so a pair
+   whose shared multiset falls short of the cutoff cannot reach it; the merge is linear
+   where the LCS is quadratic. Both are prefilters and neither is a verdict, and the
+   order-blindness that makes the multiset a poor score is what makes it a sound bound.
+   Each bound divides by the denominator its own verdict uses rather than comparing
+   against `threshold * denominator`, since the two disagree in floating point and a
+   bound must never skip a pair the verdict would have kept. The cross-corpus pass
+   divides by the shorter side (`cross_denominator`) where this one divides by the
+   longer, since its match test reads `|LCS|` off the shorter side.
 4. Prefilter. Comparing every pair is O(n²). `near_miss_edges!` densifies the
    histograms over a per-language vocabulary and runs a `NearestNeighbors` radius
    query (L1, `Cityblock`) to propose candidate pairs, which tier 3 confirms. The

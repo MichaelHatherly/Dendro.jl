@@ -114,7 +114,7 @@ function check_fixture(
         path::AbstractString, profile::LanguageProfile, dirs::Vector{String}, specs::Vector{PatternSpec}
     )
     source = read(path, String)
-    tree = TreeSitter.parse(parser_for(profile), source)
+    tree = parse_source(profile, source)
     index = build_index(tree, profile.name, source, query_for(profile), scopes_query_for(profile))
     index_all_patterns!(index, tree, pattern_queries(profile, dirs, specs), source)
 

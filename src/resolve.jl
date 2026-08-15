@@ -131,6 +131,25 @@ parser_for(profile::LanguageProfile) = TreeSitter.Parser(language_grammar(profil
 parser_for(name::Symbol) = parser_for(profile_for(name))
 parser_for(name::AbstractString) = parser_for(Symbol(lowercase(name)))
 
+"""
+    parse_source(parser, source) -> TreeSitter.Tree
+    parse_source(profile, source) -> TreeSitter.Tree
+
+Parse `source` into the tree every Dendro pass reads. Given a `profile` rather than a
+parser, one is built for it; a caller parsing many files wants its own parser instead,
+since a `TreeSitter.Parser` is stateful and worth reusing across a chunk.
+
+Declines injection resolution. A grammar's injections query finds the regions where
+another language is embedded, a docstring, a comment, a regex literal, and parses each
+into a layer of its own. Dendro reads one language per file: its queries run against the
+root layer and nothing downstream reaches for a tree's `children` or `unresolved`, so
+resolving those regions is work no pass can see.
+"""
+parse_source(parser::TreeSitter.Parser, source::AbstractString) =
+    TreeSitter.parse(parser, source; injections = false)
+parse_source(profile::LanguageProfile, source::AbstractString) =
+    parse_source(parser_for(profile), source)
+
 # Guards the grammar load and the lazy query caches against concurrent first-touch: `get!`
 # on a plain Dict corrupts it under a concurrent resize. Reentrant, since a cache fill
 # loads the grammar inside the lock; uncontended once a language is warm.
