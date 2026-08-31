@@ -75,9 +75,9 @@ function cluster_scattered(
         # score; this is the edit, and recovering it otherwise means rebuilding the graph.
         locations = Location[
             Location(
-                    f.file, graph.units[nd].line, graph.units[nd].name,
-                    string("belongs with ", label_path(plur[comm[nd]], f.file))
-                ) for nd in nodes
+                f.file, graph.units[nd].line, graph.units[nd].name,
+                string("belongs with ", label_path(plur[comm[nd]], f.file))
+            ) for nd in nodes
         ]
         push!(scored, (f, length(locations), locations))
     end
