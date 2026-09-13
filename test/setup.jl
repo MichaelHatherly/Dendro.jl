@@ -44,7 +44,8 @@
     # readable form the binding tests assert on.
     function binding_pairs(index)
         info = Dict{Dendro.NodeId, Tuple{String, Int}}()
-        for n in index.name.nodes
+        caps = index.scope_captures
+        for n in Iterators.flatten((caps.defnodes, caps.refnodes))
             info[Dendro.nodeid(n)] = (String(strip(TreeSitter.slice(index.source, n))), Int(TreeSitter.start_point(n).row) + 1)
         end
         pairs = Pair{Tuple{String, Int}, Tuple{String, Int}}[]
@@ -52,6 +53,16 @@
             push!(pairs, info[r] => info[d])
         end
         return pairs
+    end
+
+    # Each definition the scopes query captured as `(kind, name, line)`, the readable
+    # form the definition-site tests assert on.
+    function definitions(index)
+        caps = index.scope_captures
+        return [
+            (kind, String(TreeSitter.slice(index.source, n)), Int(TreeSitter.start_point(n).row) + 1)
+                for (n, kind) in zip(caps.defnodes, caps.defkinds)
+        ]
     end
 
     # One source written under a scratch directory and parsed, the shape the
