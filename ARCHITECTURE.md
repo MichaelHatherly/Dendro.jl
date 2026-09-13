@@ -335,7 +335,10 @@ Measurement:
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
   `unreachable_statements`, `identical_operands`, `duplicate_branches`,
   `unused_parameters`, `unused_locals`, `broad_catches` (the `@broad_catch`
-  concept's nodes verbatim: the query decides which handlers are broad), and
+  concept's clauses, less any whose body ends in a `@raise` node: the query decides
+  which handlers are broad and which statements throw, and the rule reads the last
+  statement of the clause's last named child, which is Ruby's `then` where every other
+  language's is a `@body`), and
   `shadowed_variables` (a fresh
   `:local`-kind binding whose name an enclosing scope already binds; Julia's
   `:assign`-kind statement assignments rebind rather than shadow and never
@@ -844,7 +847,7 @@ in its query, not here.
 and `function_ids` (the no-descend boundary), plus one `Concept` per measured
 construct (decision points, short-circuit operators, nesting, parameters, parameter
 names, bodies,
-catches, broad catches, comments, names, trivial statements, returns, finally clauses, calls,
+catches, broad catches, throws, comments, names, trivial statements, returns, finally clauses, calls,
 callee names,
 binary expressions, binary operators, conditionals, terminals, short-form
 definitions, classes, instance-field uses, declared field names, constructors,

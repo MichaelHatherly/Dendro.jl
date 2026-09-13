@@ -50,7 +50,7 @@ Presence is the finding. Every one reports `:high`, so every one reaches the gat
 | `return_in_finally` | on | a `return` inside a finally clause |
 | `unused_parameter` | on | a parameter nothing in the unit references |
 | `unused_local` | on | a local binding nothing in the unit references |
-| `broad_catch` | on | a handler that swallows interrupts and exits |
+| `broad_catch` | on | a handler that swallows interrupts and exits, unless its last statement throws |
 | `trivial_wrapper` | opt-in | a body that is one delegating call |
 | `unreachable_after_jump` | opt-in | code after an unconditional `return`, `break`, or `throw` |
 | `shadowed_variable` | opt-in | a local binding hiding an enclosing one |

@@ -55,6 +55,9 @@
 ; `catch (...)` handles every exception with no way to inspect it.
 ((catch_clause parameters: (parameter_list "...")) @broad_catch)
 
+; A statement that throws, so a handler ending in one passes its error on.
+(throw_statement) @raise
+
 (comment) @comment
 
 ; C++ has no docstring and most C++ is not Doxygen, so every comment is documentation, the

@@ -3,9 +3,15 @@
 ; @catch has no pattern. The default `when` branch is excluded from @decision.
 
 ; `rescue Exception` swallows interrupts and exits; a bare `rescue` catches
-; StandardError, the idiomatic default, and is not tagged.
-(rescue exceptions: (exceptions (constant) @broad_catch)
-  (#eq? @broad_catch "Exception"))
+; StandardError, the idiomatic default, and is not tagged. The rescue is what is tagged,
+; so `broad_catches` can read its body; `@_exc` anchors the text test and names no concept.
+((rescue exceptions: (exceptions (constant) @_exc)) @broad_catch
+  (#eq? @_exc "Exception"))
+
+; `raise` is a call, or a bare identifier when it takes no argument; either way a
+; handler ending in one passes its error on.
+((identifier) @raise (#eq? @raise "raise"))
+((call method: (identifier) @_raise) @raise (#eq? @_raise "raise"))
 ; Ruby branch bodies are `then`/inline statements, not block nodes, so the NPath
 ; construct families (@loop/@switch/@ternary/@try/@case) are not wired; npath on Ruby
 ; reduces to a sequence count.

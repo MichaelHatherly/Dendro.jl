@@ -31,9 +31,13 @@
 (catch_clause) @catch
 
 ; `catch (Throwable t)` swallows errors and interrupts, not just exceptions. A
-; multi-catch tags when Throwable is among its types.
-(catch_clause (catch_formal_parameter (catch_type (type_identifier) @broad_catch))
-  (#eq? @broad_catch "Throwable"))
+; multi-catch tags when Throwable is among its types. The clause is what is tagged, so
+; `broad_catches` can read its body; `@_type` anchors the text test and names no concept.
+((catch_clause (catch_formal_parameter (catch_type (type_identifier) @_type))) @broad_catch
+  (#eq? @_type "Throwable"))
+
+; A statement that throws, so a handler ending in one passes its error on.
+(throw_statement) @raise
 
 [(line_comment) (block_comment)] @comment
 

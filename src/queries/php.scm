@@ -37,11 +37,13 @@
 (catch_clause) @catch
 
 ; `catch (Throwable)` swallows errors as well as exceptions, plain or
-; namespace-qualified. `catch (Exception)` is merely wide and not tagged.
-(catch_clause type: (type_list (named_type (name) @broad_catch))
-  (#eq? @broad_catch "Throwable"))
-(catch_clause type: (type_list (named_type (qualified_name (name) @broad_catch)))
-  (#eq? @broad_catch "Throwable"))
+; namespace-qualified. `catch (Exception)` is merely wide and not tagged. The clause is
+; what is tagged, so `broad_catches` can read its body; `@_type` anchors the text test
+; and names no concept.
+((catch_clause type: (type_list (named_type (name) @_type))) @broad_catch
+  (#eq? @_type "Throwable"))
+((catch_clause type: (type_list (named_type (qualified_name (name) @_type)))) @broad_catch
+  (#eq? @_type "Throwable"))
 
 (comment) @comment
 
@@ -81,8 +83,9 @@
 [(return_statement) (break_statement) (continue_statement)] @terminal
 
 ; `throw` is an expression wrapped in a statement; tag the statement so code after
-; it in the same block reads as unreachable.
-(expression_statement (throw_expression)) @terminal
+; it in the same block reads as unreachable, and so a handler ending in one reads as
+; passing its error on.
+(expression_statement (throw_expression)) @terminal @raise
 
 ; --- Class-level cohesion -------------------------------------------------
 ; The containers owning methods and the state they share. A trait is one: it declares

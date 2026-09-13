@@ -41,10 +41,14 @@
 
 ; A handler broad enough to swallow interrupts and exits: a bare `except:` (no
 ; value at all), or `except BaseException`, plain or `as`-aliased. `except
-; Exception` is merely wide and not tagged.
+; Exception` is merely wide and not tagged. The clause is what is tagged, so
+; `broad_catches` can read its body; `@_exc` anchors the text test and names no concept.
 ((except_clause) @broad_catch (#match? @broad_catch "^except\\s*:"))
-(except_clause value: (identifier) @broad_catch (#eq? @broad_catch "BaseException"))
-(except_clause value: (as_pattern . (identifier) @broad_catch) (#eq? @broad_catch "BaseException"))
+((except_clause value: (identifier) @_exc) @broad_catch (#eq? @_exc "BaseException"))
+((except_clause value: (as_pattern . (identifier) @_exc)) @broad_catch (#eq? @_exc "BaseException"))
+
+; A statement that throws, so a handler ending in one passes its error on.
+(raise_statement) @raise
 
 (comment) @comment
 

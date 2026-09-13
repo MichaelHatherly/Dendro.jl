@@ -81,7 +81,7 @@ const CONCEPT_NAMES = (
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
     :parameter_name, :broad_catch, :callee, :toplevel, :declaration,
     :class, :field, :field_name, :constructor, :doc, :attribute, :inherits_doc,
-    :prototype, :nodoc, :switch_arm, :switch_stmt,
+    :prototype, :nodoc, :switch_arm, :switch_stmt, :raise,
 )
 
 """
@@ -139,11 +139,14 @@ struct QueryIndex
     # site's arguments never match. Empty for a language whose parameters carry no
     # names (bash).
     parameter_name::Concept
-    # A handler broad enough to swallow interrupts and exits: a bare `except:`,
+    # A handler clause broad enough to swallow interrupts and exits: a bare `except:`,
     # `except BaseException`, Java `catch (Throwable)`, C++ `catch (...)`, Ruby
     # `rescue Exception`, PHP `catch (Throwable)`. The query decides broadness, so a
     # language whose only catch form is untyped (JavaScript, Julia) tags nothing.
     broad_catch::Concept
+    # A statement that throws: `raise`, `throw`, Ruby's `raise` call. Tagged only where
+    # the query tags `@broad_catch`, since a handler ending in one is what it exempts.
+    raise::Concept
     # A call's target name: the called identifier, or a member/qualified call's
     # final name, so `x.push` and `Base.push!` count by what they invoke. Feeds the
     # `fan_out` scalar.
@@ -254,7 +257,7 @@ struct QueryIndex
         toplevel, declaration = Concept(), Concept()
         class, field, field_name, constructor = Concept(), Concept(), Concept(), Concept()
         doc, attribute, inherits_doc, prototype = Concept(), Concept(), Concept(), Concept()
-        nodoc, switch_arm, switch_stmt = Concept(), Concept(), Concept()
+        nodoc, switch_arm, switch_stmt, raise = Concept(), Concept(), Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "nesting" => nesting,
@@ -271,7 +274,7 @@ struct QueryIndex
             "class" => class, "field" => field, "field_name" => field_name,
             "constructor" => constructor, "doc" => doc, "attribute" => attribute,
             "inherits_doc" => inherits_doc, "prototype" => prototype, "nodoc" => nodoc,
-            "switch_arm" => switch_arm, "switch_stmt" => switch_stmt,
+            "switch_arm" => switch_arm, "switch_stmt" => switch_stmt, "raise" => raise,
         )
         return new(
             language, source, Unit[], Set{NodeId}(),
@@ -279,7 +282,7 @@ struct QueryIndex
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
-            callee, toplevel, declaration, class, field, field_name, constructor,
+            raise, callee, toplevel, declaration, class, field, field_name, constructor,
             doc, attribute, inherits_doc, prototype, nodoc, switch_arm, switch_stmt,
             by_name, Dict{NodeId, TreeSitter.Node}(),
             Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
