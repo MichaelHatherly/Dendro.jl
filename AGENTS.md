@@ -34,10 +34,12 @@ toward rather than only its own median to match. They are opinions, and opinions
 can be retuned, but they are never derived from the corpus. The corpus is what the
 percentile score is for. A project retunes them in a `.dendro.toml` at its root,
 the cascade resolved in `config.jl`: built-in defaults, then a user-global config,
-then the repo file, then explicit `analyze` keywords, merged key by key. Only the
-flagging opinions are configurable: the bands, the percentile cut, the clone-detection
-thresholds, which rules are active, and which libraries a scan compares against. The corpus
-floors and the model internals are
+then the repo file, then explicit `analyze` keywords, merged key by key. Two kinds of
+key are configurable and nothing else. The flagging opinions: the bands, the percentile
+cut, the clone-detection thresholds, which rules are active, and which libraries a scan
+compares against. And what a scan reads and pays for: `ignore` and `generated` decide
+which files enter the corpus. `base_summary` decides whether a base ref is scored for the
+movement. The corpus floors and the model internals are
 not. An unknown key warns rather than failing, the same honest-over-silent stance as a
 typo'd `dendro-ignore`. A configured library path that matches nothing is the one
 exception and errors instead, since a library resolving to nothing would silently turn its
