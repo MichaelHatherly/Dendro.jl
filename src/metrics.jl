@@ -219,12 +219,17 @@ McCabe cyclomatic complexity: one plus the number of branch points in `node`'s
 subtree. Branch points are the query's decision points plus short-circuit operators
 (`&&`, `||`), which each add an independent path.
 """
-cyclomatic(node::TreeSitter.Node, index::QueryIndex) =
-    1 + branch_points(node, index)
+cyclomatic(node::TreeSitter.Node, index::QueryIndex) = independent_paths(branch_points, node, index)
+cyclomatic(u::Unit, index::QueryIndex) = independent_paths(branch_points, u, index)
 
-# Over a run the base path is the unit's, not each node's, so the branch points fold
-# and the one is added once.
-cyclomatic(u::Unit, index::QueryIndex) = 1 + fold_run(branch_points, +, u, index)
+# The base path, plus the branch points `count` finds. The two cyclomatic readings differ
+# only in which branch points they count, so both take their arithmetic from here. Over a
+# run the base path is the unit's, not each node's, so the counts fold and the one is
+# added once.
+independent_paths(count::C, node::TreeSitter.Node, index::QueryIndex) where {C} =
+    1 + count(node, index)
+independent_paths(count::C, u::Unit, index::QueryIndex) where {C} =
+    1 + fold_run(count, +, u, index)
 
 branch_points(node::TreeSitter.Node, index::QueryIndex) = sum_over(branch_step, node, index)
 
@@ -233,6 +238,58 @@ branch_points(node::TreeSitter.Node, index::QueryIndex) = sum_over(branch_step, 
 # dendro-ignore: duplicate
 branch_step(node::TreeSitter.Node, index::QueryIndex, ctx) =
     count_if(is_branch_point(node, index), ctx)
+
+# Absolute band on the modified cyclomatic count, held on `cyclomatic`'s scale so a project
+# reading both compares one number straight against the other.
+#
+# Measured over 58340 definitions in fourteen corpora across eleven languages: the nine the
+# other bands are measured over, plus go-sdk, curl, laravel-framework, rails and the MCP
+# TypeScript SDK. The two readings agree on 98.4% of definitions, pooled Spearman 0.9983 and
+# 0.9743 to 1.0 per corpus, and they agree exactly on Julia, which has no switch. Where they
+# part the gap is wide: 204 definitions differ by more than five, and laravel's 334-branch
+# `getPluralIndex` reads 55.
+#
+# So the band stays where `cyclomatic`'s is. At (11, 21) the pooled corpus reports 2.5% of
+# its definitions at `warn` and 0.6% at `high`, against 2.7% and 0.7% for `cyclomatic`. The
+# 71 definitions the switch reading takes out of the gate are what the rule is for, and 66
+# of them are curl: one `switch` over an error enum apiece, the widest a 90-branch
+# `curl_easy_strerror` that reads 3.
+#
+# Nothing moves the other way into the gate. Four definitions in 58340 read higher than
+# `cyclomatic`, all of them python `match` statements in fastmcp, and the largest of those
+# reads 19 against 18.
+const CYCLOMATIC_MODIFIED_BAND = (11, 21)
+
+"""
+    cyclomatic_modified(node, index) -> Int
+
+Cyclomatic complexity with a switch read as one decision: one plus the branch points in
+`node`'s subtree, each switch charged once in place of its arms. Everything else counts
+as it does for [`cyclomatic`](@ref).
+
+A dispatch over twenty cases has twenty paths and one idea, so the plain count reads it
+as the most complex function in most files while a reviewer opening it finds a table.
+Reading the dispatch as one decision is the standard modified count, and the other
+constructs are left alone, so the two numbers differ only where a switch does the work.
+
+Python is the one language where this reads the higher of the two. Its `case_clause` is
+no decision point, so a match's arms take nothing back out and the switch's own charge
+is arithmetic the plain count does not have.
+"""
+cyclomatic_modified(node::TreeSitter.Node, index::QueryIndex) =
+    independent_paths(modified_branch_points, node, index)
+cyclomatic_modified(u::Unit, index::QueryIndex) =
+    independent_paths(modified_branch_points, u, index)
+
+modified_branch_points(node::TreeSitter.Node, index::QueryIndex) =
+    sum_over(modified_step, node, index)
+
+# The arms come out of the branch points and the switch goes in. No node is both, which a
+# guard test asserts over every shipped query, so the two terms never fire on one node.
+modified_step(node::TreeSitter.Node, index::QueryIndex, ctx) = count_if(
+    (is_branch_point(node, index) && !(node in index.switch_arm)) || node in index.switch_stmt,
+    ctx,
+)
 
 """
     return_count(node, index) -> Int

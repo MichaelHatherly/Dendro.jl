@@ -7,6 +7,11 @@
 [(if_expression) (while_expression) (for_expression) (loop_expression)
  (match_arm)] @decision
 
+; The decision count's reading of a match: the arms @decision charges one apiece, and the
+; match that replaces them. A wildcard `_ =>` is a match_arm, so it cancels either way.
+(match_arm) @switch_arm
+(match_expression) @switch_stmt
+
 [(if_expression) (while_expression) (for_expression) (loop_expression)
  (match_expression)] @nesting
 

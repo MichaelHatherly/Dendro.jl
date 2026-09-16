@@ -6,6 +6,13 @@
 [(if_statement) (elif_clause) (for_statement) (while_statement)
  (except_clause) (conditional_expression)] @decision
 
+; The decision count's reading of a match: the arms, and the match that replaces them.
+; Python is the one language where @decision charges nothing for an arm, so subtracting
+; them takes nothing back and the match's one charge is arithmetic the cyclomatic count
+; lacks: `cyclomatic_modified` reads one higher than `cyclomatic` on a python match.
+(case_clause) @switch_arm
+(match_statement) @switch_stmt
+
 (elif_clause) @continuation
 
 [(if_statement) (for_statement) (while_statement) (try_statement)

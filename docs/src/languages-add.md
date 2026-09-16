@@ -46,8 +46,8 @@ too, reading a registered language as private and so saying nothing about it.
 ## Choices a query has to make
 
 The concept vocabulary is closed and a grammar's node types are not, so writing a query
-means deciding which of a language's constructs answer to each concept. Three of those
-decisions recur, stated here against Zig, where each one came up.
+means deciding which of a language's constructs answer to each concept. Four of those
+decisions recur. The first three are stated against Zig, where each one came up.
 
 Not every error construct is a decision point. Zig's `try` forwards an error rather than
 choosing between paths, and idiomatic code writes it on nearly every fallible call, so
@@ -62,3 +62,10 @@ A scopes query binds a declaration, not an assignment. Zig's grammar leaves the 
 `var` keyword optional, so a bare `total = 9;` parses as a `variable_declaration` too, and
 matching every one of those reads a rebinding as a fresh definition and stops the assigned
 name from counting as a use. Julia's scopes query makes the same split for the same reason.
+
+A switch is captured twice over, for two readings that want different nodes. `@switch` and
+`@case` feed npath, which sums a path per arm body, so `@case` names whichever node holds
+an arm's statements. `@switch_arm` and `@switch_stmt` feed `cyclomatic_modified`, which
+charges the switch once in place of its arms, so `@switch_arm` names whatever `@decision`
+already counts one for. Java is where the two part: its `@case` is the statement group or
+the arrow rule holding a body, and its `@switch_arm` is the `switch_label` inside either.

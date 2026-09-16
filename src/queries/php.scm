@@ -7,6 +7,11 @@
  (while_statement) (do_statement) (case_statement) (conditional_expression)
  (catch_clause)] @decision
 
+; The decision count's reading of a switch: the arms @decision charges one apiece, and the
+; switch that replaces them. default_statement is no decision, so it is no arm either.
+(case_statement) @switch_arm
+(switch_statement) @switch_stmt
+
 (else_if_clause) @continuation
 
 [(if_statement) (for_statement) (foreach_statement) (while_statement)

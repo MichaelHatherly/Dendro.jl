@@ -11,6 +11,12 @@
 [(if_statement) (elif_clause) (for_statement) (while_statement)
  (case_item)] @decision
 
+; The decision count's reading of a case: the arms @decision charges one apiece, and the
+; case that replaces them. Bash wires no npath switch family, so these two are the only
+; place the arms are named; a `*)` catch-all is a case_item, so it cancels either way.
+(case_item) @switch_arm
+(case_statement) @switch_stmt
+
 (elif_clause) @continuation
 
 [(if_statement) (for_statement) (while_statement) (case_statement)] @nesting

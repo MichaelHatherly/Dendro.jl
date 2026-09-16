@@ -81,7 +81,7 @@ const CONCEPT_NAMES = (
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
     :parameter_name, :broad_catch, :callee, :toplevel, :declaration,
     :class, :field, :field_name, :constructor, :doc, :attribute, :inherits_doc,
-    :prototype, :nodoc,
+    :prototype, :nodoc, :switch_arm, :switch_stmt,
 )
 
 """
@@ -202,6 +202,19 @@ struct QueryIndex
     # covers the members too. `:undocumented_public` reports nothing on either. Empty for a
     # language with no such marker.
     nodoc::Concept
+    # One arm of a switch: the nodes `@decision` counts one apiece for, so
+    # `cyclomatic_modified` can take them back out and charge the switch once. Shaped by
+    # `@decision`'s membership, which is why a language whose default branch has its own
+    # node type leaves that branch out of both. Python is the exception the other way: its
+    # `case_clause` is no decision point, so tagging it here is arithmetic python's
+    # cyclomatic count does not have. Empty for a language with no switch (julia).
+    switch_arm::Concept
+    # The switch a `@switch_arm` belongs to, the one decision `cyclomatic_modified` charges
+    # a dispatch. It names the same node as `@switch` in the nine languages that have both,
+    # and is a concept of its own because `@switch` carries npath's semantics: `@case` is
+    # the arm npath sums bodies over, and widening either to reach ruby and bash would move
+    # npath instead.
+    switch_stmt::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -241,7 +254,7 @@ struct QueryIndex
         toplevel, declaration = Concept(), Concept()
         class, field, field_name, constructor = Concept(), Concept(), Concept(), Concept()
         doc, attribute, inherits_doc, prototype = Concept(), Concept(), Concept(), Concept()
-        nodoc = Concept()
+        nodoc, switch_arm, switch_stmt = Concept(), Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "nesting" => nesting,
@@ -258,6 +271,7 @@ struct QueryIndex
             "class" => class, "field" => field, "field_name" => field_name,
             "constructor" => constructor, "doc" => doc, "attribute" => attribute,
             "inherits_doc" => inherits_doc, "prototype" => prototype, "nodoc" => nodoc,
+            "switch_arm" => switch_arm, "switch_stmt" => switch_stmt,
         )
         return new(
             language, source, Unit[], Set{NodeId}(),
@@ -266,7 +280,7 @@ struct QueryIndex
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
             callee, toplevel, declaration, class, field, field_name, constructor,
-            doc, attribute, inherits_doc, prototype, nodoc,
+            doc, attribute, inherits_doc, prototype, nodoc, switch_arm, switch_stmt,
             by_name, Dict{NodeId, TreeSitter.Node}(),
             Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,

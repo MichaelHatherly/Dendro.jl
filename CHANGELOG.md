@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in scalar `cyclomatic_modified`: `cyclomatic` with a whole switch charged one
+  decision in place of one per arm. A dispatch over twenty cases has twenty paths and one
+  idea, so the plain count puts it at the top of the file while a reviewer who opens it
+  finds a table. A rule of its own instead of a mode on `cyclomatic`, since a band, a
+  suppression and a ratchet key all read a metric name as an identity. Banded `[11, 21]`,
+  which is `cyclomatic`'s band, so the two are read on one scale. It ships off because the
+  two agree on 98.4% of 58340 definitions measured over fourteen corpora, and exactly on
+  Julia, which has no switch. Where they part the gap is wide: 204 definitions differ by
+  more than five, and curl's 90-branch `curl_easy_strerror` reads 3. Python is the one
+  language reading the higher of the two, since its `case_clause` is no decision point.
+  `[rules] cyclomatic_modified = true` enables it.
 - Opt-in corpus finding `:undocumented_public`: a declared-public function, type or macro
   with no documentation against it, reported at `:warn`. Documentation is adjacency and
   never content, so a doc node on the line above a definition documents it, and so does a

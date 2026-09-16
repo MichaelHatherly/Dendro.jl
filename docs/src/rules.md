@@ -56,6 +56,12 @@ asked for.
   found ordinary explanation throughout, a comment carrying a constraint the reader would
   otherwise get wrong, and nothing syntactic tells that from narration. Set
   `[bands] comment_density` to the convention the project keeps.
+- `cyclomatic_modified`, the branch points `cyclomatic` counts with a whole switch charged
+  one decision in place of one per arm. It carries `cyclomatic`'s band so the two read on
+  one scale. It waits to be asked for because the two agree on 98.4% of the 58340
+  definitions measured over fourteen corpora, so running both mostly reports one function
+  twice. Reach for it where wide dispatch is the idiom. [Scoring and metrics](@ref)
+  covers where the two part company.
 
 Opt in with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`, or by name in a
 `.dendro.toml`.

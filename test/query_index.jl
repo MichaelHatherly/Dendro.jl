@@ -127,6 +127,59 @@ end
     @test isempty(Fixtures.idx(:python, "# :nodoc:\ndef f():\n    return 1\n").nodoc.nodes)
 end
 
+@testitem "@switch_arm tags the arms @decision counts (c)" setup = [Fixtures] tags = [:query_index] begin
+    # `cyclomatic_modified` reads a switch as one decision by subtracting its arms from the
+    # branch points, so an arm tagged for one concept and not the other leaves the
+    # arithmetic short. C spells every arm, `default:` included, as one `case_statement`.
+    i = Fixtures.idx(:c, "int f(int x){ switch(x){ case 1: a(); break; case 2: b(); break; default: c(); } return 0; }")
+    @test length(i.switch_arm.nodes) == 3
+    @test all(n in i.decision for n in i.switch_arm.nodes)
+    @test length(i.switch_stmt.nodes) == 1
+end
+
+@testitem "a switch statement is never a branch point" tags = [:query_index] begin
+    using TreeSitter
+
+    # `modified_step` adds one for a switch statement and subtracts its arms, so a node
+    # tagged as both a switch statement and a branch point would count twice and once
+    # again as its own arm. Nothing in the metric code notices, so the queries carry the
+    # invariant and this reads it off them: the node types one capture names, taken from
+    # the compiled query's own pattern boundaries. Comments are blanked rather than cut so
+    # those byte offsets still land, and the captures read here are flat lists of node
+    # types and anonymous tokens, so the parenthesised and quoted names are all they say.
+    function types_by_capture(lang)
+        profile = Dendro.PROFILES[lang]
+        src = read(joinpath(Dendro.queries_dir(profile), "$(lang).scm"), String)
+        src = replace(src, r"(?m);[^\n]*" => m -> " "^length(m))
+        query = Dendro.query_for(profile)
+        bounds = [TreeSitter.start_byte_for_pattern(query, i) for i in 1:TreeSitter.pattern_count(query)]
+        push!(bounds, lastindex(src) + 1)
+        out = Dict{String, Set{String}}()
+        for k in 1:(length(bounds) - 1)
+            text = src[bounds[k]:(bounds[k + 1] - 1)]
+            types = Set{String}()
+            for m in eachmatch(r"\(\s*([a-z_][a-z_0-9]*)\s*\)", text)
+                push!(types, m.captures[1])
+            end
+            for m in eachmatch(r"\"([^\"]*)\"", text)
+                push!(types, m.captures[1])
+            end
+            for m in eachmatch(r"@([A-Za-z_][A-Za-z_0-9.]*)", text)
+                union!(get!(out, m.captures[1], Set{String}()), types)
+            end
+        end
+        return out
+    end
+
+    @testset "$lang" for lang in sort!(collect(keys(Dendro.PROFILES)))
+        types = types_by_capture(lang)
+        named(c) = get(types, c, Set{String}())
+        branch_points = union(named("decision"), named("short_circuit"))
+        @test isempty(intersect(named("switch_stmt"), branch_points))
+        @test isempty(intersect(named("switch_stmt"), named("switch_arm")))
+    end
+end
+
 @testitem "every capture name reaches its own QueryIndex field" tags = [:query_index] begin
     using Dendro: CONCEPT_NAMES, QueryIndex
 

@@ -447,12 +447,29 @@
 # expression, so the analyser counted the dispatch twice, and one shared site counts once.
 # Everything else the pass reads is concrete, the `@doc` and `@attribute` concept nodes, the
 # byte spans and the kind tuple, so it adds nothing.
+#
+# `cyclomatic_modified` (`metrics.jl`, `rules.jl`) raised sound from 1444 to 1448 and left
+# opt at 32. All four reports are `metrics.jl` and all four are `independent_paths`, the
+# higher-order extraction the two readings share: two for `1 + count(...)` and
+# `1 + fold_run(count, ...)` with `count` unbound, and two more inside `fold_run`, whose
+# generic body is now analysed with `f::Any` as well as concretely. The rate is the one
+# `subtree_any(pred::P)` already recorded for a higher-order walk. The new
+# `OPTIONAL_RULES` entry costs nothing: `rules.jl` stays at 19.
+#
+# The extraction is not optional, which is what makes the four irreducible. Each reading
+# written with its own `1 + ...` is what Dendro's own duplicate rule caught on the first
+# run, both method pairs at 21 named nodes against a control-free floor of 20. Two
+# narrowings were measured and both reverted. Asserting `::Int` on the counter's result
+# read 1448 again, trading two `UnanalyzedCallReport`s for two `UnsoundBuiltinErrorReport`s
+# on the typeassert itself. Taking the count by value instead, `independent_paths(::Int)`
+# with the fold moved to each call site, removes all four and puts the duplicate rule back:
+# the four call sites land at 20 named nodes, which is the floor rather than below it.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1444  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1448  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

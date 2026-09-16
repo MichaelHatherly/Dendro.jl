@@ -8,6 +8,11 @@
 [(if_statement) (for_statement) (while_statement) (do_statement)
  (case_statement) (conditional_expression)] @decision
 
+; The decision count's reading of a switch: the arms @decision charges one apiece, and
+; the switch that replaces them. `default:` is a case_statement, so it cancels either way.
+(case_statement) @switch_arm
+(switch_statement) @switch_stmt
+
 [(if_statement) (for_statement) (while_statement) (do_statement)
  (switch_statement)] @nesting
 

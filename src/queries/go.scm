@@ -11,6 +11,11 @@
 [(if_statement) (for_statement) (expression_case) (type_case)
  (communication_case)] @decision
 
+; The decision count's reading of a switch: the arms @decision charges one apiece, and
+; the switch that replaces them. default_case is no decision, so it is no arm either.
+[(expression_case) (type_case) (communication_case)] @switch_arm
+[(expression_switch_statement) (type_switch_statement) (select_statement)] @switch_stmt
+
 [(if_statement) (for_statement) (expression_switch_statement)
  (type_switch_statement) (select_statement)] @nesting
 

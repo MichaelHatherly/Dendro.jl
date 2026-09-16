@@ -81,6 +81,25 @@ reader needs. No reading of the syntax separates the two cases. Turn it on with
 `banner_comment` names the neighbouring case, a rule of dashes that decorates without
 saying anything, and a banner counts toward the density like any other comment.
 
+`cyclomatic_modified` is a second reading of a number Dendro already reports. It counts
+what `cyclomatic` counts, save that a whole switch costs one decision in place of one per
+arm. A dispatch over twenty cases has twenty paths and one idea, so the plain count puts
+it at the top of the file and a reviewer who opens it finds a table. Reach for it where
+wide dispatch is the idiom: a C error-string function, a PHP message selector. Leave it
+where each arm carries logic of its own, since this reading charges those the same one.
+
+The band is `cyclomatic`'s, `(11, 21)`, so the two numbers are read on one scale. Across
+58340 definitions in fourteen corpora they agree on 98.4% of them, and they agree exactly
+on Julia, which has no switch construct. Where they part the gap is wide: 204 definitions
+differ by more than five, and curl's 90-branch `curl_easy_strerror` reads 3. Turn the rule
+on with `[rules] cyclomatic_modified = true`, and turn `cyclomatic` off beside it where one
+function reported twice is not wanted.
+
+Python is the one language where this reads the higher of the two. Its grammar's
+`case_clause` is not among the decision points Dendro counts, so a `match` adds nothing to
+`cyclomatic` and one to `cyclomatic_modified`. Four definitions in the 58340 read higher
+this way, none of them near a band.
+
 Each metric is a [rule](@ref "Custom rules"). The set above is the default; a caller
 can add their own or opt into rules that are off by default.
 

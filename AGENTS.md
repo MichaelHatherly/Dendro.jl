@@ -55,6 +55,13 @@ corpus is, never where the code should be. At 40% a function has as often been e
 carefully as narrated line by line. The project supplies the opinion in its
 `.dendro.toml`, the layer it belongs in.
 
+A variant reading ships beside the original and never replaces it.
+`cyclomatic_modified` charges a switch one decision where `cyclomatic` charges one per
+arm, and it is a rule of its own because a band, a suppression and a ratchet key all
+read a metric name as the identity of what was measured. A mode flag on the existing
+name would move all three at once, the mistake this file already names for the graph
+constructors.
+
 Syntactic and shallow, on purpose. Dendro reads tree shape and resolves names
 lexically, never types. It matches a reference to the definition it lexically names,
 within a file and, along declared `include`/`import`/`export` edges, across files, but

@@ -324,6 +324,13 @@ Measurement:
   `MIN_COMMENT_DENSITY_LINES` the metric reads zero, since a one-line body with a
   trailing comment is 100%. Its band is the one per-function band drawn from a corpus
   measurement, for want of any guidance that sets a comment-percentage target.
+  The opt-in `cyclomatic_modified` is a second reading of `cyclomatic`:
+  `modified_step` drops a switch's arms from the branch points and adds the switch, so a
+  dispatch costs one decision and every other construct counts as before. The two
+  readings share their base path through `independent_paths` and nothing else. Its band
+  is a const here beside the function, since the measurement behind it has nowhere to
+  hang in the rule table, and it holds `cyclomatic`'s numbers, so a project running both
+  reads the two on one scale.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
   `unreachable_statements`, `identical_operands`, `duplicate_branches`,
@@ -841,6 +848,7 @@ catches, broad catches, comments, names, trivial statements, returns, finally cl
 callee names,
 binary expressions, binary operators, conditionals, terminals, short-form
 definitions, classes, instance-field uses, declared field names, constructors,
+the decision count's switch arms, its switch statements,
 and the NPath construct families: loops, switches, ternaries, tries,
 cases). A `Concept`
 holds the tagged nodes in source order and a `Set{NodeId}` for membership. Built
@@ -1541,6 +1549,13 @@ unsuppressed findings for gating.
   never what the fixed band says. Measured across eight corpora: `cyclomatic` and
   `function_length` do not move, `cognitive_complexity` moves by four findings in 450, and
   `boolean_complexity` falls 97.8%, having reported every unit in one corpus.
+- Two concepts can tag the same node and still mean different things. `@switch` and
+  `@case` belong to npath, which sums a body per arm. Java's `@case` therefore names the
+  statement group holding the body, and Ruby and Bash wire neither. `@switch_arm` and
+  `@switch_stmt` belong to the decision count, where an arm is whatever `@decision`
+  charges one for and the statement is what `cyclomatic_modified` charges in its place.
+  Widening either family to serve the other moves the metric that was already right, so a
+  language with a switch declares both.
 - There are two query families and they never merge. `<lang>.scm` captures name
   concepts: the set is closed (`CONCEPT_NAMES`), `dispatch!` throws on anything outside
   it, and the suite guards every query against it. That closure is what keeps metric code

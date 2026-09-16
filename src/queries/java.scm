@@ -6,6 +6,13 @@
 [(if_statement) (for_statement) (enhanced_for_statement) (while_statement)
  (do_statement) (switch_label) (ternary_expression) (catch_clause)] @decision
 
+; The decision count's reading of a switch: the arms @decision charges one apiece, and the
+; switch that replaces them. A switch_label is the arm in both the colon and the arrow
+; form, so `case 1: case 2:` falls to the one charge the switch carries. @case cannot serve
+; here: it names the statement group, which npath sums a body over.
+(switch_label) @switch_arm
+(switch_expression) @switch_stmt
+
 [(if_statement) (for_statement) (enhanced_for_statement) (while_statement)
  (do_statement) (switch_expression) (try_statement)] @nesting
 

@@ -13,6 +13,11 @@
 [(if_statement) (for_statement) (for_in_statement) (while_statement)
  (do_statement) (switch_case) (ternary_expression) (catch_clause)] @decision
 
+; The decision count's reading of a switch: the arms @decision charges one apiece, and the
+; switch that replaces them. switch_default is no decision, so it is no arm either.
+(switch_case) @switch_arm
+(switch_statement) @switch_stmt
+
 [(if_statement) (for_statement) (for_in_statement) (while_statement)
  (do_statement) (switch_statement) (try_statement)] @nesting
 

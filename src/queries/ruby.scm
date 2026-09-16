@@ -17,6 +17,14 @@
 [(if) (elsif) (unless) (while) (until) (for) (when) (rescue)
  (conditional)] @decision
 
+; The decision count's reading of a case: the arms @decision charges one apiece, and the
+; case that replaces them. Ruby wires no npath switch family, so these two are the only
+; place the grammar's case nodes are named; `else` is no decision, so it is no arm either.
+; A `case ... in` pattern match is a case_match, which @decision never counts, so it is
+; left alone here too.
+(when) @switch_arm
+(case) @switch_stmt
+
 (elsif) @continuation
 
 [(if) (unless) (while) (until) (for) (case) (begin)] @nesting
