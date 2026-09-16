@@ -60,7 +60,9 @@ julia -m Dendro --check src      # exit 1 on any error-severity finding (CI gate
 ```
 
 A project retunes the bands, the percentile cut, and which rules run from a `.dendro.toml`
-at its repo root, and writes rules of its own as tree-sitter queries.
+at its repo root, and writes rules of its own as tree-sitter queries. Some rules ship off
+by default and wait for a project to set its own band. `comment_density` is one, reading
+the share of a definition's lines given over to comment.
 
 Eighteen such rules come with the package and run in every scan, naming the idioms a
 working test suite leaves in place: a branch repeating an earlier condition, a handler

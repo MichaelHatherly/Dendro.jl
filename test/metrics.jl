@@ -448,3 +448,363 @@ end
     @test :fan_out ∉ names(Dendro.BUILTIN_RULES)
     @test only(r.band for r in Dendro.OPTIONAL_RULES if r.name == :fan_out) == (12, 20)
 end
+
+@testitem "comment_density (julia)" setup = [Fixtures] tags = [:metrics] begin
+    function density(src)
+        i = Fixtures.idx(:julia, src)
+        return Dendro.comment_density(first(Dendro.units(i)), i)
+    end
+
+    # Eleven lines, four of them comment. 4/11 rounds to 36.
+    narrated = """
+    function f(xs)
+        # narrate the setup
+        total = 0
+        # narrate the loop
+        for x in xs
+            # narrate the add
+            total += x
+        end
+        # narrate the return
+        return total
+    end
+    """
+    @test density(narrated) == 36
+
+    # A block comment counts every line it spans: three of eleven rounds to 27.
+    blocked = """
+    function g(x)
+        #= a block comment
+           spanning three
+           source lines =#
+        y = x + 1
+        z = y * 2
+        w = z - 3
+        v = w + 4
+        u = v * 5
+        return u
+    end
+    """
+    @test density(blocked) == 27
+
+    # A trailing comment counts the one line it sits on: two of ten is 20.
+    trailing = """
+    function h(x)
+        y = x + 1   # why one
+        z = y * 2   # why two
+        a = z + 3
+        b = a + 4
+        c = b + 5
+        d = c + 6
+        e = d + 7
+        return e
+    end
+    """
+    @test density(trailing) == 20
+
+    # Ten lines of code and nothing said about them.
+    bare = """
+    function k(x)
+        a = x + 1
+        b = a + 2
+        c = b + 3
+        d = c + 4
+        e = d + 5
+        g = e + 6
+        h = g + 7
+        return h
+    end
+    """
+    @test density(bare) == 0
+end
+
+@testitem "comment_density (python)" setup = [Fixtures] tags = [:metrics] begin
+    src = """
+    def f(xs):
+        # one
+        total = 0
+        # two
+        for x in xs:
+            # three
+            total += x
+        # four
+        total = total * 2
+        return total
+    """
+    i = Fixtures.idx(:python, src)
+    @test Dendro.comment_density(first(Dendro.units(i)), i) == 40
+end
+
+@testitem "comment_density stops at a nested callable (julia)" setup = [Fixtures] tags = [:metrics] begin
+    # The closure's narration is the closure's. `outer` keeps its own one comment over
+    # its fourteen lines; the closure scores its two over the ten it spans.
+    src = """
+    function outer(xs)
+        # outer narration
+        inner = function (y)
+            # inner narration
+            # more inner narration
+            a = y + 1
+            b = a + 2
+            c = b + 3
+            d = c + 4
+            e = d + 5
+            return e
+        end
+        return inner(first(xs))
+    end
+    """
+    i = Fixtures.idx(:julia, src)
+    units = Dendro.units(i)
+    outer = units[findfirst(u -> u.firstline == 1, units)]
+    inner = units[findfirst(u -> u.firstline == 3, units)]
+
+    @test Dendro.comment_density(outer, i) == 7
+    @test Dendro.comment_density(inner, i) == 20
+end
+
+@testitem "comment_density reads nothing below the length floor" setup = [Fixtures] tags = [:metrics] begin
+    function density(src)
+        i = Fixtures.idx(:julia, src)
+        return Dendro.comment_density(first(Dendro.units(i)), i)
+    end
+
+    # One line with one comment is 100% and says nothing, which is what the floor is for.
+    @test density("f(x) = x  # why\n") == 0
+    @test density("function f(x)\n    # why\n    return x\nend\n") == 0
+
+    # Nine lines stay silent; the tenth is where the ratio starts being read.
+    short = """
+    function f(x)
+        # why
+        a = x + 1
+        b = a + 2
+        c = b + 3
+        d = c + 4
+        e = d + 5
+        return e
+    end
+    """
+    @test density(short) == 0
+    @test Dendro.MIN_COMMENT_DENSITY_LINES == 10
+
+    long = """
+    function f(x)
+        # why
+        a = x + 1
+        b = a + 2
+        c = b + 3
+        d = c + 4
+        e = d + 5
+        g = e + 6
+        return g
+    end
+    """
+    @test density(long) == 10
+end
+
+@testitem "a docstring never reaches comment_density" setup = [Fixtures] tags = [:metrics] begin
+    # A Python or Julia docstring is a string node, and every other language attaches its
+    # doc comment as a sibling of the definition rather than a descendant, so no callable
+    # here scores for the documentation written above it.
+    documented = Dict(
+        :julia => """
+            \"\"\"
+                f(x)
+
+            Add seven, one step at a time.
+            \"\"\"
+            function f(x)
+                a = x + 1
+                b = a + 1
+                c = b + 1
+                d = c + 1
+                e = d + 1
+                g = e + 1
+                h = g + 1
+                return h
+            end
+            """,
+        :python => """
+            def f(x):
+                \"\"\"Add seven, one step at a time.\"\"\"
+                a = x + 1
+                b = a + 1
+                c = b + 1
+                d = c + 1
+                e = d + 1
+                g = e + 1
+                h = g + 1
+                return h
+            """,
+        :javascript => """
+            /**
+             * Add seven, one step at a time.
+             */
+            function f(x) {
+              let a = x + 1;
+              let b = a + 1;
+              let c = b + 1;
+              let d = c + 1;
+              let e = d + 1;
+              let g = e + 1;
+              let h = g + 1;
+              return h;
+            }
+            """,
+        :typescript => """
+            /**
+             * Add seven, one step at a time.
+             */
+            function f(x: number): number {
+              let a = x + 1;
+              let b = a + 1;
+              let c = b + 1;
+              let d = c + 1;
+              let e = d + 1;
+              let g = e + 1;
+              let h = g + 1;
+              return h;
+            }
+            """,
+        :java => """
+            class C {
+              /**
+               * Add seven, one step at a time.
+               */
+              int f(int x) {
+                int a = x + 1;
+                int b = a + 1;
+                int c = b + 1;
+                int d = c + 1;
+                int e = d + 1;
+                int g = e + 1;
+                int h = g + 1;
+                return h;
+              }
+            }
+            """,
+        :go => """
+            package p
+
+            // F adds seven, one step at a time.
+            func F(x int) int {
+            	a := x + 1
+            	b := a + 1
+            	c := b + 1
+            	d := c + 1
+            	e := d + 1
+            	g := e + 1
+            	h := g + 1
+            	return h
+            }
+            """,
+        :rust => """
+            /// Add seven, one step at a time.
+            fn f(x: i32) -> i32 {
+                let a = x + 1;
+                let b = a + 1;
+                let c = b + 1;
+                let d = c + 1;
+                let e = d + 1;
+                let g = e + 1;
+                let h = g + 1;
+                h
+            }
+            """,
+        :c => """
+            /**
+             * Add seven, one step at a time.
+             */
+            int f(int x) {
+              int a = x + 1;
+              int b = a + 1;
+              int c = b + 1;
+              int d = c + 1;
+              int e = d + 1;
+              int g = e + 1;
+              int h = g + 1;
+              return h;
+            }
+            """,
+        :cpp => """
+            /**
+             * Add seven, one step at a time.
+             */
+            int f(int x) {
+              int a = x + 1;
+              int b = a + 1;
+              int c = b + 1;
+              int d = c + 1;
+              int e = d + 1;
+              int g = e + 1;
+              int h = g + 1;
+              return h;
+            }
+            """,
+        :php => """
+            <?php
+            /**
+             * Add seven, one step at a time.
+             */
+            function f(\$x) {
+              \$a = \$x + 1;
+              \$b = \$a + 1;
+              \$c = \$b + 1;
+              \$d = \$c + 1;
+              \$e = \$d + 1;
+              \$g = \$e + 1;
+              \$h = \$g + 1;
+              return \$h;
+            }
+            """,
+        :ruby => """
+            # Add seven, one step at a time.
+            def f(x)
+              a = x + 1
+              b = a + 1
+              c = b + 1
+              d = c + 1
+              e = d + 1
+              g = e + 1
+              h = g + 1
+              h
+            end
+            """,
+        :bash => """
+            # Add seven, one step at a time.
+            f() {
+              a=\$((\$1 + 1))
+              b=\$((a + 1))
+              c=\$((b + 1))
+              d=\$((c + 1))
+              e=\$((d + 1))
+              g=\$((e + 1))
+              h=\$((g + 1))
+              echo \$h
+            }
+            """,
+    )
+
+    @test sort(collect(keys(documented))) == sort(collect(keys(Dendro.PROFILES)))
+    @testset "$lang" for lang in sort(collect(keys(documented)))
+        i = Fixtures.idx(lang, documented[lang])
+        callables = [u for u in Dendro.units(i) if Dendro.is_callable(u, i)]
+        @test !isempty(callables)
+        for u in callables
+            @test Dendro.function_length(u) >= Dendro.MIN_COMMENT_DENSITY_LINES
+            @test Dendro.comment_density(u, i) == 0
+        end
+    end
+end
+
+@testitem "comment_density is an optional rule" tags = [:metrics] begin
+    names(rules) = [r.name for r in rules]
+    @test :comment_density in names(Dendro.OPTIONAL_RULES)
+    @test :comment_density ∉ names(Dendro.BUILTIN_RULES)
+
+    rule = only(r for r in Dendro.OPTIONAL_RULES if r.name == :comment_density)
+    @test rule.kind === :scalar
+    @test rule.scope === :callable
+    @test rule.band == (30, 50)
+end

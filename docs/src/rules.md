@@ -49,6 +49,13 @@ asked for.
   counted by its final name. The band sits at the p95/p99 of a six-corpus calibration,
   and no fixed band separates a smell from a legitimate orchestrator: idiomatic corpora
   run p99 anywhere from 9 to 26.
+- `comment_density`, the percentage of a definition's lines given over to comment, for
+  the function narrated statement by statement. The band was measured over 22838
+  definitions in nine corpora: `warn` at 30 sits above the p95 of eight of them, `high`
+  at 50 above the p99 of seven. It waits to be asked for because hand reading that range
+  found ordinary explanation throughout, a comment carrying a constraint the reader would
+  otherwise get wrong, and nothing syntactic tells that from narration. Set
+  `[bands] comment_density` to the convention the project keeps.
 
 Opt in with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`, or by name in a
 `.dendro.toml`.

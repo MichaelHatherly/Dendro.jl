@@ -54,6 +54,24 @@ Three more coupling and binding readings are optional rules: `local_count`
 binding hiding an enclosing one), and `fan_out` (distinct callables a function
 invokes). See [Custom rules](@ref).
 
+`comment_density` is a fourth, and it reads narration where those three read coupling:
+the percentage of a definition's lines given over to comment. A generated function often
+arrives with its rationale written into the body, a comment above each statement
+restating it, while the code itself measures fine and nothing else flags it. The count
+stops at a nested callable, so a closure's narration scores on the closure. A definition
+under ten lines reads zero, where one trailing comment alone would be 100%. A docstring
+never counts: Python and Julia write one as a string, and every other language attaches
+its doc comment beside the definition, never inside it.
+
+The band comes from measurement, since no external guidance gives a comment-percentage
+target. The rule is still off by default, and the same measurement is why. A function at
+40% has as often been explained as narrated, its comments carrying the constraints a
+reader needs. No reading of the syntax separates the two cases. Turn it on with
+`[rules] comment_density = true` and set
+`[bands] comment_density` to the convention the project keeps. The pattern rule
+`banner_comment` names the neighbouring case, a rule of dashes that decorates without
+saying anything, and a banner counts toward the density like any other comment.
+
 Each metric is a [rule](@ref "Custom rules"). The set above is the default; a caller
 can add their own or opt into rules that are off by default.
 

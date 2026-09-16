@@ -144,9 +144,11 @@ per-project band tuning, `trivial_wrapper` has a higher false-positive rate,
 `unreachable_after_jump` flags code after an unconditional jump, `npath` grows
 multiplicatively so its band wants per-project tuning, `local_count` likewise,
 `shadowed_variable` reads name collisions some idioms make routine (a method
-local matching a class attribute), and `fan_out` cannot separate a smell from a
+local matching a class attribute), `fan_out` cannot separate a smell from a
 legitimate orchestrator by any fixed band (idiomatic corpora run p99 from 9 to
-26 distinct callees). Use them with
+26 distinct callees), and `comment_density` reads the same number for a function
+narrated statement by statement and for one whose comments carry the constraints
+a reader needs. Use them with
 `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 """
 const OPTIONAL_RULES = Rule[
@@ -157,6 +159,7 @@ const OPTIONAL_RULES = Rule[
     Rule(:local_count, :scalar, (10, 15), local_count, :high, :callable),
     Rule(:shadowed_variable, :flag, nothing, shadowed_variables),
     Rule(:fan_out, :scalar, (12, 20), fan_out),
+    Rule(:comment_density, :scalar, COMMENT_DENSITY_BAND, comment_density, :high, :callable),
 ]
 
 # The active rules of one kind (`:scalar` or `:flag`), in order.

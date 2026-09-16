@@ -43,6 +43,18 @@ typo'd `dendro-ignore`. A configured library path that matches nothing is the on
 exception and errors instead, since a library resolving to nothing would silently turn its
 gate off, which is the failure that whole reading exists to prevent.
 
+Comment density is where that rule bends, and the exception is narrow enough to name.
+`comment_density` is the first per-function scalar whose band is measured, because no
+complexity guidance anywhere sets a target for what share of a function should be
+comment. No standard exists to draw the opinion from, so the corpus is what is left.
+`:distant_definition` set the precedent one level up, where the relational bands are
+calibrated the same way and for the same reason. Every other per-function band stays an
+opinion about what good code looks like; this one reports where nine hand-maintained
+corpora sit. That is also why the rule ships off by default. A measured band says where a
+corpus is, never where the code should be. At 40% a function has as often been explained
+carefully as narrated line by line. The project supplies the opinion in its
+`.dendro.toml`, the layer it belongs in.
+
 Syntactic and shallow, on purpose. Dendro reads tree shape and resolves names
 lexically, never types. It matches a reference to the definition it lexically names,
 within a file and, along declared `include`/`import`/`export` edges, across files, but

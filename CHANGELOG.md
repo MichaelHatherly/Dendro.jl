@@ -62,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nearest it. Measured over 5798 scored definitions in nine corpora, separation is ordinary
   and the tail is long, so the band marks only what is beyond argument and the rule ships
   off. `[rules] distant_definition = true` enables it; banded `[25, 50]`.
+- Opt-in per-function scalar `comment_density`: the percentage of a definition's lines
+  given over to comment, for the function narrated statement by statement. The count stops
+  at a nested callable, so a closure's narration scores on the closure, and a definition
+  under ten lines reads zero, where one trailing comment alone would be 100%. A docstring
+  never counts in any of the twelve languages. Measured over 22838 definitions in nine
+  corpora, `warn` at 30 sits above the p95 of eight of them and `high` at 50 above the p99
+  of seven. Hand reading that range found ordinary explanation throughout, so the rule
+  ships off. `[rules] comment_density = true` enables it; banded `[30, 50]`.
 
 ### Changed
 

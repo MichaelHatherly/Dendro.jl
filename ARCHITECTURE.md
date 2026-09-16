@@ -298,7 +298,15 @@ Measurement:
   `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
   `boolean_complexity`, `return_count`, and `npath` (NPath complexity, a recursion
   that dispatches on construct family from the query and saturates at `NPATH_CAP`).
-  `severity` classifies a value against a `(warn, high)` band.
+  `severity` classifies a value against a `(warn, high)` band. The opt-in
+  `comment_density` reads the one thing here that is not about control flow, the share of
+  a definition's lines given over to comment, folding `comment_lines` over the unit
+  against `function_length`. The fold stops at a nested callable where the denominator
+  does not, so a closure's narration scores on the closure and the enclosing definition's
+  length keeps the one meaning `function_length` gives it. Below
+  `MIN_COMMENT_DENSITY_LINES` the metric reads zero, since a one-line body with a
+  trailing comment is 100%. Its band is the one per-function band drawn from a corpus
+  measurement, for want of any guidance that sets a comment-percentage target.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
   `unreachable_statements`, `identical_operands`, `duplicate_branches`,

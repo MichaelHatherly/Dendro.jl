@@ -50,6 +50,82 @@ Number of source lines the unit spans, inclusive.
 """
 function_length(unit::Unit) = unit.lastline - unit.firstline + 1
 
+# Shortest definition whose comment ratio is read. Below it the arithmetic decides the
+# reading rather than the code: at three lines one comment is 33% and at two it is 50%, so
+# a short definition reaches only a handful of ratios and they sit far apart. Sweeping the
+# floor over 1, 3, 5 and 10 across the nine corpora measured below, 150 of the 16545
+# definitions under ten lines score 30 or more, every one of them a count over a
+# single-digit denominator. Ten lines is where one comment line is worth ten points, which
+# is the grain a percentage can be read at.
+#
+# The floor returns zero rather than skipping the unit, so the definition stays in the
+# corpus distribution the percentile is taken over, the shape `MIN_COHESION_UNITS` takes.
+const MIN_COMMENT_DENSITY_LINES = 10
+
+# Absolute band on the percentage of a definition's lines given over to comment.
+#
+# Measured over 22838 definitions in nine corpora across five languages: this package,
+# DataFrames.jl, HTTP.jl, CommonMark.jl, flask, requests, fastmcp, ripgrep and guava.
+# Above the length floor the median is zero in seven of the nine and the tail is short.
+# The per-corpus p95 runs from 18 to 39 and the p99 from 27 to 64, so `warn` at 30 sits
+# above the p95 of eight of the nine and `high` at 50 above the p99 of seven, the shape
+# `:distant_definition` takes.
+#
+# The rule ships off by default, and the measurement is the argument rather than caution.
+# Hand reading every definition this package scores between 30 and 50 found two,
+# `pair_similarity` and `git_toplevel`, and each comment there carries a constraint the
+# reader would otherwise get wrong: a floating-point comparison that reads the wrong way,
+# and the difference between two libgit2 repository constructors. Reading the same band in
+# the other corpora reads the same, a ripgrep test naming which literals its heuristic
+# should prefer, a requests helper naming the browser bug it works around. Nothing
+# syntactic separates that from narration restating the statement below it, so the opinion
+# belongs in the project's `.dendro.toml`, turned on with `[rules] comment_density = true`.
+#
+# guava is the one corpus the band reports in quantity, 8.7% of its definitions above 30
+# and 3.0% above 50, which is a documentation culture rather than a defect. This package
+# tops out at 48, so the gate floor stays empty with the rule switched on.
+#
+# The percentile informs at the default cut, but narrowly: a definition scoring 1 ranks
+# above 65% to 94% of its corpus, since most score zero. A corpus where more than 95% do
+# falls the other side of `percentile_informs` and is read on the absolute band alone.
+const COMMENT_DENSITY_BAND = (30, 50)
+
+# Source lines a node spans, inclusive.
+node_lines(node::TreeSitter.Node) =
+    Int(TreeSitter.end_point(node).row - TreeSitter.start_point(node).row) + 1
+
+"""
+    comment_density(unit, index) -> Int
+
+Percentage of the unit's lines given over to comment, the comment lines inside a
+definition against the lines the definition spans. A definition shorter than
+`MIN_COMMENT_DENSITY_LINES` reads zero, since a one-line body with a trailing comment
+is 100% and says nothing.
+
+The numerator stops at a nested callable, so a closure's narration is scored on the
+closure, while the denominator counts the closure's lines along with the rest of what
+the definition spans. That understates an outer definition wrapping a large closure,
+and is the reading to keep: `function_length` is what a definition's length means here,
+and two definitions of it would be worse than one understated ratio.
+
+Two comment nodes sharing one line each count their span, so `#= a =# x #= b =#`
+contributes two. The shape is rare enough that spotting it would cost a second walk to
+no end.
+"""
+function comment_density(u::Unit, index::QueryIndex)
+    len = function_length(u)
+    len < MIN_COMMENT_DENSITY_LINES && return 0
+    return round(Int, 100 * fold_run(comment_lines, +, u, index) / len)
+end
+
+comment_lines(node::TreeSitter.Node, index::QueryIndex) =
+    sum_over(comment_line_step, node, index)
+
+# A comment contributes every line it spans, so a block comment counts as what it costs
+# a reader rather than as one node.
+comment_line_step(node::TreeSitter.Node, index::QueryIndex, ctx) =
+    (node in index.comment ? node_lines(node) : 0), ctx
+
 # Node types that open a function's keyword-argument region, the boundary past which a
 # parameter is named at the call site and so is a different concern than the positional
 # count: Julia's `;` separator, and Python's `*args`, `**kwargs`, and bare-`*`

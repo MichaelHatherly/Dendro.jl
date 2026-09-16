@@ -30,6 +30,7 @@ Scored against the band and the corpus percentile, and flagged when either fires
 | `npath` | 200, 1000 | opt-in | acyclic execution paths |
 | `local_count`[^1] | 10, 15 | opt-in | distinct local names bound |
 | `fan_out` | 12, 20 | opt-in | distinct callables invoked |
+| `comment_density`[^1] | 30, 50 | opt-in | percentage of a definition's lines given over to comment |
 
 [^1]: Measures a definition only. Top-level code has no signature and no author-drawn
     boundary, so these stay quiet there.
