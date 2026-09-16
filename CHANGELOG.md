@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `file_length`, a per-file scalar over a file's physical lines, on by default and gating at
+  `:high`. It carries the two scores every other scalar carries, the fixed band and the
+  corpus percentile. Both band edges come from published file-size limits. ESLint's
+  `max-lines` defaults to 300 code lines and SonarQube's to 750; adding blanks and comments
+  puts `warn` at 500. Checkstyle's `FileLength` defaults to 2000 and counts every line
+  already, so that is `high`. Over 1183 files in nine corpora the two edges report 19.1% and
+  1.4%. The finding sits on line 1, since a file holds no site standing for the whole. A
+  spatial `--base` scope therefore keeps it only where the change reaches that line, and the
+  `--since` ratchet, keyed on the location set, is what reads the rule over a change. Retune
+  it with `[bands] file_length` and accept one file with `dendro-ignore-file: file_length`.
 - A generated and bundled file filter. Dendro reads the first 40 lines of every file it is
   about to parse and turns away one carrying a generator's header or a bundler's module
   runtime. A checked-in bundle no `ignore` pattern names now stays out of the percentile

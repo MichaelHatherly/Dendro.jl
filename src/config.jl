@@ -20,9 +20,9 @@ const DEFAULT_CUT = 0.95
 # table names scalar rules. Ordered as the `Config` fields and the constructor's keywords
 # are, so the three lists read against each other.
 const RELATIONAL_BANDS = (
-    :unnatural, :low_cohesion, :divisible_class, :scattered, :split_audience, :misplaced,
-    :distant_definition, :back_edge, :dependency_cycle, :hub, :incoherent_package,
-    :divisible_package,
+    :unnatural, :low_cohesion, :file_length, :divisible_class, :scattered, :split_audience,
+    :misplaced, :distant_definition, :back_edge, :dependency_cycle, :hub,
+    :incoherent_package, :divisible_package,
 )
 
 # A malformed `.dendro.toml` value: a band that is not two integers, a `cut` that is
@@ -72,6 +72,7 @@ struct Config
     bands::Dict{Symbol, Tuple{Int, Int}}
     unnatural::Tuple{Int, Int}
     low_cohesion::Tuple{Int, Int}
+    file_length::Tuple{Int, Int}
     divisible_class::Tuple{Int, Int}
     scattered::Tuple{Int, Int}
     split_audience::Tuple{Int, Int}
@@ -110,6 +111,7 @@ struct Config
         bands::Dict{Symbol, Tuple{Int, Int}} = Dict{Symbol, Tuple{Int, Int}}(),
         unnatural::Tuple{Int, Int} = UNNATURAL_BAND,
         low_cohesion::Tuple{Int, Int} = LOW_COHESION_BAND,
+        file_length::Tuple{Int, Int} = FILE_LENGTH_BAND,
         divisible_class::Tuple{Int, Int} = DIVISIBLE_CLASS_BAND,
         scattered::Tuple{Int, Int} = SCATTERED_BAND,
         split_audience::Tuple{Int, Int} = SPLIT_AUDIENCE_BAND,
@@ -137,8 +139,8 @@ struct Config
         generated_enabled::Bool = true,
         base_summary::Bool = true,
     ) = new(
-        cut, bands, unnatural, low_cohesion, divisible_class, scattered, split_audience,
-        misplaced, distant_definition, back_edge, dependency_cycle, hub,
+        cut, bands, unnatural, low_cohesion, file_length, divisible_class, scattered,
+        split_audience, misplaced, distant_definition, back_edge, dependency_cycle, hub,
         incoherent_package, divisible_package, rules, min_size, threshold, radius_factor,
         reimpl_threshold, library_threshold, library_gate_coverage, library_anchor_grain,
         languages, patterns, patterns_dir, libraries, ignore, generated, generated_enabled,
@@ -626,6 +628,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         bands = acc.bands,
         unnatural = get(acc.relational, :unnatural, UNNATURAL_BAND),
         low_cohesion = get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
+        file_length = get(acc.relational, :file_length, FILE_LENGTH_BAND),
         divisible_class = get(acc.relational, :divisible_class, DIVISIBLE_CLASS_BAND),
         scattered = get(acc.relational, :scattered, SCATTERED_BAND),
         split_audience = get(acc.relational, :split_audience, SPLIT_AUDIENCE_BAND),
@@ -676,6 +679,7 @@ function override_config(
         bands = config.bands,
         unnatural = config.unnatural,
         low_cohesion = config.low_cohesion,
+        file_length = config.file_length,
         divisible_class = config.divisible_class,
         scattered = config.scattered,
         split_audience = config.split_audience,

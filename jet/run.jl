@@ -387,12 +387,21 @@
 # concrete and each assertion is a report; inlining `apply_generated` into `apply_key!`
 # moved its three reports and removed none; and writing the warning as one interpolated
 # string changed nothing.
+#
+# `:file_length` (`file_length.jl`) raised sound from 1422 to 1428 and left opt at 32.
+# Five sit on `cluster_file_length`'s keyword-argument lowering, the per-pass rate
+# `cohesion.jl` and `scattered.jl` each pay at exactly five, and the sixth is one more
+# keyword on the `Config` kwsorter. Two narrowings were measured and reverted, each reading
+# 1428: `cut::Float64` and `min_files::Int` in place of the abstract `Real` and `Integer`
+# the sibling passes take, and a `::Vector{Finding}` return annotation. The reports are
+# Base's kwsorter, so dropping the keywords is the only remaining move, and that would
+# part this pass from every sibling's signature.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1422  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1428  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

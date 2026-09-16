@@ -78,8 +78,8 @@ end
     @test isempty(cfg.bands)
     @test Set(fieldnames(Config)) == Set(
         [
-            :cut, :bands, :unnatural, :low_cohesion, :divisible_class, :scattered,
-            :split_audience, :misplaced, :distant_definition, :back_edge,
+            :cut, :bands, :unnatural, :low_cohesion, :file_length, :divisible_class,
+            :scattered, :split_audience, :misplaced, :distant_definition, :back_edge,
             :dependency_cycle, :hub, :incoherent_package, :divisible_package, :rules,
             :min_size, :threshold, :radius_factor, :reimpl_threshold, :library_threshold,
             :library_gate_coverage, :library_anchor_grain, :languages, :patterns,
@@ -119,6 +119,7 @@ end
             [bands]
             unnatural = [11, 12]
             low_cohesion = [21, 22]
+            file_length = [23, 24]
             divisible_class = [26, 27]
             scattered = [31, 32]
             split_audience = [36, 37]
@@ -138,6 +139,7 @@ end
         end
         @test cfg.unnatural == (11, 12)
         @test cfg.low_cohesion == (21, 22)
+        @test cfg.file_length == (23, 24)
         @test cfg.divisible_class == (26, 27)
         @test cfg.scattered == (31, 32)
         @test cfg.split_audience == (36, 37)
@@ -154,9 +156,9 @@ end
         @test Set(RELATIONAL_BANDS) ==
             Set(
             [
-                :unnatural, :low_cohesion, :divisible_class, :scattered, :split_audience,
-                :misplaced, :distant_definition, :back_edge, :dependency_cycle, :hub,
-                :incoherent_package, :divisible_package,
+                :unnatural, :low_cohesion, :file_length, :divisible_class, :scattered,
+                :split_audience, :misplaced, :distant_definition, :back_edge,
+                :dependency_cycle, :hub, :incoherent_package, :divisible_package,
             ]
         )
     end

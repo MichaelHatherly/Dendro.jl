@@ -80,6 +80,19 @@ The diff is the question. Whole-file analysis asks whether code is bad.
 Diff-scoping asks whether an edit made it worse, which is what review actually
 wants to know. That is why `analyze` takes a `base` git ref.
 
+A file is a measured subject with no site inside it. Every other scalar reads something an
+author drew a boundary around, a definition with a first line and a name; `file_length`
+reads the file, and nothing inside it stands for the whole. So the finding sits on line 1,
+its value is the physical line count `corpus_scores` already divides verbosity by, and the
+edit it names is a split. A spatial `base` scope then keeps the finding only when the change
+reaches line 1, so editing the middle of a long file does not re-report its length. That is
+coarse, and saying so is the whole of the treatment. `--base` asks a spatial question and
+this rule has no answer to one, so the `--since` ratchet is the surface that reads it on a
+change.
+Both edges of the band come from published file-size limits, the stance every band takes,
+and `high` sits where the gate stays satisfiable. Nobody can pass a gate whose floor takes a
+tenth of an ordinary corpus, which is what `:scattered`'s own band settled first.
+
 Duplicates are structure, not meaning. Dendro flags code duplicated across the
 corpus, exact clones and near-misses both, a whole function or one block copied
 between functions. This crosses the single-file boundary, but it never resolves a

@@ -27,6 +27,10 @@
         return Dendro.ParsedFile(profile, String(src), file, tree, index, directives)
     end
 
+    # A parsed Julia file of `n` physical lines, each line a distinct definition. The
+    # file-length items score the count, so what the lines say does not matter.
+    linefile(n) = parsedfile(:julia, join(["f$i(x) = x" for i in 1:n], "\n") * "\n"; file = "f$n.jl")
+
     # The bindings resolved for `src`, the type-stable entry the binding test asserts
     # inference on. Narrows the scopes query past its `nothing` case before the call.
     function resolve(lang, src)

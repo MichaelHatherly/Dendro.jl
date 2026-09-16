@@ -641,6 +641,14 @@ Reporting:
   percentile. The LCOM4 reading of independent concerns cohabiting. Binding-keyed but
   still syntactic, within one file. Included after `scattered.jl`, since its signature
   names `CorpusGraph`.
+- `file_length.jl` defines the one scalar whose subject is a file. `cluster_file_length`
+  scores each `ParsedFile` by `physical_lines`, the count `corpus_scores` already divides
+  verbosity by, and emits through `scored_findings` against the absolute
+  `FILE_LENGTH_BAND` and the corpus percentile, which is read once the corpus holds
+  `MIN_FILE_LENGTH_FILES` files. Its one location is line 1, since a file carries no site
+  inside it that stands for the whole, and that is what makes the finding coarse under a
+  spatial `base` scope. Included after `cohesion.jl`, whose shape it takes, and before
+  `config.jl`, which reads its band.
 - `class_cohesion.jl` defines class-level cohesion, the opt-in pass `analyze` gates on
   `cfg.rules`. Where `:low_cohesion` asks whether a file holds several concerns, this asks
   it of a class. `class_nodes` and `class_methods` attribute each callable unit to the
@@ -974,6 +982,12 @@ either trips.
 - Relative: the value's percentile against the baseline corpus, flagged when it
   lands at or above the cut (default 0.95). `nothing` when the corpus holds no
   sample for that metric to rank against.
+
+`:file_length` reads both scores over a subject that is not a function. A file has no site
+inside it standing for the whole, so the finding sits on line 1, and `in_scope` tests that
+one line like any other. A spatial `base` scope therefore keeps the finding only where the
+change reaches line 1. What carries this rule over a change is the `--since` ratchet, whose
+`fkey` reads the location set.
 
 Flag metrics have no distribution. Presence is the finding, reported at `:high` by
 default. That default is not an invariant: `flag_findings!` takes a `severity`, so a

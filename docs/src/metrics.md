@@ -95,6 +95,21 @@ surprising, unidiomatic function scores high, and surprise correlates with bugs.
 Reported as `:unnatural` with both scores, the absolute cross-entropy band and the
 corpus percentile. A language with too few tokens to model is skipped.
 
+`file_length` is the one scalar whose subject is a file: its physical line count, blanks
+and comments included. It reads the two scores a function scalar reads, the fixed band and
+the corpus percentile, so a long file fires against the published limits and the longest
+file in a corpus of short ones fires against its neighbours. The band is wide on purpose.
+Files of 500 lines are common enough that `warn` covers about a fifth of an ordinary
+corpus, while `high` at 2000 marks the size nobody argues about and is the half that
+reaches the gate.
+
+The finding sits on line 1, since a file carries no site inside it that stands for the
+whole. That makes it coarse under `--base`, which keeps a finding only where a changed line
+falls: edit the middle of a long file and its length goes unreported. Read this rule on a
+change through the `--since` ratchet instead, whose key is the location set rather than a
+line range. Accept a long file that has to stay long, a generated table written out by hand,
+with a `dendro-ignore-file: file_length`.
+
 Cohesion asks whether a file's functions group by usage, placement whether a unit sits
 in the right file, scattering whether a file's units belong to one module, and
 reachability whether a private definition is dead, reported as `:unreferenced`. All four

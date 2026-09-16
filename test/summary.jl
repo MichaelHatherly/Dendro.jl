@@ -233,3 +233,13 @@ end
     @test !occursin("lines ", sprint(show, MIME("text/plain"), Dendro.analyze(src)))
     @test Dendro.errors(src).summary.delta == Dendro.LineDelta(0, 0)
 end
+
+@testitem "a physical line count reads a missing trailing newline" tags = [:summary] begin
+    # `:file_length` scores a file by this count, so a file ending mid-line has to read the
+    # same as one ending on a newline. Counting separators alone would lose that last line.
+    @test Dendro.physical_lines("a\nb\nc\n") == 3
+    @test Dendro.physical_lines("a\nb\nc") == 3
+    @test Dendro.physical_lines("a") == 1
+    @test Dendro.physical_lines("\n") == 1
+    @test Dendro.physical_lines("") == 0
+end

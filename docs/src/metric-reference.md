@@ -65,6 +65,7 @@ The band column is empty where the metric is a flag and always reports `:high`.
 | `reimplementation` | | opt-in | shared rare vocabulary, percent | [Duplicate detection](@ref) |
 | `unnatural` | 400, 500 | on | cross-entropy in centibits[^2] | [Scoring and metrics](@ref) |
 | `low_cohesion` | 4, 6 | on | independent concerns sharing a file | [Cohesion and placement](@ref) |
+| `file_length` | 500, 2000 | on | physical lines in a file | [Scoring and metrics](@ref) |
 | `divisible_class` | 13, 22 | opt-in | independent concerns sharing a class | [Cohesion and placement](@ref) |
 | `scattered` | 7, 10 | on | modules the file's units are pulled toward | [Cohesion and placement](@ref) |
 | `split_audience` | 3, 5 | on | consumer groups the file serves | [Cohesion and placement](@ref) |
@@ -80,7 +81,7 @@ The band column is empty where the metric is a flag and always reports `:high`.
 [^2]: Hundredths of a bit per token, so the default band is 4.00 and 5.00 bits. The
     value is rounded for reporting; the percentile ranks on the unrounded score.
 
-The twelve with a band are the relational names `[bands]` accepts. The rest carry no band
+The thirteen with a band are the relational names `[bands]` accepts. The rest carry no band
 to retune.
 
 ### Not metrics

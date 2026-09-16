@@ -248,6 +248,7 @@ function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res:
     graph, fg = res.unit_graph, res.file_graph
     findings = scope_clusters(cluster_unnatural(files; cut = ecut, band = cfg.unnatural), scope)
     append!(findings, scope_clusters(cluster_low_cohesion(files, graph; cut = ecut, band = cfg.low_cohesion), scope))
+    append!(findings, scope_clusters(cluster_file_length(files; cut = ecut, band = cfg.file_length), scope))
     append_gated!(
         findings, cfg, RELATIONAL.divisible_class, scope,
         () -> cluster_divisible_class(files; cut = ecut, band = cfg.divisible_class)
