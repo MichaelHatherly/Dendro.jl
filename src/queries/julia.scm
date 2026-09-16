@@ -3,6 +3,11 @@
 ; left side resolves to a call signature, possibly through `::T` / `where` wrappers,
 ; so each wrapper combination is an explicit pattern anchored to the assignment's
 ; first child.
+;
+; No @class. A struct's methods are whatever dispatches on it anywhere in the program,
+; so gathering them needs dispatch resolution, which Dendro does not do. A pattern naming
+; `struct` would read a type's fields as a class body holding no methods and score every
+; type as one concern.
 
 ; A `function … end` whose signature is a call delimits its own body, so an empty one is
 ; an empty implementation; @requires_body marks that for `empty_body`. A bare `function f

@@ -44,6 +44,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   match; a capture naming no declared rule is a load error, catching a typo and a predicate
   helper that lost its `_` prefix; and a rule that compiled cleanly but matched nothing
   anywhere in the corpus is reported after the scan.
+- Opt-in corpus finding `:divisible_class`: a class whose methods fall into several groups
+  sharing no state, the LCOM4 reading at the level LCOM4 was defined for. Two methods link
+  when they name a field of the same instance or one calls the other, and the score is the
+  number of components the methods fall into. The finding names the class and one method per
+  component. Covers Python, Java, JavaScript, TypeScript, PHP, Ruby and Rust, the languages
+  that put a class's methods inside the node declaring it; Julia, Go, C and C++ score
+  nothing, each for a reason its query header records. Constructors are dropped from the
+  method set, and a class whose methods name no field is not scored, since its component
+  count is its method count. Measured over 828 classes in five corpora, a few independent
+  groups is ordinary and the tail is dominated by utility and abstract classes, so the rule
+  ships off. `[rules] divisible_class = true` enables it; banded `[13, 22]`.
 - Opt-in corpus finding `:divisible_package`: a directory whose direct children divide into
   groups that could become subdirectories. Where `:incoherent_package` asks whether a
   directory's contents belong elsewhere, this asks whether contents that do belong are

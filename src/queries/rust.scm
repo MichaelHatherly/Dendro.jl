@@ -45,3 +45,19 @@
 (match_arm) @case
 
 [(return_expression) (break_expression) (continue_expression)] @terminal
+
+; --- Class-level cohesion -------------------------------------------------
+; The container owning methods and the state they share. A struct declares the fields and
+; an `impl` block holds the methods, so the `impl` is the class.
+(impl_item) @class
+
+; The type the block implements. `impl Trait for Type` names the trait first, which would
+; label every trait impl in a file by its trait.
+(impl_item type: (_) @def_name)
+
+; A field use through the receiver. A tuple struct numbers its fields, so `self.0` names
+; one as much as `self.name` does.
+(field_expression value: (self) field: [(field_identifier) (integer_literal)] @field)
+
+; Rust has no constructor form: `fn new` takes no receiver and touches no field through
+; one, so it links nothing and needs no exclusion.

@@ -67,3 +67,21 @@
 (try_statement) @try
 
 [(return_statement) (break_statement) (continue_statement) (raise_statement)] @terminal
+
+; --- Class-level cohesion -------------------------------------------------
+; The container owning methods and the state they share.
+(class_definition) @class
+
+; The class's declared name, so a finding about the class names the class. Without it
+; the lexical scan would reach the first method's name instead.
+(class_definition name: (identifier) @def_name)
+
+; A field use: an attribute of the instance the method received. Use sites are the whole
+; of what a cohesion reading needs, so no declaration is captured. `@_self` anchors the
+; text test and names no concept.
+(attribute object: (identifier) @_self attribute: (identifier) @field
+  (#any-of? @_self "self" "cls"))
+
+; `__init__` assigns every field a class has, so leaving it among the methods would read
+; every class as one concern.
+((function_definition name: (identifier) @_init) @constructor (#eq? @_init "__init__"))

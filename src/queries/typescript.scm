@@ -67,3 +67,24 @@
 (try_statement) @try
 
 [(return_statement) (break_statement) (continue_statement) (throw_statement)] @terminal
+
+; --- Class-level cohesion -------------------------------------------------
+; The container owning methods and the state they share, in declaration, abstract and
+; expression form.
+[(class_declaration) (abstract_class_declaration) (class)] @class
+
+; The class's declared name, so a finding about the class names the class rather than the
+; first method the lexical scan reaches. TypeScript names a class with a type identifier.
+; An anonymous class expression takes the name it is bound to.
+(class_declaration name: (type_identifier) @def_name)
+(abstract_class_declaration name: (type_identifier) @def_name)
+(class name: (type_identifier) @def_name)
+(variable_declarator name: (identifier) @def_name value: (class))
+
+; A field use through the instance.
+(member_expression object: (this) property: (property_identifier) @field)
+
+; A constructor assigns every field a class has, so leaving it among the methods would
+; read every class as one concern. `@_ctor` anchors a text test and names no concept.
+((method_definition name: (property_identifier) @_ctor) @constructor
+  (#eq? @_ctor "constructor"))

@@ -58,3 +58,19 @@
 [(if) (unless) (case)] @conditional
 
 [(return) (break) (next)] @terminal
+
+; --- Class-level cohesion -------------------------------------------------
+; The container owning methods and the state they share. A module holds no instance
+; state, so it is not one.
+(class) @class
+
+; The declared name, so a finding about the class names the class. Ruby's `@name` tags
+; identifiers and a class name is a constant, so without this the class goes unnamed.
+(class name: (constant) @def_name)
+
+; A field use: an instance variable is the whole of Ruby's instance state.
+(instance_variable) @field
+
+; `initialize` assigns every field a class has, so leaving it among the methods would read
+; every class as one concern. `@_ctor` anchors the text test and names no concept.
+((method name: (identifier) @_ctor) @constructor (#eq? @_ctor "initialize"))

@@ -40,11 +40,13 @@ end
 
     # A capture outside CONCEPT_NAMES (or @function) has no field in QueryIndex and
     # would throw in dispatch!. Catch a typo'd capture here, including one that never
-    # matches a node, before it reaches a parse.
+    # matches a node, before it reaches a parse. A `_`-prefixed capture anchors a
+    # predicate and names no concept, so it is exempt in the query as it is in the index.
     valid = Set{String}(string.(Dendro.CONCEPT_NAMES))
     push!(valid, "function")
     @testset "$lang" for lang in sort!(collect(keys(Dendro.PROFILES)))
-        @test setdiff(Set(capture_names(Dendro.query_for(lang))), valid) == Set{String}()
+        named = filter(n -> !startswith(n, "_"), capture_names(Dendro.query_for(lang)))
+        @test setdiff(Set(named), valid) == Set{String}()
     end
 end
 

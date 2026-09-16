@@ -59,3 +59,28 @@
 (try_statement) @try
 
 [(return_statement) (break_statement) (continue_statement) (throw_statement)] @terminal
+
+; --- Class-level cohesion -------------------------------------------------
+; The containers owning methods and the state they share. An enum constant and a record
+; component are instance state as much as a field is, and the methods reading them live
+; inside the declaration, so both are classes here. An interface declares no state and is
+; not one.
+[(class_declaration) (enum_declaration) (record_declaration)] @class
+
+; The declared name, so a finding about the class names the class rather than the first
+; method the lexical scan reaches.
+(class_declaration name: (identifier) @def_name)
+(enum_declaration name: (identifier) @def_name)
+(record_declaration name: (identifier) @def_name)
+
+; A field use through the instance. Java also lets a method name a field bare, which
+; `@field_name` and the reference walk cover between them.
+(field_access object: (this) field: (identifier) @field)
+
+; A declared field's name. Java is the one covered language where a method may name a
+; field without an instance qualifier, so it is the one query that tags this.
+(field_declaration declarator: (variable_declarator name: (identifier) @field_name))
+
+; A constructor assigns every field a class has, so leaving it among the methods would
+; read every class as one concern.
+(constructor_declaration) @constructor

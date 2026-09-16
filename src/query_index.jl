@@ -68,6 +68,9 @@ PatternBucket() = PatternBucket(Concept(), Concept())
 # A capture outside this set has no field to record into; `dispatch!` throws on one,
 # and the suite guards every query's captures against this set. The reserved-word
 # concepts (`catch`, `return`, `finally`) map to the `_clause`/`_stmt` fields below.
+# A capture whose name starts with `_` names no concept and is dropped: it anchors a
+# predicate on a node the pattern does not report, which is how `self.x` tests the object
+# while capturing the field.
 # The query-capture contract: src builds `by_name` as a literal, so only the suite reads
 # this set.
 # dendro-ignore: unreferenced
@@ -77,6 +80,7 @@ const CONCEPT_NAMES = (
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
     :parameter_name, :broad_catch, :callee, :toplevel, :declaration,
+    :class, :field, :field_name, :constructor,
 )
 
 """
@@ -151,6 +155,21 @@ struct QueryIndex
     # A run of top-level code breaks at one, the way it breaks at a callable definition,
     # so a declaration is never folded into the code around it.
     declaration::Concept
+    # A declaration node owning methods: a class, a trait, a Rust `impl` block. Empty for
+    # a language whose methods are file-scope siblings (Go, C) or defined out of line
+    # (C++), and for Julia, where a type's methods are whatever dispatches on it anywhere.
+    class::Concept
+    # A use site naming a field of the enclosing instance: `self.x`, `this.x`, `@x`,
+    # `$this->x`. The use sites are the whole of what a class's cohesion reading needs,
+    # so no declaration is captured.
+    field::Concept
+    # A field declaration's name, captured only where a method may name a field bare
+    # without an instance qualifier, which is Java alone. Empty elsewhere, and the pass
+    # reads bare references only for a class that captured one.
+    field_name::Concept
+    # The declaration node of a class's constructor. A constructor assigns every field by
+    # definition, so leaving it in the method set would read every class as one concern.
+    constructor::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -188,6 +207,7 @@ struct QueryIndex
         def_name, init, requires_body, parameter_name = Concept(), Concept(), Concept(), Concept()
         broad_catch, callee = Concept(), Concept()
         toplevel, declaration = Concept(), Concept()
+        class, field, field_name, constructor = Concept(), Concept(), Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "nesting" => nesting,
@@ -201,6 +221,8 @@ struct QueryIndex
             "requires_body" => requires_body, "parameter_name" => parameter_name,
             "broad_catch" => broad_catch, "callee" => callee,
             "toplevel" => toplevel, "declaration" => declaration,
+            "class" => class, "field" => field, "field_name" => field_name,
+            "constructor" => constructor,
         )
         return new(
             language, source, Unit[], Set{NodeId}(),
@@ -208,7 +230,8 @@ struct QueryIndex
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
-            callee, toplevel, declaration, by_name, Dict{NodeId, TreeSitter.Node}(),
+            callee, toplevel, declaration, class, field, field_name, constructor,
+            by_name, Dict{NodeId, TreeSitter.Node}(),
             Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,
         )
@@ -244,6 +267,9 @@ reference to its in-file definition into `index.bindings`.
 `bindings = false` collects the scope captures but skips that resolution, for a corpus
 read and never scored: nothing asks a reference corpus what it binds, and the resolution
 is the expensive half of the scopes pass.
+
+A capture whose name starts with `_` is dropped rather than filed: it anchors a
+predicate on a node the pattern tests but does not report.
 """
 function build_index(
         tree::TreeSitter.Tree, language::Symbol, source::String, query::TreeSitter.Query,
@@ -263,7 +289,7 @@ function build_index(
         name = TreeSitter.capture_name(query, cap)
         if name == "function"
             push_function!(funcs, idx.function_ids, cap.node)
-        else
+        elseif !startswith(name, "_")
             dispatch!(idx, name, cap.node)
         end
     end

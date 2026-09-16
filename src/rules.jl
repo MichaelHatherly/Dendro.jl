@@ -176,6 +176,7 @@ const RELATIONAL = (
     library_near_duplicate = :library_near_duplicate,
     unnatural = :unnatural,
     low_cohesion = :low_cohesion,
+    divisible_class = :divisible_class,
     scattered = :scattered,
     split_audience = :split_audience,
     misplaced = :misplaced,

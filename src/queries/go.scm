@@ -1,6 +1,10 @@
 ; Go node identification. Go has no finally construct, so that concept has no
 ; pattern. The default switch branch has its own node type and is excluded from
 ; @decision.
+;
+; No @class. A receiver method is a file-scope sibling of the type it acts on, with no
+; container node to read the method set off. Keying a synthetic class by receiver name is
+; a different mechanism and would be its own change.
 
 [(function_declaration) (method_declaration)] @function
 

@@ -5,9 +5,9 @@ CurrentModule = Dendro
 ```
 
 Readings of the graph of units referencing units: whether a file's functions group by
-usage, whether a unit sits in the file it belongs in, whether a file's units are pulled
-apart, who outside the file consumes what it defines, and whether a private definition
-is reached at all. The level above, files depending on files, is
+usage, whether a class's methods share state, whether a unit sits in the file it belongs
+in, whether a file's units are pulled apart, who outside the file consumes what it
+defines, and whether a private definition is reached at all. The level above, files depending on files, is
 [Dependencies and layout](@ref).
 
 ## Within-file cohesion
@@ -40,11 +40,71 @@ and within one file. Cohesion runs for every supported language; each ships a sc
 query.
 
 The lexical line has a cost in class-based code. An edge is call linkage, two
-functions naming the same file-local definition, not shared-field cohesion: with no
-symbol or field resolution, methods that touch the same instance field through
-different names form no edge. The reading is weakest for a file that is one class,
-where field-sharing is the main cohesion and Dendro sees only method-to-method calls.
-Java is the extreme, since every file is one class.
+functions naming the same file-local definition, not shared-field cohesion, so two
+methods touching the same instance field form no edge here. The reading is weakest for a
+file that is one class, where field-sharing is the main cohesion and this pass sees only
+method-to-method calls. Java is the extreme, since every file is one class. That gap is
+what [Class cohesion](@ref) fills, reading the fields directly.
+
+## Class cohesion
+
+Reported as `:divisible_class`: a class whose methods fall into several groups that share
+no state, the LCOM4 reading at the level LCOM4 was defined for. Two methods are linked
+when they name a field of the same instance or when one calls the other, and the score is
+the number of connected components the class's methods fall into. The first location is
+the class, the rest one representative method per component:
+
+```
+app/store.py:14  Store  divisible_class 15 (high; p99)
+    also at app/store.py:31  read_index
+    also at app/store.py:88  flush_journal
+    ...
+```
+
+The fields come from a per-language capture of the use site: `self.x` and `cls.x` in
+Python, `this.x` in Java, JavaScript and TypeScript, `$this->x` in PHP, `@x` in Ruby,
+`self.x` and `self.0` in Rust. Java also lets a method name a field bare, so there a
+reference matching a declared field name counts too, unless a local of that name shadows
+it. Nothing resolves a type or a dispatch, which is what bounds the coverage: the reading
+exists for the languages that put a class's methods inside the node declaring it, which is
+Python, Java, JavaScript, TypeScript, PHP, Ruby and Rust. Java reads enums and records as
+classes too, and PHP reads traits and enums; a Rust `impl` block is the class, named by the
+type it implements rather than the trait.
+
+The four languages left out each have a reason. A Julia struct's methods are whatever
+dispatches on it anywhere in the program, which needs the dispatch resolution Dendro does
+not do. Go and C put the functions acting on a type at file scope, with no container node
+to read a method set off. A C++ class declares its methods and commonly defines them out of
+line, so the in-class node holds almost none of the bodies and the count would measure the
+header and source split rather than the class.
+
+Constructors are dropped from the method set, and that is the one place the rule drops a
+method: a constructor assigns every field a class has, so counting it would link every
+group to every other and read every class as one concern. Two classes are never scored at
+all. One with fewer than four methods is too small to read as several concerns. One whose
+methods name no field at all has no state to divide, and there the component count is just
+the method count: a static utility class, an abstract base whose methods all throw, a Rust
+`impl Trait` over a unit struct.
+
+The rule is off by default, and the reason is measurement. Across 828 classes in guava,
+flask, requests, fastmcp and ripgrep the median class scores 2 or 3, so methods falling
+into a few groups is what working code looks like; the per-corpus p95 runs from 5.6 to 15.5
+and the p99 from 8 to 21.5, which puts the default band at `[13, 22]`. Reading guava's 29
+classes at or above 13 by hand found sixteen static utility classes, abstract bases and
+forwarding wrappers, where the score reads the method count; nine public API classes whose
+static factories sit beside their instance methods; and three or four real god classes.
+flask is cleaner at the same band, reporting its application base class and nothing else.
+Nothing syntactic separates a utility class holding one constant from a class whose state
+has come apart, so turn the rule on for a codebase whose classes carry state, and set the
+band to what those classes look like:
+
+```toml
+[rules]
+divisible_class = true
+
+[bands]
+divisible_class = [8, 15]
+```
 
 ## Cross-file placement
 

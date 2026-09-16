@@ -180,6 +180,22 @@ within one file for cohesion, keep the score the count of communities a file's u
 occupy that are anchored elsewhere, and keep it name-based and lexical like the rest of
 placement.
 
+Cohesion asked at the level it was defined for. `:low_cohesion` reads a file's units
+against the definitions they share, which is LCOM4 applied one level above LCOM4; a class
+is the level the metric was written for, and `:divisible_class` reads it. Methods and
+fields both come out of one syntactic container and are matched by name, never by type or
+dispatch, which is what settles the coverage: a language earns the reading by putting a
+class's methods inside the node declaring it, so Julia gets none (a struct's methods are
+whatever dispatches on it anywhere), Go and C get none (receiver functions are file-scope
+siblings), and C++ gets none (the bodies live out of line, so the count would read the
+header split). The constructor exclusion is the one place the rule drops a method, because
+a constructor touches every field by definition rather than by evidence, and it stands in
+for the ubiquity cut a class is too small a population to compute. A class whose methods
+name no field is not scored at all: there the component count is the method count, which is
+what a utility class of static methods and an abstract base of throwing stubs both produce,
+and measurement says those shapes dominate the tail. Answer a request to sharpen the rule
+with the band in a project's `.dendro.toml`, not with a smarter model.
+
 Placement asked once more, of a definition against its own file. `:misplaced` asks which
 file a unit belongs in; `:distant_definition` asks where in the file, scoring how many
 top-level definitions lie between a definition and the nearest unit naming it. Nearest, not

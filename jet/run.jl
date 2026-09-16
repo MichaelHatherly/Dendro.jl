@@ -325,12 +325,21 @@
 # the basic pass skipped, where what moves between runs is the printed signature of a
 # report rather than how many there are, so it was wrong to generalise from it. Treat a
 # rise of one as a real move and find the report behind it.
+#
+# `:divisible_class` (`class_cohesion.jl`) raised sound from 1379 to 1386, opt unchanged.
+# Six of the seven sit on `cluster_divisible_class`'s signature: the keyword-argument
+# lowering every `cluster_*` pass already counts, at one more site. The seventh is in
+# `build_index`, where skipping a `_`-prefixed capture adds a branch to the union split
+# already counted there. It first measured 1388: writing the no-field gate as the concrete
+# `any_state` loop rather than `all(isempty, mine)` removed one, and narrowing
+# `min_methods` to `Int` removed the other, so what is left is the kwarg shape rather than
+# inference that could be recovered. Basic mode stays at zero.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1383  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1386  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

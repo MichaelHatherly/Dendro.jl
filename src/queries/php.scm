@@ -70,3 +70,21 @@
 ; `throw` is an expression wrapped in a statement; tag the statement so code after
 ; it in the same block reads as unreachable.
 (expression_statement (throw_expression)) @terminal
+
+; --- Class-level cohesion -------------------------------------------------
+; The containers owning methods and the state they share. A trait is one: it declares
+; properties and the methods that use them. So is an enum, whose cases are instance state.
+[(class_declaration) (trait_declaration) (enum_declaration)] @class
+
+; The declared name, so a finding about the class names the class.
+(class_declaration name: (name) @def_name)
+(trait_declaration name: (name) @def_name)
+(enum_declaration name: (name) @def_name)
+
+; A field use through the instance. `@_this` anchors the text test and names no concept.
+(member_access_expression object: (variable_name (name) @_this) name: (name) @field
+  (#eq? @_this "this"))
+
+; A constructor assigns every field a class has, so leaving it among the methods would
+; read every class as one concern.
+((method_declaration name: (name) @_ctor) @constructor (#eq? @_ctor "__construct"))

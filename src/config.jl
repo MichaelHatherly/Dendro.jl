@@ -20,7 +20,7 @@ const DEFAULT_CUT = 0.95
 # table names scalar rules. Ordered as the `Config` fields are, since the constructor is
 # positional and every band shares a type.
 const RELATIONAL_BANDS = (
-    :unnatural, :low_cohesion, :scattered, :split_audience, :misplaced,
+    :unnatural, :low_cohesion, :divisible_class, :scattered, :split_audience, :misplaced,
     :distant_definition, :back_edge, :dependency_cycle, :hub, :incoherent_package,
     :divisible_package,
 )
@@ -67,6 +67,7 @@ struct Config
     bands::Dict{Symbol, Tuple{Int, Int}}
     unnatural::Tuple{Int, Int}
     low_cohesion::Tuple{Int, Int}
+    divisible_class::Tuple{Int, Int}
     scattered::Tuple{Int, Int}
     split_audience::Tuple{Int, Int}
     misplaced::Tuple{Int, Int}
@@ -116,6 +117,7 @@ scalar_metric_names(acc) = union(
 # ignores these names.
 const TOGGLEABLE_RELATIONAL = (
     :reimplementation, :incoherent_package, :divisible_package, :distant_definition,
+    :divisible_class,
     :library_duplicate, :library_near_duplicate,
 )
 
@@ -538,6 +540,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         scalars.cut, acc.bands,
         get(acc.relational, :unnatural, UNNATURAL_BAND),
         get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
+        get(acc.relational, :divisible_class, DIVISIBLE_CLASS_BAND),
         get(acc.relational, :scattered, SCATTERED_BAND),
         get(acc.relational, :split_audience, SPLIT_AUDIENCE_BAND),
         get(acc.relational, :misplaced, MISPLACED_BAND),
@@ -574,7 +577,8 @@ function override_config(
     )
     return Config(
         cut === nothing ? config.cut : Float64(cut), config.bands,
-        config.unnatural, config.low_cohesion, config.scattered, config.split_audience,
+        config.unnatural, config.low_cohesion, config.divisible_class, config.scattered,
+        config.split_audience,
         config.misplaced, config.distant_definition, config.back_edge, config.dependency_cycle,
         config.hub, config.incoherent_package, config.divisible_package, config.rules,
         min_size === nothing ? config.min_size : Int(min_size),

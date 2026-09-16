@@ -30,8 +30,8 @@ file, and appends the corpus-relational findings: cross-file duplicates, natural
 outliers, low-cohesion files, misplaced units, scattered files, unreferenced private
 definitions, files serving disjoint audiences, dependencies running against a directory
 pair's grain, dependency cycles, hub files, and, when the config enables it, incoherent
-packages and definitions distant from their use. The active rule set is a value it
-carries, resolved from a `Config` (see Configuration)
+packages, definitions distant from their use, and classes whose methods share no state.
+The active rule set is a value it carries, resolved from a `Config` (see Configuration)
 unless the `rules` keyword overrides it, and it threads through baseline sampling, per-file
 scoring, and suppression validation, so a caller extends the checks without touching the
 pipeline. The baseline-from-the-corpus step is what makes relative scoring work with no
@@ -60,7 +60,8 @@ travels through the keyword slot the bare visibility map used to occupy, so no p
 parameter to take it. Cohesion, placement,
 scattering, reachability, and the opt-in `:incoherent_package` run over the unit graph;
 the opt-in `:distant_definition` needs neither graph, reading one file's bindings against
-the symbol table;
+the symbol table, and neither does the opt-in `:divisible_class`, reading the fields and
+calls inside one class;
 `:back_edge`, `:dependency_cycle`, `:hub` and the opt-in `:divisible_package` run over the
 one file graph, the substrate
 for the rules that read the corpus as files depending on files. It is built before the
@@ -611,6 +612,18 @@ Reporting:
   percentile. The LCOM4 reading of independent concerns cohabiting. Binding-keyed but
   still syntactic, within one file. Included after `scattered.jl`, since its signature
   names `CorpusGraph`.
+- `class_cohesion.jl` defines class-level cohesion, the opt-in pass `analyze` gates on
+  `cfg.rules`. Where `:low_cohesion` asks whether a file holds several concerns, this asks
+  it of a class. `class_nodes` and `class_methods` attribute each callable unit to the
+  innermost `@class` containing it, dropping constructors and anything a callable inside
+  the class already holds; `fields_by_unit` and `bare_fields_by_unit` read the instance
+  state a method names, the second covering Java's unqualified field reference and gated on
+  the query having tagged a `@field_name`; `method_state` folds a nested unit's fields and
+  callees into the method holding it; `method_adjacency` links two methods whose fields meet
+  or one of which names the other; and `cluster_divisible_class` emits a `:divisible_class`
+  finding per class against `DIVISIBLE_CLASS_BAND` and the corpus percentile. A class with
+  no `@field` use at all is not scored, since its component count is its method count.
+  Included after `cohesion.jl`.
 - `hub.jl` defines the Crossing pass over the file graph, the one relational metric read at
   file-graph level. `crossing_scores` counts each file's distinct dependents and
   dependencies and scores `min(fan_in, fan_out)`, the conjunction that separates a crossing
@@ -723,12 +736,15 @@ names, bodies,
 catches, broad catches, comments, names, trivial statements, returns, finally clauses, calls,
 callee names,
 binary expressions, binary operators, conditionals, terminals, short-form
-definitions, and the NPath construct families: loops, switches, ternaries, tries,
+definitions, classes, instance-field uses, declared field names, constructors,
+and the NPath construct families: loops, switches, ternaries, tries,
 cases). A `Concept`
 holds the tagged nodes in source order and a `Set{NodeId}` for membership. Built
 once per file by `build_index`: the constructor starts every concept empty and
 builds a `by_name` table mapping each capture to its concept, then `dispatch!` files
-each capture through that table and throws on a name outside `CONCEPT_NAMES`.
+each capture through that table and throws on a name outside `CONCEPT_NAMES`. A capture
+whose name starts with `_` is dropped instead: it anchors a predicate on a node the pattern
+tests but does not report, which is how `self.x` tests the object while capturing the field.
 The suite checks every query's capture names against that set. This is the only
 place a language's concrete grammar leaks in: a construct a language lacks has no
 pattern, so its concept is empty and a rule reading it finds nothing. `QueryIndex`
@@ -1115,7 +1131,30 @@ resolution gives def-site linkage, never dispatch resolution, so an edge is "the
 functions reference this file-local name," not "these two dispatch to the same
 method." With no field resolution, the edge is call linkage, not shared-field
 cohesion, so a file that is one class reads only its method-to-method calls. Java is
-the extreme, every file a single class. Most cohesion signal lives below that line.
+the extreme, every file a single class. `class_cohesion.jl` is what reads the level below,
+the fields themselves, which is a separate pass rather than a widening of this one: a class
+is not a `Unit` and its methods are not the file's concerns.
+
+### Class cohesion
+
+`cluster_divisible_class` (`class_cohesion.jl`) asks the same question of a class, the level
+LCOM4 was defined at. Four query captures carry it. `@class` names the declaration owning
+methods, `@field` a use of the enclosing instance's state (`self.x`, `this.x`, `@x`,
+`$this->x`), `@field_name` a declared field for the one language where a method may name one
+bare, and `@constructor` the one method the rule drops. A unit is a method of the innermost
+`@class` containing it unless a callable inside that class contains it first, which is what
+gives a nested class its own methods and keeps a closure out of the set. Two methods link
+when their field sets meet or one names the other through `callees_by_unit`, and the score
+is `components` over that local adjacency, the same flood fill `cluster_low_cohesion` runs.
+
+Two gates decide whether the question applies. A class below `MIN_CLASS_METHODS` is too
+small to read as several concerns, and a class whose methods name no field at all has no
+state to divide: there the component count is the method count, which is what a static
+utility class, an abstract base and a Rust `impl Trait` over a unit struct all produce. It
+emits through `scored_findings` with `min_reported = 2`, so a cohesive class stays in the
+percentile population without reporting, and it is gated on `cfg.rules` like the other
+opt-in passes. Included after `cohesion.jl`, whose shape it takes, and before `config.jl`,
+which names its band.
 
 ## The file graph
 

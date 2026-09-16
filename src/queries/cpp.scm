@@ -1,6 +1,10 @@
 ; C++ node identification. A `for (auto x : v)` parses as for_range_loop, tagged as
 ; a decision and a nesting construct like any loop. C++ try has no finally clause,
 ; so that concept has no pattern.
+;
+; No @class. A class declares its methods and commonly defines them out of line, so the
+; in-class node holds almost none of the bodies and a cohesion count over it would measure
+; the header and source split rather than the class.
 
 (function_definition) @function
 

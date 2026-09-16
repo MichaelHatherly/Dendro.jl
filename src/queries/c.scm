@@ -1,4 +1,7 @@
 ; C node identification. C has no finally construct, so that concept has no pattern.
+;
+; No @class. A struct declares fields and nothing else; the functions acting on it are
+; file-scope siblings with no container node to read.
 
 (function_definition) @function
 
