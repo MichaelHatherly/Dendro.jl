@@ -209,15 +209,15 @@ write(
 # A config built directly rather than discovered, so a benchmark never reads whatever
 # `.dendro.toml` happens to sit above the checkout.
 #
-# Copied field by field off the defaults with two replaced, rather than listing the
-# constructor's arguments in order. `Config` grows a field whenever a rule gains a knob, and
-# a positional call goes stale silently here: `benchmark/` is not loaded by the suite, so
+# Copied field by field off the defaults with two replaced, rather than naming the
+# constructor's keywords. `Config` grows a field whenever a rule gains a knob, and a call
+# spelling them out goes stale silently here: `benchmark/` is not loaded by the suite, so
 # nothing says so until CI runs the benchmark.
 function pattern_config(dir, specs)
     base = Dendro.discover_config([dir]; use_files = false)
     replaced = (patterns = specs, patterns_dir = joinpath(dir, ".dendro", "patterns"))
-    return Dendro.Config(
-        (get(replaced, f, getfield(base, f)) for f in fieldnames(Dendro.Config))...
+    return Dendro.Config(;
+        (f => get(replaced, f, getfield(base, f)) for f in fieldnames(Dendro.Config))...
     )
 end
 
