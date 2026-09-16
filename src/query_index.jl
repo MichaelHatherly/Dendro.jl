@@ -57,12 +57,18 @@ uses.
 Negation is by node identity, not by containment: a `.not` pattern is the same pattern
 made more specific, so it lands on the same anchor node as the hit it cancels. That keeps
 a rule's meaning independent of where inside a match the exclusion happened to sit.
+
+`unit_counts` is how many of those hits each unit holds, keyed by the node a unit folds
+from and filled by `attribute_hits!` once the captures are in. A scalar rule reads it per
+unit, where reading the hits themselves would walk the unit's whole subtree to count what
+is usually nothing.
 """
 struct PatternBucket
     hits::Concept
     excluded::Concept
+    unit_counts::Dict{NodeId, Int}
 end
-PatternBucket() = PatternBucket(Concept(), Concept())
+PatternBucket() = PatternBucket(Concept(), Concept(), Dict{NodeId, Int}())
 
 # The capture names a query may use, the contract between a `.scm` and this index.
 # A capture outside this set has no field to record into; `dispatch!` throws on one,

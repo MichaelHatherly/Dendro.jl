@@ -228,15 +228,23 @@
         return nothing
     end
 
+    # One parsed tree and its index, with the captures of one pattern `query` bucketed by
+    # rule: the setup every assertion about a pattern rule starts from.
+    function patternindex(lang, src, query::AbstractString)
+        profile = Dendro.PROFILES[Symbol(lang)]
+        tree = Dendro.parse_source(Dendro.parser_for(profile), String(src))
+        index = idx(lang, src)
+        compiled = Dendro.compile_pattern_query(
+            Dendro.language_grammar(profile), query, "$(lang).patterns.scm"
+        )
+        Dendro.index_patterns!(index, tree, compiled, String(src))
+        return tree, index
+    end
+
     # The lines rule `name` reports in `src`, the end-to-end shape a pattern rule test
     # asserts on: compile the query, bucket its captures, subtract the `.not` matches.
     function pattern_lines(lang, src, name::Symbol, query::AbstractString)
-        profile = Dendro.PROFILES[Symbol(lang)]
-        grammar = Dendro.language_grammar(profile)
-        tree = Dendro.parse_source(Dendro.parser_for(profile), String(src))
-        index = idx(lang, src)
-        compiled = Dendro.compile_pattern_query(grammar, query, "$(lang).patterns.scm")
-        Dendro.index_patterns!(index, tree, compiled, String(src))
+        _, index = patternindex(lang, src, query)
         return sort!([Int(TreeSitter.start_point(n).row) + 1 for n in Dendro.pattern_hits(index, name)])
     end
 
@@ -245,14 +253,10 @@
     # cascade a scan resolves them through has nothing to say about a pass reading the
     # index it produced.
     function patternfile(lang, src, query::AbstractString; file = "f." * string(lang))
-        profile = Dendro.PROFILES[Symbol(lang)]
-        tree = Dendro.parse_source(Dendro.parser_for(profile), String(src))
-        index = idx(lang, src)
-        compiled = Dendro.compile_pattern_query(
-            Dendro.language_grammar(profile), query, "$(lang).patterns.scm"
+        tree, index = patternindex(lang, src, query)
+        return Dendro.ParsedFile(
+            Dendro.PROFILES[Symbol(lang)], String(src), file, tree, index, Dendro.Directive[]
         )
-        Dendro.index_patterns!(index, tree, compiled, String(src))
-        return Dendro.ParsedFile(profile, String(src), file, tree, index, Dendro.Directive[])
     end
 
     # --- Config fixtures ------------------------------------------------------

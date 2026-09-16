@@ -51,17 +51,70 @@ end
         return a + inner(x)
     end
     """
-    index = Fixtures.idx(:julia, src)
-    tree = Dendro.parse_source(Dendro.parser_for(:julia), src)
-    g = Dendro.language_grammar(Dendro.PROFILES[:julia])
-    q = Dendro.compile_pattern_query(g, "(integer_literal) @lit\n", "julia.patterns.scm")
-    Dendro.index_patterns!(index, tree, q, src)
+    _, index = Fixtures.patternindex(:julia, src, "(integer_literal) @lit\n")
 
     units = Dict(Dendro.unit_name(u, index) => u for u in Dendro.units(index))
     # The closure's 8 and 9 belong to the closure, not to `outer`. Every built-in
     # scalar stops at a nested callable and a pattern scalar that did not would read
     # as a Dendro bug.
     @test pattern_count(units["outer"], index, :lit) == 1
+    @test pattern_count(units["inner"], index, :lit) == 2
+end
+
+@testitem "a scalar pattern rule counts each unit kind separately" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: pattern_count, units
+
+    # One unit of each kind the query produces: a run of top-level statements, a
+    # definition, the closure inside it, a run inside a module body, and the run the
+    # module breaks off. The 9 is excluded, so the closure keeps only its 4.
+    src = """
+    x = 1
+    y = 2
+    function outer(a)
+        b = 3
+        function inner(c)
+            return c + 4 + 9
+        end
+        return b + inner(a)
+    end
+    module M
+        q = 7
+    end
+    z = 5
+    """
+    query = """
+    (integer_literal) @lit
+    ((integer_literal) @lit.not (#eq? @lit.not "9"))
+    """
+    _, index = Fixtures.patternindex(:julia, src, query)
+
+    byline = Dict(u.firstline => u for u in units(index))
+    @test sort!(collect(keys(byline))) == [1, 3, 5, 11, 13]
+    @test pattern_count(byline[1], index, :lit) == 2
+    @test pattern_count(byline[3], index, :lit) == 1
+    @test pattern_count(byline[5], index, :lit) == 1
+    @test pattern_count(byline[11], index, :lit) == 1
+    @test pattern_count(byline[13], index, :lit) == 1
+end
+
+@testitem "a scalar pattern rule counts a callable it matches under that callable" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: pattern_count
+
+    src = """
+    function outer(x)
+        function inner(y)
+            return y
+        end
+        return inner(x)
+    end
+    """
+    _, index = Fixtures.patternindex(:julia, src, "(function_definition) @fn\n")
+
+    units = Dict(Dendro.unit_name(u, index) => u for u in Dendro.units(index))
+    # A unit is measured from its own node inwards, so a match on the definition
+    # itself is that definition's. The nested one belongs to its own unit alone.
+    @test pattern_count(units["outer"], index, :fn) == 1
+    @test pattern_count(units["inner"], index, :fn) == 1
 end
 
 @testitem "a scalar pattern band is retunable through [bands]" setup = [Fixtures] tags = [:patterns] begin

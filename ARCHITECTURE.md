@@ -1572,6 +1572,11 @@ unsuppressed findings for gating.
   scoping, the report, the gate, and the ratchet work for it with no further code.
   Negation is a `.not` capture subtracting by node identity; a `_`-prefixed capture is a
   predicate helper and never a rule; a capture naming no declared rule is a load error.
+- A scalar rule's per-unit count comes off `PatternBucket.unit_counts`, which
+  `attribute_patterns!` (`patterns.jl`) fills once a file's captures are in. Walking up
+  from a hit to the first enclosing callable names every unit `fold_unit` would have
+  counted it under, so `pattern_count` reads a lookup and a unit holding no match pays
+  nothing for the rule.
 - The rules Dendro ships are a tier of that family and nothing more. `src/patterns/` holds
   `builtin.toml` and one `<lang>.patterns.scm` per grammar, reached through
   `BUILTIN_PATTERNS_DIR` (`patterns.jl`), a `RelocatableFolders` path for the reason

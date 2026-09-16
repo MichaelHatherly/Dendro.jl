@@ -333,20 +333,99 @@ capturing `@debug_output` are one rule with two spellings.
 
 `skip` names rules a higher-priority location already declares, whose captures here are
 dropped rather than merged.
+
+The buckets are then attributed to units, since a `.not` capture cancelling a hit can
+arrive after it and only a finished bucket says what a unit holds.
 """
 function index_patterns!(
         index::QueryIndex, tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString;
         skip::Set{Symbol} = Set{Symbol}()
     )
+    matched = false
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)
         is_helper_capture(name) && continue
         rule, negated = capture_rule(name)
         rule in skip && continue
+        matched = true
         bucket = get!(PatternBucket, index.patterns, rule)
         record!(negated ? bucket.excluded : bucket.hits, cap.node)
     end
+    matched && attribute_patterns!(index)
     return index
+end
+
+# --- Attributing a hit to the unit holding it ------------------------------------------
+#
+# A scalar rule counts its hits inside one unit, stopping at nested callables. Folding the
+# unit's subtree to read that costs a tree walk per unit per rule to count what is usually
+# nothing, so each hit is credited to its units once instead, as the bucket is finished.
+#
+# The two readings agree node for node. `fold_unit` visits the node a unit folds from and
+# then descends through every child that is not a callable, so a hit lands in the unit
+# rooted at each of its ancestors up to and including the first callable, and in no other.
+# Walking up from the hit names that same set.
+
+# Recount every rule's per-unit totals from the buckets as they stand. Driven off the
+# buckets rather than off the captures the walk just recorded: a file holds orders more
+# captures than the language declares rules, and noting the rule each capture belongs to
+# costs more than recounting a rule that already had its total.
+function attribute_patterns!(index::QueryIndex)
+    roots = Set{NodeId}()
+    counted = Set{NodeId}()
+    filled = false
+    for bucket in values(index.patterns)
+        empty!(bucket.unit_counts)
+        isempty(bucket.hits.nodes) && continue
+        filled || (unit_root_ids!(roots, index); filled = true)
+        attribute_hits!(bucket, index, roots, counted)
+    end
+    return index
+end
+
+# The nodes a unit folds from: a callable definition is its own, and a run of top-level
+# statements has one per statement. Units can nest, since a module body is a container of
+# top-level code inside a file that is one too, so a node is credited to every unit that
+# holds it rather than to one.
+function unit_root_ids!(roots::Set{NodeId}, index::QueryIndex)
+    for u in units(index), n in u.nodes
+        push!(roots, nodeid(n))
+    end
+    return roots
+end
+
+# Recount one rule's per-unit totals from the hits recorded so far. A node two of the
+# rule's patterns both captured is one hit, as the membership test this replaces made it,
+# which is what `counted` tracks; the caller owns it, so a file's rules share one.
+function attribute_hits!(
+        bucket::PatternBucket, index::QueryIndex, roots::Set{NodeId}, counted::Set{NodeId}
+    )
+    empty!(counted)
+    for n in bucket.hits.nodes
+        n in bucket.excluded && continue
+        nodeid(n) in counted && continue
+        push!(counted, nodeid(n))
+        credit_hit!(bucket.unit_counts, roots, index, n)
+    end
+    return bucket
+end
+
+# Credit one hit to every unit whose fold would have reached it: the hit's own node and
+# each ancestor up to the first callable, which folds from itself and is never descended
+# into from outside.
+function credit_hit!(
+        counts::Dict{NodeId, Int}, roots::Set{NodeId}, index::QueryIndex, node::TreeSitter.Node
+    )
+    n = node
+    while true
+        id = nodeid(n)
+        id in roots && (counts[id] = get(counts, id, 0) + 1)
+        is_function(n, index) && break
+        p = TreeSitter.parent(n)
+        TreeSitter.is_null(p) && break
+        n = p
+    end
+    return nothing
 end
 
 # --- Resolving a language's rules across both locations -------------------------------
@@ -453,29 +532,21 @@ end
 # point: suppression, diff scoping, the report, the gate, and the ratchet then work with
 # no further code, and a house rule sits beside `cyclomatic` under one vocabulary.
 
-# Count a rule's hits within one unit, stopping at nested callables so a closure's matches
-# do not land on the enclosing function. Every built-in scalar stops there, and a pattern
-# scalar that did not would read as a Dendro bug.
-#
-# The bucket travels as `fold_unit`'s context rather than being captured, so the step stays
-# a plain function and the accumulator stays concretely typed for inference and JET. See
-# the note on `fold_unit` in `metrics.jl`. The index goes unread here, unlike every
-# concept-reading step, since the rule's matches are already bucketed by name.
-pattern_step(node::TreeSitter.Node, _index::QueryIndex, bucket::PatternBucket) =
-    count_if(node in bucket.hits && !(node in bucket.excluded), bucket)
-
 """
     pattern_count(unit, index, name) -> Int
 
 How many times rule `name` matched inside `unit`, excluding nested callables. Zero when
 the rule has no query for this language.
+
+Read off the counts `attribute_hits!` credited to the nodes `unit` folds from, so a unit
+holding no match costs a lookup rather than a walk over its subtree.
 """
 function pattern_count(unit::Unit, index::QueryIndex, name::Symbol)
     bucket = get(index.patterns, name, nothing)
     bucket === nothing && return 0
     total = 0
     for n in unit.nodes
-        total += fold_unit(pattern_step, +, n, index, bucket)
+        total += get(bucket.unit_counts, nodeid(n), 0)
     end
     return total
 end

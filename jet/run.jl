@@ -478,12 +478,20 @@
 # `Iterators.Filter` `rules_of_kind` returns in `baseline.jl`. The six that left are the
 # five `in(sym, allowed)` reports on a `Union{}`-typed `sym` at `patterns.jl:24` and one `>`
 # on `Any` at `placement.jl:63`, both sites 1.13 now infers past.
+#
+# Counting a pattern rule's hits per unit as they are bucketed raised sound from 1444 to
+# 1445 and left opt at 32. The one report is the third field on `PatternBucket`: sound mode
+# charges a `MethodErrorReport` per field on a struct's default constructor, for the
+# `convert` of an `::Any` argument, so the two at `query_index.jl:62` became three at `:67`.
+# Comparing the two report lists, nothing else moved and the rest of the diff is line
+# numbers. The field replaces the subtree fold `pattern_count` ran per unit per rule, 2.2 ms
+# of an 85 ms scan of `test/corpus`.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1444  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1445  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin
