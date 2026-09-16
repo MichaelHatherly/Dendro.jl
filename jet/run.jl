@@ -469,12 +469,21 @@
 # its own entry above recorded going on: five on the pass's keyword-argument lowering and one
 # on the `Config` kwsorter. `reference_edges` stays in `unreferenced.jl` with `reach_graph`
 # as its one reader, and the entry above measured that factoring at nothing.
+#
+# The Julia 1.13.0 bump raised sound from 1442 to 1444 and left opt at 32, with main moving
+# 1379 to 1380 on the same bump, so it tracks the toolchain. The composition moved more than
+# the count: eight arrived and six left. Six of the eight are `replace(::AbstractString,
+# pair)` calls (`fragments.jl`, `ignore.jl` twice, `linkage.jl`, `mermaid.jl`, `report.jl`)
+# that 1.12 analysed and 1.13 reports unanalyzed, and two are `iterate` over the
+# `Iterators.Filter` `rules_of_kind` returns in `baseline.jl`. The six that left are the
+# five `in(sym, allowed)` reports on a `Union{}`-typed `sym` at `patterns.jl:24` and one `>`
+# on `Any` at `placement.jl:63`, both sites 1.13 now infers past.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1442  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1444  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin
