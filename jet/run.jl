@@ -464,12 +464,17 @@
 # on the typeassert itself. Taking the count by value instead, `independent_paths(::Int)`
 # with the fold moved to each call site, removes all four and puts the duplicate rule back:
 # the four call sites land at 20 named nodes, which is the floor rather than below it.
+#
+# Dropping `:central_definition` lowered sound from 1448 to 1442 and left opt at 32, the six
+# its own entry above recorded going on: five on the pass's keyword-argument lowering and one
+# on the `Config` kwsorter. `reference_edges` stays in `unreferenced.jl` with `reach_graph`
+# as its one reader, and the entry above measured that factoring at nothing.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1448  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1442  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin
