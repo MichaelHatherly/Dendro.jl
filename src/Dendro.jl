@@ -10,7 +10,7 @@ import TreeSitter
 
 public analyze, active, errors, github_annotations, mermaid
 public Finding, Findings, Location
-public ScanSummary, CorpusScores, LineDelta
+public ScanSummary, CorpusScores, LineDelta, GeneratedFile
 public Rule, BUILTIN_RULES, OPTIONAL_RULES, PatternSpec
 public Library
 public check_patterns, PatternTestFailure

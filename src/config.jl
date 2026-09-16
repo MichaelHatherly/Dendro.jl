@@ -59,7 +59,9 @@ are the cross-corpus duplication thresholds and `library_anchor_grain` widens th
 to compare blocks as well as whole functions; `libraries` holds the reference corpora a
 `[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name; and
 `ignore` holds gitignore-style patterns dropping paths from the scan, which
-[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces; `base_summary`
+[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces; `generated` holds
+signatures matched against a file's head beside the built-in ones, and `generated_enabled`
+is whether that filter runs at all; `base_summary`
 controls whether a scan with a base ref scores that revision for comparison.
 Every field is a keyword taking that field's type and defaulting to its built-in, so
 `Config(; misplaced = (40, 60))` retunes one band and keeps the rest. Immutable: pass one
@@ -93,6 +95,8 @@ struct Config
     patterns_dir::String
     libraries::Vector{Library}
     ignore::Vector{String}
+    generated::Vector{String}
+    generated_enabled::Bool
     base_summary::Bool
 
     # Built by keyword, never positionally. Twelve fields in a row are `Tuple{Int, Int}`
@@ -129,13 +133,16 @@ struct Config
         patterns_dir::String = "",
         libraries::Vector{Library} = Library[],
         ignore::Vector{String} = String[],
+        generated::Vector{String} = String[],
+        generated_enabled::Bool = true,
         base_summary::Bool = true,
     ) = new(
         cut, bands, unnatural, low_cohesion, divisible_class, scattered, split_audience,
         misplaced, distant_definition, back_edge, dependency_cycle, hub,
         incoherent_package, divisible_package, rules, min_size, threshold, radius_factor,
         reimpl_threshold, library_threshold, library_gate_coverage, library_anchor_grain,
-        languages, patterns, patterns_dir, libraries, ignore, base_summary,
+        languages, patterns, patterns_dir, libraries, ignore, generated, generated_enabled,
+        base_summary,
     )
 end
 
@@ -473,7 +480,7 @@ end
 # apply differently run to run.
 const CONFIG_KEY_ORDER = (
     "patterns", "languages", "libraries", "cut", "clones", "reimplementation", "report",
-    "patterns_dir", "ignore", "bands", "rules",
+    "patterns_dir", "ignore", "generated", "bands", "rules",
 )
 
 function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
@@ -496,6 +503,15 @@ const SCALAR_TABLES = Dict{String, Tuple{String, Symbol, Function}}(
     "report" => ("base_summary", :base_summary, config_bool),
 )
 
+# The top-level `generated` key: an array of signatures to match beside the built-in ones,
+# or a boolean turning the content filter off and on. `false` is there for the project whose
+# own source names a bundler in a file header, since the key adds to the built-in list and
+# takes nothing out of it. A later config layer replaces an earlier one, the way `ignore` does.
+function apply_generated(scalars, value, key, source)
+    value isa Bool && return merge(scalars, (generated = String[], generated_enabled = value))
+    return merge(scalars, (generated = string_list(value, key, source), generated_enabled = true))
+end
+
 # Apply one known top-level key, returning the scalar settings it leaves.
 function apply_key!(acc, scalars, key, value, source)
     if key == "cut"
@@ -514,6 +530,8 @@ function apply_key!(acc, scalars, key, value, source)
         scalars = merge(scalars, (patterns_dir = config_path(value, key, source),))
     elseif key == "ignore"
         scalars = merge(scalars, (ignore = string_list(value, key, source),))
+    elseif key == "generated"
+        scalars = apply_generated(scalars, value, key, source)
     else
         applier = key == "languages" ? apply_language! :
             key == "libraries" ? apply_library! : apply_pattern!
@@ -592,6 +610,8 @@ function discover_config(roots; explicit = nothing, use_files = true)
         library_anchor_grain = false,
         patterns_dir = "",
         ignore = String[],
+        generated = String[],
+        generated_enabled = true,
         base_summary = true,
     )
     builtin = builtin_patterns_file()
@@ -629,6 +649,8 @@ function discover_config(roots; explicit = nothing, use_files = true)
         patterns_dir = scalars.patterns_dir,
         libraries = sort!(collect(values(acc.libraries)); by = l -> l.name),
         ignore = scalars.ignore,
+        generated = scalars.generated,
+        generated_enabled = scalars.generated_enabled,
         base_summary = scalars.base_summary,
     )
 end
@@ -677,6 +699,8 @@ function override_config(
         patterns_dir = config.patterns_dir,
         libraries = libraries === nothing ? config.libraries : as_libraries(libraries),
         ignore = config.ignore,
+        generated = config.generated,
+        generated_enabled = config.generated_enabled,
         base_summary = config.base_summary,
     )
 end

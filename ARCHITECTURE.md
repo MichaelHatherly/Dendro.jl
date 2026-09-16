@@ -72,7 +72,9 @@ The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus 
 collection time, inside `source_files`, before any parsing. Excluded files leave
 both the findings and the baseline, so vendored source neither flags nor skews the
 percentile. This is corpus-shaping, distinct from `base` scoping, which restricts an
-already-built corpus to changed lines.
+already-built corpus to changed lines. The `generated` config key shapes the same corpus
+one stage later, by content rather than by path: `parse_chunk!` matches each file's first
+lines against a signature list and turns away what a generator or a bundler wrote.
 
 With `base`, `analyze` scopes to a git diff: it parses the diff of the working tree
 against that ref via `diff_summary` and restricts each file's findings (and the
@@ -379,7 +381,8 @@ Reporting:
   annotations. Both share `score_suffix`. A finding renderer takes `Findings`; a
   graph renderer (`mermaid`, `mermaid.jl`) takes the corpus, since a graph is not
   recoverable from findings. It also holds the result types the corpus summary fills,
-  `CorpusScores`, `LineDelta` and `ScanSummary`. They sit beside `Findings` because
+  `CorpusScores`, `LineDelta` and `ScanSummary`, plus `GeneratedFile`, which the parse
+  boundary fills. They sit beside `Findings` because
   `Findings` carries one as a field and so needs it declared first, and because every other
   result type already lives here.
 - `summary.jl` is the corpus summary pass: `corpus_scores` and the two halves behind it,
@@ -692,15 +695,27 @@ Reporting:
   the unique set of file paths to parse, the shared front of `analyze` and `mermaid`),
   `parse_corpus` (parse each path once and build its query index into a
   `Vector{ParsedFile}`), and `parse_chunk!` (one chunk of that fan-out, with its own
-  parser pool). `ParseOptions` carries what a parse does beyond the query index, the
-  rules, the pattern queries, whether to resolve bindings and whether to read directives,
-  so a reference corpus opts out of every optional walk and `parse_chunk!` takes one value
-  rather than four more parameters. Parsing is the one boundary that turns a file away:
+  parser pool). `ParseOptions` carries what a parse does beyond the query index: the
+  rules, the pattern queries, whether to resolve bindings, whether to read directives, and
+  the generated-file signatures. A reference corpus opts out of every optional walk that
+  way, and `parse_chunk!` takes one value rather than five more parameters.
+  Parsing is the boundary that turns a file away:
   tree-sitter takes the source as a C string, so a file carrying an embedded NUL cannot be
   parsed at all.
   `parse_chunk!` warns with the path and leaves the slot unassigned, and `parse_corpus`
   compacts in index order, so one such file, a fuzzer test case checked in beside real
-  source, is reported rather than taking the scan down. Gathering and driving are separate
+  source, is reported rather than taking the scan down.
+  The second turn-away at that boundary reads the first `GENERATED_HEAD_LINES` lines of
+  each source for a `GENERATED_SIGNATURES` entry, a generator's header or a bundler's
+  module runtime, and leaves the slot unassigned the same way, writing the matched
+  signature into a parallel array instead. `parse_corpus` reads that array in index order
+  into the caller's `excluded` sink and warns once for the whole scan. `analyze` carries
+  the sink onto `Findings.generated`, which is what prints the trailing report line. The
+  match is plain text rather than a query, the one place Dendro reads a file as text: the
+  bargain governs what it measures, and this decides what it reads at all, the same reading
+  `ignore.jl` takes over a path. `generated_signatures` resolves the config's additions
+  over the built-in list, or empties it when a project sets `generated = false`, and every
+  route into a parse reads that one list. Gathering and driving are separate
   files because one file holding both
   has its units pulled toward every pass it calls as well as the parsing primitives,
   which is what `:scattered` measures; splitting on that seam is the fix the rule asks
@@ -917,10 +932,16 @@ are kept in the vector, not dropped, so they can be counted.
 it filters, iterates, and indexes like any vector, with a `show` method that
 renders the report. The wrapper exists so display lives on a Dendro-owned type
 rather than pirating `show` for `Vector{Finding}`. Beside the findings it carries what the
-scan measured about the run: `unmatched`, the declared rules that matched nothing, and
-`summary`, the corpus scores. `active` preserves both, since a directive accepts one finding
-and says nothing about either. `high_floor` and `ratchet` rebuild from a finding set alone,
-so `errors` returns both empty.
+scan measured about the run: `unmatched`, the declared rules that matched nothing,
+`summary`, the corpus scores, and `generated`, the files the parse boundary turned away.
+`active` preserves all three, since a directive accepts one finding and says nothing about
+any of them. `high_floor` and `ratchet` rebuild from a finding set alone, so `errors`
+returns all three empty.
+
+`GeneratedFile` (`report.jl`). One file a scan read the head of and did not parse: its
+`path` and the `signature` that named it. The scan carries these rather than dropping them,
+the stance a suppressed finding takes: a report would otherwise read as a clean codebase
+over a corpus that had lost half its files.
 
 `ScanSummary` (`report.jl`). What a scan measured about its corpus as a whole: the
 `CorpusScores` `now`, the same `base` scores at the ref, and the `LineDelta` between them.

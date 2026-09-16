@@ -410,6 +410,28 @@ end
     end
 end
 
+@testitem "a reference index skips a library's own bundles" tags = [:libraries] begin
+    mktempdir() do dir
+        # A dependency ships a vendored bundle as often as a project does, and the lighter
+        # parse path a reference index takes turns one away for the same reason: indexing it
+        # would offer a minified helper as the import to make.
+        write(
+            joinpath(dir, "lib.js"),
+            "export function partitionBy(xs, n) {\n  var out = [];\n  for (var i = 0; i < xs.length; i += n) {\n    out.push(xs.slice(i, i + n));\n  }\n  return out;\n}\n"
+        )
+        write(
+            joinpath(dir, "vendor.js"),
+            "var f = __webpack_require__(1);\nfunction m(a, b) {\n  var c = a + b;\n  return c * 2;\n}\n"
+        )
+
+        index = @test_logs (:warn,) match_mode = :any Dendro.reference_index(
+            Dendro.Library("Dep", dir); min_size = 1, cache = false
+        )
+        @test !isempty(index.anchors)
+        @test all(a -> a.file != "vendor.js", index.anchors)
+    end
+end
+
 @testitem "a dissimilar project function matches no library function" setup = [Fixtures] tags = [:libraries] begin
     mktempdir() do dir
         proj, lib = Fixtures.library_corpus(

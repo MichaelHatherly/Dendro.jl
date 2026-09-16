@@ -326,6 +326,23 @@ says how large a change was beside what the scores say it made worse, and the si
 is a fact about it rather than a judgement on it. Answer a request to gate on any of the
 three by pointing at the finding that names the site.
 
+An input filter is not a metric. Every reading above is syntax; the generated-file filter
+reads the first 40 lines of a file as plain text and turns away one carrying a generator's
+header or a bundler's module runtime. That is the one non-syntactic reading Dendro admits,
+and what the reading decides is where the line sits. The bargain governs what Dendro
+measures. This decides what it reads at all, the question `ignore` already answers over a
+path. A checked-in bundle left in the corpus does three things, none of them announced. It
+poisons the percentile its language is ranked against. It repeats its minified helpers as
+`:duplicate` at the error band until the gate cannot be satisfied. It gives the file graph
+one node reaching everything. The measurement above `GENERATED_HEAD_LINES` sets the window,
+and a signature earns its place beside it the way a band does, by measurement over the
+corpora. A project adds its own generator's header through the `generated` config key, or
+sets that key to `false` when its own source discusses generated code near the top of a
+file. Dendro's own `.dendro.toml` sets `false`, since `src/corpus.jl` declares the
+signature list and so names a bundler in its first lines. Answer a request to make the
+filter read syntax with that config key: the file it would parse is the file it has decided
+not to read.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment

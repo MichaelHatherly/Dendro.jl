@@ -198,6 +198,21 @@ end
 CorpusScores() = CorpusScores(0.0, 0.0, 0, 0)
 
 """
+    GeneratedFile
+
+One file a scan read the head of and did not parse: its `path`, and the `signature` that
+named it as generated or bundled.
+
+A scan carries these rather than dropping them, the same stance a suppressed finding takes.
+Lose half a corpus quietly and the report reads as a clean codebase, so the count and the
+signatures behind it print after the findings.
+"""
+struct GeneratedFile
+    path::String
+    signature::String
+end
+
+"""
     LineDelta
 
 How many lines a change added and removed, libgit2's own tally over the diff. A fact about
@@ -249,7 +264,12 @@ struct Findings <: AbstractVector{Finding}
     # `high_floor` and the ratchet rebuild a `Findings` from a finding set alone, and a
     # corpus ratio is not a finding set to difference.
     summary::ScanSummary
+    # The files the parse boundary read the head of and turned away as generated. Empty
+    # unless `analyze` built it, for the reason `summary` is.
+    generated::Vector{GeneratedFile}
 end
+Findings(items::Vector{Finding}, unmatched::Vector{Symbol}, summary::ScanSummary) =
+    Findings(items, unmatched, summary, GeneratedFile[])
 Findings(items::Vector{Finding}, unmatched::Vector{Symbol}) = Findings(items, unmatched, ScanSummary())
 Findings(items::Vector{Finding}) = Findings(items, Symbol[], ScanSummary())
 
@@ -262,12 +282,14 @@ Base.IndexStyle(::Type{Findings}) = IndexLinear()
 
 The findings not suppressed by an inline directive. Use this for gating.
 
-Everything the scan measured about the run rather than about a file, the unmatched rules
-and the corpus summary, carries over: a directive accepts one finding and says nothing
-about either.
+Everything the scan measured about the run rather than about a file, the unmatched rules,
+the corpus summary and the files excluded as generated, carries over: a directive accepts
+one finding and says nothing about any of them.
 """
-active(findings::Findings) =
-    Findings(filter(f -> !f.suppressed, findings), findings.unmatched, findings.summary)
+active(findings::Findings) = Findings(
+    filter(f -> !f.suppressed, findings), findings.unmatched, findings.summary,
+    findings.generated
+)
 
 # A location's label as it renders, set off from the unit name so the two read apart. Empty
 # for a site whose finding attached no meaning to it, which is every per-file metric.
@@ -312,6 +334,18 @@ function delta_line(io::IO, d::LineDelta)
     return nothing
 end
 
+# What the parse boundary turned away, printed with the count and the signatures behind it.
+# A scan that lost half its corpus to a vendored bundle would otherwise read as a clean
+# codebase, the same reason the suppressed count prints.
+function show_generated(io::IO, generated::Vector{GeneratedFile})
+    isempty(generated) && return nothing
+    println(
+        io, length(generated), " file(s) excluded as generated (",
+        join(unique(g.signature for g in generated), ", "), ")"
+    )
+    return nothing
+end
+
 # The corpus scores, printed after every finding. A summary with no lines was never
 # measured: `high_floor` and the ratchet rebuild a `Findings` from findings alone, and the
 # gate has nothing to say about a ratio.
@@ -350,6 +384,7 @@ function Base.show(io::IO, ::MIME"text/plain", findings::Findings)
     suppressed > 0 && println(io, suppressed, " finding(s) suppressed by directives")
     isempty(findings.unmatched) ||
         println(io, "warning: pattern rule(s) matched nothing: ", join(findings.unmatched, ", "))
+    show_generated(io, findings.generated)
     show_summary(io, findings.summary)
     return nothing
 end

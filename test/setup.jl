@@ -50,6 +50,16 @@
         return pairs
     end
 
+    # One source written under a scratch directory and parsed, the shape the
+    # generated-signature items share. Empty when the parse boundary turned the file away.
+    function parse_one(name, source)
+        return mktempdir() do dir
+            path = joinpath(dir, name)
+            write(path, source)
+            return Dendro.parse_corpus([path])
+        end
+    end
+
     # Findings of one relational metric, the filters the clone and corpus items share.
     of_metric(findings, metric) = Dendro.Findings(filter(f -> f.metric == metric, findings))
     duplicates(findings) = of_metric(findings, :duplicate)

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A generated and bundled file filter. Dendro reads the first 40 lines of every file it is
+  about to parse and turns away one carrying a generator's header or a bundler's module
+  runtime. A checked-in bundle no `ignore` pattern names now stays out of the percentile
+  baseline, the clone clusters and both graphs. The window comes from a measurement over
+  18279 files in 24 corpora: it catches 21 of the 29 generated files and turns away two
+  that are hand-written, where whole-file matching would turn away twenty. A scan
+  warns once with the count and the first few paths, and the report closes with a line
+  naming the count and the signatures behind it. The files reach the API as
+  `Findings.generated`, a `GeneratedFile` each. A top-level `generated` key in
+  `.dendro.toml` adds signatures to the built-in list, and `generated = false` reads every
+  file.
 - A `[report] base_summary` config key for skipping the base corpus score pass when its
   cost outweighs the comparison. It defaults to `true`; disabling it retains the current
   scores and line delta while omitting the base comparison columns.

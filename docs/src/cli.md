@@ -21,6 +21,18 @@ view. `--check` instead gates on the `:high` floor, the error-severity findings,
 clean codebase exits 0 and a regression exits 1. That is the [Gating CI](@ref) floor read
 from a shell.
 
+Meet a generated file and the scan says so twice: in a warning naming the count and the
+first few paths, then in the report's last line before the scores.
+
+```
+3 file(s) excluded as generated (__webpack_require__, @generated)
+```
+
+Dendro reads the first 40 lines of each file and turns away one carrying a generator's
+header or a bundler's module runtime, which is how a checked-in bundle stays out of the
+baseline without anyone listing its path. [Configuration file](@ref) says how to add a
+signature or turn the reading off.
+
 `--check` alone reports every error-severity finding in the tree, so a codebase that is
 not yet clean fails from the first run. `--since=<ref>` makes it the ratchet instead:
 that floor minus what the ref already reported, so only what a change introduced fails

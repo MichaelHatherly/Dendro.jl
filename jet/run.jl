@@ -374,12 +374,25 @@
 # Asserting the merged overrides at their own type, `::S`, took sound to 1403 and opt to
 # 32, since a field read from a table leaves the merged tuple abstract, and the widened
 # `scalars` then made `discover_config`'s two later `apply_toml!` calls runtime dispatches.
+#
+# The generated-file filter raised sound from 1403 to 1422 and left opt at 32. The `Config`
+# kwsorter takes two more keywords, `generated` and `generated_enabled`, for two, and
+# `apply_key!` gains their branch for two more; `apply_generated` costs three at `::Any`.
+# `parse_chunk!` and `parse_corpus`'s kwarg lowering take two each for the signature list
+# and the `excluded` sink, `ParseOptions` one more field across its positional form and its
+# kwcall, and `warn_generated` three. `Findings` gains a fourth field for one, and the
+# two-field `GeneratedFile` costs two through its default constructor, the rate `Location`
+# and `Finding` already pay. Three narrowings were measured and reverted: asserting
+# `apply_generated`'s merges at their own type went to 1427, since the merge was already
+# concrete and each assertion is a report; inlining `apply_generated` into `apply_key!`
+# moved its three reports and removed none; and writing the warning as one interpolated
+# string changed nothing.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1403  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1422  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

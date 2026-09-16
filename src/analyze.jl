@@ -156,7 +156,8 @@ function base_scores(
         corpus = collect_corpus(tpaths, ignore, language; profiles)
         files = parse_corpus(
             corpus; language, profiles, patterns = cfg.patterns,
-            pattern_dirs = dirs, bindings = false, directives = false
+            pattern_dirs = dirs, bindings = false, directives = false,
+            generated = generated_signatures(cfg)
         )
         exact, near = structural_clones(files, cfg)
         return corpus_scores(files, [exact; near], cfg.patterns)
@@ -331,6 +332,13 @@ a trailing `/` matches directories only. As in gitignore, a file under an exclud
 directory cannot be re-included. Patterns apply to folder scans, not a single named
 file. A `.dendro.toml` declares the same patterns under its top-level `ignore` key,
 which is the route a command-line scan has; the keyword adds to those.
+
+A file is dropped for its content too, after `ignore` and before parsing, when its first
+lines carry a generator's header or a bundler's module runtime. So Dendro neither flags a
+checked-in bundle nor counts it in the baseline, even where no path pattern names it. The
+result carries those files in `generated` and the report closes with the count. A
+`.dendro.toml` adds signatures under its top-level `generated` key, or sets it to `false`
+to read every file.
 """
 function analyze(
         paths::Union{AbstractString, AbstractVector{<:AbstractString}};
@@ -352,9 +360,14 @@ function analyze(
     references = reference_indices(
         active_libraries(cfg), corpus; min_size = cfg.min_size, profiles, grain = library_grain(cfg)
     )
+    # `ignore` dropped whole paths at collection; this reads the head of what is left, so a
+    # checked-in bundle no pattern names leaves the corpus too. Which files went is carried
+    # on the result rather than only warned about.
+    generated_files = GeneratedFile[]
     files = parse_corpus(
         corpus; language, rules = active_rules, profiles,
-        patterns = cfg.patterns, pattern_dirs = pattern_dirs(cfg, roots)
+        patterns = cfg.patterns, pattern_dirs = pattern_dirs(cfg, roots),
+        generated = generated_signatures(cfg), excluded = generated_files
     )
     bl = baseline_from(files, active_rules)
     # Resolved once for the whole scan: which metrics' distributions support a rank.
@@ -391,5 +404,5 @@ function analyze(
     append!(findings, library_clusters(files, cfg, scope, references))
     append!(findings, relational_clusters(files, cfg, scope, res))
     summary = ScanSummary(corpus_scores(files, structural, cfg.patterns), was, delta)
-    return Findings(findings, unmatched_patterns(files, cfg.patterns), summary)
+    return Findings(findings, unmatched_patterns(files, cfg.patterns), summary, generated_files)
 end

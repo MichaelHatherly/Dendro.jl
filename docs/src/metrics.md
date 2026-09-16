@@ -17,6 +17,15 @@ fires:
 Absolute alone misses outliers in a uniformly-weak codebase; relative alone
 calls a uniformly-weak codebase fine. Reporting both avoids each trap.
 
+A percentile ranks against whatever the scan parsed, so a checked-in bundle left in the
+corpus decides the ranks. Its few thousand minified helpers become the sample
+`(javascript, cyclomatic)` is measured against, and nothing anyone wrote ranks near the top
+again. Clone detection reads the same corpus, where a bundle repeats its helpers often
+enough to fire `:duplicate` at the error band on code nobody can edit. Dendro turns such a
+file away before parsing, by its path through `ignore` or by its head through `generated`,
+and closes the report with a line saying how many went. [Configuration file](@ref) covers
+both keys.
+
 ## Metrics
 
 [Metric reference](@ref) tabulates every name below with its default band and whether it
@@ -118,7 +127,9 @@ a scalar counts matches per unit and names no region. A suppressed match still c
 a `dendro-ignore` accepts a finding where this measures what the source holds.
 
 Both read the whole corpus even under `--base`. A diff narrows which findings get reported;
-it cannot narrow the codebase a ratio is taken over.
+it cannot narrow the codebase a ratio is taken over. That corpus is the scanned one after
+`ignore` and `generated` have dropped what they drop, so verbosity divides by the lines
+Dendro parsed rather than by every line in the tree.
 
 ### Reading them against a base ref
 

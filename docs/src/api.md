@@ -29,6 +29,7 @@ errors
 Finding
 Findings
 Location
+GeneratedFile
 ```
 
 ## Corpus summary
