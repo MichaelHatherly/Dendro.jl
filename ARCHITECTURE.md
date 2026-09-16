@@ -62,8 +62,8 @@ scattering, reachability, and the opt-in `:incoherent_package` run over the unit
 the opt-in `:distant_definition` needs neither graph, reading one file's bindings against
 the symbol table, and neither does the opt-in `:divisible_class`, reading the fields and
 calls inside one class;
-`:back_edge`, `:dependency_cycle`, `:hub` and the opt-in `:divisible_package` run over the
-one file graph, the substrate
+`:back_edge`, `:dependency_cycle` and `:hub` run over the one file graph, and so do the
+opt-in `:divisible_package` and `:child_count`. That graph is the substrate
 for the rules that read the corpus as files depending on files. It is built before the
 clone passes report, since they rank their clusters by distance in its directory
 contraction.
@@ -623,6 +623,18 @@ Reporting:
   percentile. Groups are extracted rather than partitioned: what no folder claims stays at
   the top level, and the anchor location's label says how much the proposal places. Included
   after `incoherent_package.jl`.
+- `directory_size.jl` asks how wide a directory is, the third opt-in pass `analyze` gates on
+  `cfg.rules`. It reads the node set `:divisible_package` reads, a directory's direct
+  children, so the two make a matched pair: this one says a directory holds too many
+  children and that one says how those children group. `direct_children` walks `fg.files`
+  through `child_of`, counting a child file and a child subdirectory one each. The same walk
+  sums the lines under the directory and picks the earliest file it holds, the site the
+  finding is reported at. `cluster_child_count` emits a `:child_count` finding per directory
+  against `CHILD_COUNT_BAND` and the corpus percentile, read once the corpus declares
+  `MIN_CHILD_COUNT_DIRS` directories. The lines and the split between files and
+  subdirectories ride in the anchor's label, since neither says whether anything in the
+  directory can be found. Included after `divisible_package.jl`, whose `corpus_directories`
+  and `child_of` it reads.
 - `unreferenced.jl` defines dead-code detection by reachability, not the corpus graph but
   a dedicated reference graph over `table.defs` that keeps non-unit targets and discounts
   no cross-cutting utility. `reach_graph` builds the forward edges (within-file bindings
@@ -742,15 +754,15 @@ Reporting:
   the clone family rather than inside it, since a one-location finding has no module
   distance for `rank_clones!` to read), `relational_clusters` (naturalness, low cohesion,
   cross-file placement, scattering, unreferenced definitions, the audience pass over the
-  symbol table, the two config-gated directory passes, and the three passes over the
+  symbol table, the three config-gated directory passes, and the three passes over the
   file graph, in the order a report reads them), and the diff scope, `Scope` and
   `scope_clusters`, which live here because they are `analyze`'s framing of the question
-  rather than a property of the corpus. It is included after `corpus.jl` and after
-  `report.jl`, `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`,
-  `file_graph.jl`, `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
-  `incoherent_package.jl`, `divisible_package.jl`, `cohesion.jl`, `hub.jl`, and
-  `split_audience.jl` so everything
-  it calls is defined first.
+  rather than a property of the corpus. It is included after `corpus.jl`, so everything it
+  calls is defined first. It follows every file defining a pass it calls: `report.jl`,
+  `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`, `file_graph.jl`,
+  `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
+  `incoherent_package.jl`, `divisible_package.jl`, `directory_size.jl`, `cohesion.jl`,
+  `hub.jl`, `split_audience.jl`.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, the clone clusters, and the file graph's
   movement across two revisions into mermaid `flowchart` text, with `:file` and `:unit`
@@ -909,7 +921,10 @@ points at a representative real site rather than inventing one: `:scattered` nam
 unit per community, and `:incoherent_package`, whose subject is a directory, names a
 representative unit in it. `:divisible_package` does the same for a directory and for each
 folder it proposes, naming the earliest file the group holds, so a proposed folder made of
-subdirectories still points at code. Both `scope_clusters` and the gate's `fkey` resolve a
+subdirectories still points at code. `:child_count` takes that anchor and nothing else,
+since its whole reading is a count of a directory's children: one location, the earliest
+file the directory holds, with the lines and the file-to-subdirectory split in its label.
+Both `scope_clusters` and the gate's `fkey` resolve a
 location's path and line, so a synthetic path or line would throw in the ratchet and
 misbehave under `base`.
 

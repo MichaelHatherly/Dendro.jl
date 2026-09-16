@@ -327,6 +327,23 @@ gate floor. A chain of directories each holding one child is a real layout defec
 see, because that is not about coupling at all and no reading of the graph finds it; answer
 that with a separate structural check, not by making this rule cleverer.
 
+Width is one such check, and it is the question no reading of the graph asks.
+`:incoherent_package`, `:divisible_package` and `:back_edge` all read coupling, and a
+directory can satisfy every one of them and still be unreadable: its contents belong where
+they are, they divide into no independent groups, and it holds ninety files.
+`:child_count` scores the number of direct children, the node set `:divisible_package`
+induces its graph on, so the two make a pair. One says a directory holds too many children
+and the other says how those children group, and the measured overlap between them is five
+directories out of 29. The count is the whole score. Lines under the directory and the
+imbalance between its children both describe it without saying whether a reader can find
+anything. So the lines ride in the label, and imbalance ships as nothing at all: read as a
+Gini coefficient, 13 of the 14 unbalanced directories in the nine corpora already hold a
+file at `file_length`'s warn edge. Nobody publishes a limit on how wide a directory should
+be either, so both band edges come from the corpus. That is the second reason the rule
+ships off by default. This package's own
+`src` holds 40 children and lands on the high edge. That is the reason for opt-in and never
+a reason to raise the band.
+
 A score is not a finding, and that is the line the two corpus ratios sit on. Erosion and
 verbosity are single numbers over a whole corpus, so neither names a site and neither names
 an edit. The gate reads findings, and no one commit can satisfy a ratio, so putting one in

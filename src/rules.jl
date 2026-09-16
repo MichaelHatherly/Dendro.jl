@@ -189,6 +189,7 @@ const RELATIONAL = (
     hub = :hub,
     incoherent_package = :incoherent_package,
     divisible_package = :divisible_package,
+    child_count = :child_count,
 )
 const RELATIONAL_METRICS = values(RELATIONAL)
 

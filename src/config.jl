@@ -22,7 +22,7 @@ const DEFAULT_CUT = 0.95
 const RELATIONAL_BANDS = (
     :unnatural, :low_cohesion, :file_length, :divisible_class, :scattered, :split_audience,
     :misplaced, :distant_definition, :back_edge, :dependency_cycle, :hub,
-    :incoherent_package, :divisible_package,
+    :incoherent_package, :divisible_package, :child_count,
 )
 
 # A malformed `.dendro.toml` value: a band that is not two integers, a `cut` that is
@@ -46,7 +46,8 @@ Resolved tuning thresholds for one analysis, built by `discover_config` from the
 built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
 overrides scalar rule `(warn, high)` tuples by metric name; one field per relational
 metric overrides that metric's band; `rules` toggles a rule on or off by name, and the
-`reimplementation`, `incoherent_package` and `divisible_package` corpus passes with it; `min_size`,
+`reimplementation`, `incoherent_package`, `divisible_package` and `child_count` corpus passes
+with it; `min_size`,
 `threshold`, and `radius_factor`
 are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
 cutoff; `languages` carries the languages the config registers beyond the ones Dendro
@@ -83,6 +84,7 @@ struct Config
     hub::Tuple{Int, Int}
     incoherent_package::Tuple{Int, Int}
     divisible_package::Tuple{Int, Int}
+    child_count::Tuple{Int, Int}
     rules::Dict{Symbol, Bool}
     min_size::Int
     threshold::Float64
@@ -122,6 +124,7 @@ struct Config
         hub::Tuple{Int, Int} = HUB_BAND,
         incoherent_package::Tuple{Int, Int} = INCOHERENT_PACKAGE_BAND,
         divisible_package::Tuple{Int, Int} = DIVISIBLE_PACKAGE_BAND,
+        child_count::Tuple{Int, Int} = CHILD_COUNT_BAND,
         rules::Dict{Symbol, Bool} = Dict{Symbol, Bool}(),
         min_size::Int = DEFAULT_MIN_SIZE,
         threshold::Float64 = DEFAULT_THRESHOLD,
@@ -141,7 +144,7 @@ struct Config
     ) = new(
         cut, bands, unnatural, low_cohesion, file_length, divisible_class, scattered,
         split_audience, misplaced, distant_definition, back_edge, dependency_cycle, hub,
-        incoherent_package, divisible_package, rules, min_size, threshold, radius_factor,
+        incoherent_package, divisible_package, child_count, rules, min_size, threshold, radius_factor,
         reimpl_threshold, library_threshold, library_gate_coverage, library_anchor_grain,
         languages, patterns, patterns_dir, libraries, ignore, generated, generated_enabled,
         base_summary,
@@ -172,8 +175,8 @@ scalar_metric_names(acc) = union(
 # gated in `analyze` rather than resolved into the rule set, so `resolve_rules`
 # ignores these names.
 const TOGGLEABLE_RELATIONAL = (
-    :reimplementation, :incoherent_package, :divisible_package, :distant_definition,
-    :divisible_class,
+    :reimplementation, :incoherent_package, :divisible_package, :child_count,
+    :distant_definition, :divisible_class,
     :library_duplicate, :library_near_duplicate,
 )
 
@@ -639,6 +642,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         hub = get(acc.relational, :hub, HUB_BAND),
         incoherent_package = get(acc.relational, :incoherent_package, INCOHERENT_PACKAGE_BAND),
         divisible_package = get(acc.relational, :divisible_package, DIVISIBLE_PACKAGE_BAND),
+        child_count = get(acc.relational, :child_count, CHILD_COUNT_BAND),
         rules = acc.rules,
         min_size = scalars.min_size,
         threshold = scalars.threshold,
@@ -690,6 +694,7 @@ function override_config(
         hub = config.hub,
         incoherent_package = config.incoherent_package,
         divisible_package = config.divisible_package,
+        child_count = config.child_count,
         rules = config.rules,
         min_size = min_size === nothing ? config.min_size : Int(min_size),
         threshold = threshold === nothing ? config.threshold : Float64(threshold),

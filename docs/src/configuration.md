@@ -64,9 +64,10 @@ parameter_count = false    # disable a built-in rule
 band, each taking a `[warn, high]` pair. [Metric reference](@ref) lists which names those
 are and what each defaults to.
 
-`[rules]` keys are any rule name, on or off. The opt-in passes are switched on here too:
-`reimplementation`, `incoherent_package`, `divisible_package`, `distant_definition`,
-`divisible_class`, `library_duplicate` and `library_near_duplicate`.
+`[rules]` keys are any rule name, on or off. The opt-in passes are switched on here too.
+Eight of them take a key: `reimplementation`, `incoherent_package`, `divisible_package`,
+`child_count`, `distant_definition`, `divisible_class`, `library_duplicate`,
+`library_near_duplicate`.
 
 ## Clone detection
 

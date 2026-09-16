@@ -77,11 +77,12 @@ The band column is empty where the metric is a flag and always reports `:high`.
 | `hub` | 15, 30 | on | `min(fan_in, fan_out)` over distinct files | [Dependencies and layout](@ref) |
 | `incoherent_package` | 50, 75 | opt-in | the directory anchored elsewhere, percent | [Dependencies and layout](@ref) |
 | `divisible_package` | 60, 85 | opt-in | the best group's internal ratio, percent | [Dependencies and layout](@ref) |
+| `child_count` | 25, 40 | opt-in | direct children of the directory | [Dependencies and layout](@ref) |
 
 [^2]: Hundredths of a bit per token, so the default band is 4.00 and 5.00 bits. The
     value is rounded for reporting; the percentile ranks on the unrounded score.
 
-The thirteen with a band are the relational names `[bands]` accepts. The rest carry no band
+The fourteen with a band are the relational names `[bands]` accepts. The rest carry no band
 to retune.
 
 ### Not metrics

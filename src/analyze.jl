@@ -237,11 +237,11 @@ end
 
 # Every corpus-relational pass, scoped, in the order a report reads them. The opt-in passes
 # are gated here for the reason the vocabulary one is: each reports a proposal rather than a
-# measurement, the two directory ones because they name a rearrangement rather than a bounded
-# edit, `:distant_definition` because nothing syntactic separates the declaration order it
-# reads from a defect, and `:divisible_class` because a class with no state to divide reads
-# the same as one whose state has come apart. All stay out of the default set and out of the
-# gate floor.
+# measurement, the three directory ones because they name a rearrangement rather than a
+# bounded edit, `:distant_definition` because nothing syntactic separates the declaration
+# order it reads from a defect, and `:divisible_class` because a class with no state to
+# divide reads the same as one whose state has come apart. All stay out of the default set
+# and out of the gate floor.
 function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res::CorpusResolution)
     ecut = cfg.cut
     table, linkage = res.table, res.linkage
@@ -271,6 +271,10 @@ function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res:
     append_gated!(
         findings, cfg, RELATIONAL.divisible_package, scope,
         () -> cluster_divisible_packages(files, fg; cut = ecut, band = cfg.divisible_package)
+    )
+    append_gated!(
+        findings, cfg, RELATIONAL.child_count, scope,
+        () -> cluster_child_count(files, fg; cut = ecut, band = cfg.child_count)
     )
     append!(findings, scope_clusters(cluster_back_edge(files, fg, table; cut = ecut, band = cfg.back_edge, linkage), scope))
     append!(

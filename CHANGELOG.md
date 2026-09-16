@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `child_count`, a directory rule over the number of direct children a directory holds, off
+  by default and enabled with `[rules] child_count = true`. The other directory rules read
+  coupling. Take a directory whose contents belong where they are and divide into no
+  independent groups: it can still hold ninety files, and no reading of the graph finds
+  that.
+  The node set is the one `divisible_package` reads, a child file counting one and a child
+  subdirectory counting one, so the two are a pair: this one says a directory holds too
+  many children and that one says how they group. Both band edges come from a measurement
+  over 2310 directories in 37 corpora, since nobody publishes a limit on directory width,
+  and warn at 25 reports 2.4% of directories against high at 40 reporting 1.1%. The one
+  location is the earliest file the directory holds, and its label carries the lines under
+  the directory alongside the split between files and subdirectories. Retune it with
+  `[bands] child_count` and accept one directory with `dendro-ignore: child_count`.
 - `file_length`, a per-file scalar over a file's physical lines, on by default and gating at
   `:high`. It carries the two scores every other scalar carries, the fixed band and the
   corpus percentile. Both band edges come from published file-size limits. ESLint's

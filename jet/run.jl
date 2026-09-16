@@ -396,12 +396,25 @@
 # the sibling passes take, and a `::Vector{Finding}` return annotation. The reports are
 # Base's kwsorter, so dropping the keywords is the only remaining move, and that would
 # part this pass from every sibling's signature.
+#
+# `:child_count` (`directory_size.jl`) raised sound from 1428 to 1434 and left opt at 32,
+# the same six `:file_length` cost and for the same reasons: five on
+# `cluster_child_count`'s keyword-argument lowering, the per-pass rate, and one more
+# keyword on the `Config` kwsorter. It first measured 1435. The seventh report was an
+# uncovered `directory_findings` match, since `min_dirs::Integer` leaves
+# `length(scored) >= min_dirs` typed `Any` where the callee takes a `Bool`, and
+# `min_dirs::Int` takes it off. That parts the signature from the `Integer` its sibling
+# directory passes take, which is the trade the count is worth here where it was not for
+# `:file_length`, whose own narrowing bought nothing. Writing the comparison to an
+# annotated `enough::Bool` local instead read 1436 and was reverted: the annotation is a
+# report of its own, the rate the `base_summary` and generated-filter measurements already
+# recorded.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1428  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1434  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin
