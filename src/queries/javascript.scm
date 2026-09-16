@@ -36,6 +36,9 @@
 
 (comment) @comment
 
+; JSDoc opens with `/**`. An ordinary comment is an aside, not documentation.
+((comment) @doc (#match? @doc "^/\\*\\*"))
+
 (identifier) @name
 
 ; Name a unit by its defining name, not the first identifier the lexical scan

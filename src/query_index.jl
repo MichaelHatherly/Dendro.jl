@@ -80,7 +80,8 @@ const CONCEPT_NAMES = (
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
     :parameter_name, :broad_catch, :callee, :toplevel, :declaration,
-    :class, :field, :field_name, :constructor,
+    :class, :field, :field_name, :constructor, :doc, :attribute, :inherits_doc,
+    :prototype, :nodoc,
 )
 
 """
@@ -170,6 +171,37 @@ struct QueryIndex
     # The declaration node of a class's constructor. A constructor assigns every field by
     # definition, so leaving it in the method set would read every class as one concern.
     constructor::Concept
+    # The node a language's readers and doc tools take as a definition's documentation:
+    # Python's and Julia's docstring, a `///` or `/** */` comment, Go's and Ruby's plain
+    # comment above the definition. Convention decides, so Go tags every `//` line where
+    # Rust tags only `///`, and a language with no documentation form (bash) tags nothing.
+    # What the node says is never read, only where it sits.
+    doc::Concept
+    # A declaration modifier written as a sibling above what it modifies, which among the
+    # languages Dendro reads is Rust's `#[...]` alone: every other one nests its
+    # attributes, annotations and decorators inside the declaration node, where the
+    # declaration's own first line already covers them. `:undocumented_public` steps over
+    # the lines one covers, so a doc comment above an attribute still documents the
+    # definition below it. Empty elsewhere.
+    attribute::Concept
+    # A node whose definitions inherit their documentation from what they override, so a
+    # language's doc tool shows the overridden method's docs on one with none of its own:
+    # a Java `@Override` or TypeScript `override` method, a Python `@override` decorated
+    # definition, a PHP `#[\\Override]` method, a C++ `override` member, a Rust `impl Trait
+    # for` block, where every method inherits the trait's. `:undocumented_public` reads a
+    # definition inside one as documented. Empty for a language with no such marker.
+    inherits_doc::Concept
+    # A declaration of a callable defined elsewhere, a C or C++ function prototype, named
+    # through its declarator the way a definition is. `:undocumented_public` reads
+    # documentation against one as documenting the definition it declares, and a header
+    # holding one as what makes that definition API. Empty for a language that never
+    # declares a callable apart from defining it.
+    prototype::Concept
+    # A marker declaring a definition out of the documented surface, RDoc's `:nodoc:`. On a
+    # definition's line it covers that definition; as `:nodoc: all` on a class line it
+    # covers the members too. `:undocumented_public` reports nothing on either. Empty for a
+    # language with no such marker.
+    nodoc::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -208,6 +240,8 @@ struct QueryIndex
         broad_catch, callee = Concept(), Concept()
         toplevel, declaration = Concept(), Concept()
         class, field, field_name, constructor = Concept(), Concept(), Concept(), Concept()
+        doc, attribute, inherits_doc, prototype = Concept(), Concept(), Concept(), Concept()
+        nodoc = Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "nesting" => nesting,
@@ -222,7 +256,8 @@ struct QueryIndex
             "broad_catch" => broad_catch, "callee" => callee,
             "toplevel" => toplevel, "declaration" => declaration,
             "class" => class, "field" => field, "field_name" => field_name,
-            "constructor" => constructor,
+            "constructor" => constructor, "doc" => doc, "attribute" => attribute,
+            "inherits_doc" => inherits_doc, "prototype" => prototype, "nodoc" => nodoc,
         )
         return new(
             language, source, Unit[], Set{NodeId}(),
@@ -231,6 +266,7 @@ struct QueryIndex
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
             callee, toplevel, declaration, class, field, field_name, constructor,
+            doc, attribute, inherits_doc, prototype, nodoc,
             by_name, Dict{NodeId, TreeSitter.Node}(),
             Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,

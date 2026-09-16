@@ -436,12 +436,23 @@
 # reports still, left alone as out of scope. The pass's remaining `cut` and `min_classes`
 # keywords are what fourteen sibling passes take and what `analyze` calls them by; narrowing
 # those away was not attempted.
+#
+# `:undocumented_public` (`undocumented_public.jl`) lowered sound from 1445 to 1444 and left
+# opt at 32, the first pass to land below the limit it started at. It first measured 1449 and
+# 33. Making `linkage` positional took three off, the `kwcall` wrapper trade the two passes
+# above already make. The last new report was the dispatch through the function-valued
+# `Linkage.is_public` field, one sound and one opt, the rate `reach_graph` recorded when it
+# first paid it. Extracting that call into `def_public` (`linkage.jl`) took two more sound
+# reports off and the opt report with them: both readers of the public surface wrote the same
+# expression, so the analyser counted the dispatch twice, and one shared site counts once.
+# Everything else the pass reads is concrete, the `@doc` and `@attribute` concept nodes, the
+# byte spans and the kind tuple, so it adds nothing.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1445  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1444  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

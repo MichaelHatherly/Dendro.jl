@@ -78,6 +78,11 @@
     unref_sites(files) =
         Set((loc.file, loc.unit) for f in Dendro.cluster_unreferenced(files, Dendro.corpus_symbols(files)) for loc in f.locations)
 
+    # What the documentation pass reports over a corpus, and the names alone, the two
+    # readings the undocumented_public items assert on.
+    undocumented(files) = Dendro.cluster_undocumented_public(files, Dendro.corpus_symbols(files))
+    undocumented_names(files) = Set(loc.unit for f in undocumented(files) for loc in f.locations)
+
     # A synthetic directory whose factoring is known because it was generated, the ground
     # truth the layout rules are held to. `sizes` is one entry per cohesive group whose
     # files reference each other; `cross` is how many calls each file makes into other

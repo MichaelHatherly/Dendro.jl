@@ -73,6 +73,7 @@ The band column is empty where the metric is a flag and always reports `:high`.
 | `misplaced` | 60, 80 | on | coupling landing in one other file, percent | [Cohesion and placement](@ref) |
 | `distant_definition` | 25, 50 | opt-in | definitions between it and its nearest use | [Cohesion and placement](@ref) |
 | `unreferenced` | | on | nothing; the definition is the finding | [Cohesion and placement](@ref) |
+| `undocumented_public` | | opt-in | nothing; the definition is the finding | [Cohesion and placement](@ref) |
 | `back_edge` | 85, 95 | on | dominance of the directory pair, percent | [Dependencies and layout](@ref) |
 | `dependency_cycle` | 5, 10 | on | files in the cyclic group | [Dependencies and layout](@ref) |
 | `hub` | 15, 30 | on | `min(fan_in, fan_out)` over distinct files | [Dependencies and layout](@ref) |

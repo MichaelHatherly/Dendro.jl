@@ -40,6 +40,14 @@
 
 (comment) @comment
 
+; A docblock opens with `/**`. An ordinary comment is an aside, not documentation.
+((comment) @doc (#match? @doc "^/\\*\\*"))
+
+; A `#[\Override]` method inherits the overridden method's docblock. The attribute is a
+; bare `name` or, with the leading backslash, a `qualified_name` holding one.
+((method_declaration (attribute_list (attribute_group (attribute [(name) @_n (qualified_name (name) @_n)]))))
+  @inherits_doc (#eq? @_n "Override"))
+
 (name) @name
 
 (return_statement) @return

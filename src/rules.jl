@@ -183,6 +183,7 @@ const RELATIONAL = (
     misplaced = :misplaced,
     distant_definition = :distant_definition,
     unreferenced = :unreferenced,
+    undocumented_public = :undocumented_public,
     reimplementation = :reimplementation,
     back_edge = :back_edge,
     dependency_cycle = :dependency_cycle,

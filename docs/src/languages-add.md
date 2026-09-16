@@ -40,7 +40,8 @@ Cross-file resolution needs more than a query: a linkage entry is Julia code in 
 package, so a registered language reaches the per-file metrics, the flags, and clone
 detection, but none of the passes built on cross-file references: `:misplaced`,
 `:scattered`, `:unreferenced`, `:split_audience`, `:back_edge`, `:dependency_cycle`,
-`:hub`, `:incoherent_package`, or `:divisible_package`.
+`:hub`, `:incoherent_package`, or `:divisible_package`. `:undocumented_public` needs one
+too, reading a registered language as private and so saying nothing about it.
 
 ## Choices a query has to make
 

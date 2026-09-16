@@ -23,7 +23,8 @@ end
 # A top-level definition somewhere in the corpus: the file it lives in, its identity in
 # that file's tree, the bound name and kind, the enclosing module path (outermost
 # first), the function-unit index it belongs to (0 for a type or const outside any
-# unit), its source line, its declared visibility (`:public`/`:private`/`:unknown`,
+# unit), its source line, its declared visibility (`:public`, `:package` for a name
+# reachable within its package or crate and outside the API, `:private`, or `:unknown`,
 # read from a per-def modifier where a language has one, `:unknown` otherwise), and
 # whether it is an external-entry root: a definition a wrapping construct the analyzer
 # cannot expand consumes (a macro, decorator, annotation, attribute), so reachability
@@ -101,15 +102,16 @@ function module_path_of(regions::Vector{ModuleRegion}, from::Int, to::Int)
 end
 
 # The visibility a definition declares, read through the language's `Linkage.visibility`
-# hook: `:public`/`:private`, or `:unknown` where the language marks nothing per definition.
-# `modifier_public` treats `:unknown` as public, the safe direction.
+# hook: `:public`/`:private`, `:package` for a name reachable within its package or crate
+# and no further, or `:unknown` where the language marks nothing per definition.
+# `modifier_public` treats `:unknown` and `:package` as public, the safe direction.
 #
 # Each hook reads only a marker whose private definition cannot be reached cross-file by
 # name: a Rust non-`pub` item is module-private, a C/C++ `static` function is file-local, a
 # Ruby, Java, or PHP `private` method is same-class, so an unreferenced one is genuinely
-# dead. A package-private Java or PHP member is left public on purpose: it is reached
-# same-package without an import the resolver sees, so flagging it would be a false
-# positive.
+# dead. A package-private Java member or a Rust `pub(crate)` item is `:package` on purpose:
+# it is reached same-package without an import the resolver sees, so reachability keeps it
+# a root, while `def_api` leaves it out of the surface a caller outside the corpus reads.
 function def_visibility(file::ParsedFile, defnode::TreeSitter.Node)
     link = get(LINKAGES, file.language, nothing)
     link === nothing && return :unknown
@@ -123,14 +125,22 @@ no_visibility(::ParsedFile, ::TreeSitter.Node) = :unknown
 # Java visibility from a `modifiers` child of the declaration. A class is public only when
 # marked `public`; a package-private one is private, since the `:package` linkage resolves
 # its same-package references, so an unreferenced one is dead. A method is private only
-# when marked `private`, reached within its own file; a package-private method stays public,
-# reached same-package through a receiver the resolver does not follow.
+# when marked `private`, reached within its own file. A `protected` method is public, since
+# a subclass outside the package reads it. A method with neither keyword is `:package`:
+# reached same-package through a receiver the resolver does not follow, so it stays a
+# reachability root, and outside the API a caller beyond the package reads. An interface
+# method with no keyword is public, since an interface member is public unless marked
+# `private`.
 function java_visibility(::ParsedFile, defnode::TreeSitter.Node)
     decl = TreeSitter.parent(defnode)
     TreeSitter.is_null(decl) && return :unknown
     kind = TreeSitter.node_type(decl)
     kind == "class_declaration" && return has_modifier(decl, "public") ? :public : :private
-    kind == "method_declaration" && return has_modifier(decl, "private") ? :private : :public
+    if kind == "method_declaration"
+        has_modifier(decl, "private") && return :private
+        (has_modifier(decl, "public") || has_modifier(decl, "protected")) && return :public
+        return TreeSitter.node_type(TreeSitter.parent(decl)) == "interface_body" ? :public : :package
+    end
     return :public
 end
 
@@ -159,14 +169,16 @@ function php_visibility(file::ParsedFile, defnode::TreeSitter.Node)
     return :public
 end
 
-# Rust marks a public item with a `visibility_modifier` (`pub`, `pub(crate)`) child on the
-# declaration, the captured name's parent. Its absence is private to the module, so an
-# unreferenced one is unreachable from anywhere.
-function rust_visibility(::ParsedFile, defnode::TreeSitter.Node)
+# Rust marks a public item with a `visibility_modifier` child on the declaration, the
+# captured name's parent. Bare `pub` is public; a restricted one (`pub(crate)`,
+# `pub(super)`) reaches within the crate and no further, so it is `:package`. Its absence
+# is private to the module, so an unreferenced one is unreachable from anywhere.
+function rust_visibility(file::ParsedFile, defnode::TreeSitter.Node)
     decl = TreeSitter.parent(defnode)
     TreeSitter.is_null(decl) && return :unknown
     for c in TreeSitter.children(decl)
-        TreeSitter.node_type(c) == "visibility_modifier" && return :public
+        TreeSitter.node_type(c) == "visibility_modifier" || continue
+        return strip(TreeSitter.slice(file.source, c)) == "pub" ? :public : :package
     end
     return :private
 end
@@ -506,8 +518,22 @@ capitalized_public(def::CorpusDef, ::Set{String}) = !isempty(def.name) && isuppe
 # A definition is public unless its declared visibility marks it private, the surface for
 # a language that marks visibility per definition (Rust non-`pub`, a `static` C/C++
 # function, a `private` Ruby/Java/PHP method). An `:unknown` visibility reads as public,
-# the safe direction, so `:unreferenced` never fires on a guess.
+# the safe direction, so `:unreferenced` never fires on a guess, and so does `:package`,
+# reached from inside the package by a path the resolver does not follow.
 modifier_public(def::CorpusDef, ::Set{String}) = def.visibility !== :private
+
+# Whether one definition belongs to its corpus's public API, the question a language's
+# `is_public` rule answers once its file's export set is in hand. Both readers of the public
+# surface ask it through here, so the dispatch through the function-valued field happens at
+# one site and the sound analyser counts it once.
+def_public(link::Linkage, def::CorpusDef, surface::Dict{String, Set{String}}) =
+    link.is_public(def, get(() -> Set{String}(), surface, def.file))::Bool
+
+# Whether one definition is part of the API a caller outside the corpus reads: public, and
+# not `:package`. Reachability roots from the wider set, since a package-private name is
+# alive; documentation asks after this narrower one, since nobody outside can call it.
+def_api(link::Linkage, def::CorpusDef, surface::Dict{String, Set{String}}) =
+    def_public(link, def, surface) && def.visibility !== :package
 
 # A language with no wrapping construct that consumes a definition never roots this way.
 no_external_root(::TreeSitter.Node, ::AbstractString) = false

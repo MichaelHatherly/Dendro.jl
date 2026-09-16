@@ -242,7 +242,9 @@ Resolution and configuration:
   by the whole profile, not the language name, so two projects registering one name
   against different grammars or queries never share a compiled query. `language_for_path`
   resolves an extension through an `extension_map` of the scan's registry, built once per
-  scan rather than per file. The caches are guarded by `CACHE_LOCK`; `warm_languages`
+  scan rather than per file. `HEADER_EXTENSIONS` names the extensions a header carries and
+  `HEADER_LANGUAGES` the languages those resolve to, the ones that declare a name apart from
+  defining it, which `is_header` and `undocumented_public.jl` read. The caches are guarded by `CACHE_LOCK`; `warm_languages`
   fills them for a profile set up front so fan-out tasks find them warm.
 - `parallel.jl` defines the threading primitives the corpus fan-outs share:
   `PARALLEL_MIN` and `parallel_enabled`, `chunk_indices` (round-robin partition
@@ -496,7 +498,11 @@ Reporting:
   `capitalized_public`, `modifier_public`) decide public-API membership; the convention
   predicates read a `CorpusDef`'s name, `modifier_public` reads its `visibility`, set by
   `def_visibility` from a grammar-specific modifier (Rust `pub`, a C/C++ `static` function,
-  a Ruby/Java/PHP `private` method, a package-private Java class). It also holds what each
+  a Ruby/Java/PHP `private` method, a package-private Java class). Beside `:public`,
+  `:private` and `:unknown` sits `:package`: a Java method with no modifier or a Rust
+  `pub(crate)` item, reachable within the package and outside the API. `def_public`
+  reads `:package` as public, so reachability roots from it; `def_api`, what
+  `undocumented_public` asks, leaves it out. It also holds what each
   model makes visible for one file, `file_visible` over `member_visible`, `import_visible`,
   `package_visible` and `merge_visible`, where the `:package` model (Java) unions import
   visibility with the same-directory types a package resolves without an import, so a
@@ -646,6 +652,29 @@ Reporting:
   breadth-first. `cluster_unreferenced` emits an `:unreferenced` finding per unreached
   definition, suppressible inline. Reads `linkage.jl` for `corpus_references` and the public
   surface. Included after `scattered.jl`.
+- `undocumented_public.jl` defines the documentation reading over that same public surface,
+  with one default inverted. A language with no `LINKAGES` entry reads as private here and
+  public there, so the rule stays silent on a corpus whose surface Dendro cannot read.
+  `documented_span` gives each definition the construct its documentation attaches to, the
+  callable unit holding its name, the class declaring it, or the name itself. `doc_candidates`
+  widens that set to every unit and class in the file, which keeps a method's docstring on the
+  method where the symbol table holds only the class. `documented_spans` marks a construct documented when a `@doc`
+  node sits on the line above it, a doc comment stepping over the lines `@attribute` and
+  plain `@comment` nodes cover, or, for a doc node that is not a `@comment`, when one sits
+  inside it (`doc_targets` reads one node's targets). It also returns the constructs a
+  docstring documented. A docstring documents a name where a doc comment documents one form,
+  so a definition sharing a name with one of those in its file reads as documented.
+  A construct inside an `@inherits_doc` node reads as documented, since its doc
+  tool shows the overridden definition's docs there, and so does a `@constructor` inside a
+  class, whose class carries the finding. `prototype_facts` gathers the corpus-wide reading
+  of the `@prototype` captures, the names a documented prototype declares and the names a
+  header declares, and a definition in a `HEADER_LANGUAGES` file (`resolve.jl`) is documented
+  by the first and API only under the second. `nodoc_lines` and `nodoc_excluded` read the
+  `@nodoc` markers, RDoc's `:nodoc:`, and a definition on a marked line or under a class
+  whose line carries the `all` form is dropped. `cluster_undocumented_public` emits
+  a `:warn` finding per undocumented definition of a `DOCUMENTED_KINDS` kind, suppressible
+  inline. Off by default, gated in `analyze` through `[rules]`. Included after
+  `unreferenced.jl`, whose public surface it reads.
 - `cohesion.jl` defines within-file cohesion. `cluster_low_cohesion` reads the within
   view of the corpus graph, `components(adjacency(graph; within = true), file_nodes)`:
   cross-file edges never join one file's nodes, so the components restricted to a file are
@@ -772,7 +801,7 @@ Reporting:
   `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`, `file_graph.jl`,
   `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
   `incoherent_package.jl`, `divisible_package.jl`, `directory_size.jl`, `unreferenced.jl`,
-  `cohesion.jl`, `hub.jl`, `split_audience.jl`.
+  `undocumented_public.jl`, `cohesion.jl`, `hub.jl`, `split_audience.jl`.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, the clone clusters, and the file graph's
   movement across two revisions into mermaid `flowchart` text, with `:file` and `:unit`
@@ -822,7 +851,12 @@ whose name starts with `_` is dropped instead: it anchors a predicate on a node 
 tests but does not report, which is how `self.x` tests the object while capturing the field.
 The suite checks every query's capture names against that set. This is the only
 place a language's concrete grammar leaks in: a construct a language lacks has no
-pattern, so its concept is empty and a rule reading it finds nothing. `QueryIndex`
+pattern, so its concept is empty and a rule reading it finds nothing. Two concepts read
+convention where the others read structure. `@doc` names whatever a language's own readers
+and doc tools take as documentation, a docstring in Python and Julia, `///` in Rust, every
+`//` line in Go. `@attribute` names a declaration modifier written as a sibling above what
+it modifies, which is Rust's `#[...]` alone; every other language nests its annotations
+inside the declaration node. `QueryIndex`
 also carries `bindings`, a `Dict{NodeId, NodeId}` from each reference to the in-file
 definition it resolves to, empty unless `build_index` was given a scopes query.
 

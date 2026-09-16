@@ -22,6 +22,20 @@
 
 [(line_comment) (block_comment)] @comment
 
+; `///` and `/** */` document the item below them, and the grammar marks both with an
+; outer doc marker. `//!` carries an inner marker and documents the module around it; a
+; plain comment carries neither.
+[(line_comment (outer_doc_comment_marker))
+ (block_comment (outer_doc_comment_marker))] @doc
+
+; An attribute is a sibling above the item it modifies, so a doc comment above one sits
+; two or more lines above the definition it documents.
+(attribute_item) @attribute
+
+; rustdoc shows the trait's documentation on every method of a trait impl, so the whole
+; `impl Trait for Type` block is the node. An inherent impl has no `trait` field.
+(impl_item trait: (_)) @inherits_doc
+
 (identifier) @name
 
 (return_expression) @return

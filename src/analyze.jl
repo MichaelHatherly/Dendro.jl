@@ -240,8 +240,10 @@ end
 # measurement, the three directory ones because they name a rearrangement rather than a
 # bounded edit, `:distant_definition` because nothing syntactic separates the declaration
 # order it reads from a defect, and `:divisible_class` because a class with no state to
-# divide reads the same as one whose state has come apart. All stay out of the default set
-# and out of the gate floor.
+# divide reads the same as one whose state has come apart. `:undocumented_public` is gated
+# for a different reason: whether a project documents its public surface is a standard the
+# project sets, and a corpus that has not set it would report on most of its definitions at
+# once. All stay out of the default set and out of the gate floor.
 function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res::CorpusResolution)
     ecut = cfg.cut
     table, linkage = res.table, res.linkage
@@ -261,6 +263,10 @@ function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res:
     )
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
     append!(findings, scope_clusters(cluster_unreferenced(files, table; linkage), scope))
+    append_gated!(
+        findings, cfg, RELATIONAL.undocumented_public, scope,
+        () -> cluster_undocumented_public(files, table, linkage)
+    )
     append!(
         findings,
         scope_clusters(cluster_split_audience(files, table; cut = ecut, band = cfg.split_audience, linkage), scope)

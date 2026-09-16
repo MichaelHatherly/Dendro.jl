@@ -130,7 +130,7 @@ function reach_graph(
     surface = linkage.surface
     for (i, d) in enumerate(table.defs)
         link = get(LINKAGES, file_by_path[d.file].language, nothing)
-        public = link === nothing || link.is_public(d, get(() -> Set{String}(), surface, d.file))::Bool
+        public = link === nothing || def_public(link, d, surface)
         (public || d.external_root) && push!(roots, i)
     end
 

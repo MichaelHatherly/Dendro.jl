@@ -7,7 +7,8 @@ CurrentModule = Dendro
 Readings of the graph of units referencing units: whether a file's functions group by
 usage, whether a class's methods share state, whether a unit sits in the file it belongs
 in, whether a file's units are pulled apart, who outside the file consumes what it
-defines, and whether a private definition is reached at all. The level above, files depending on files, is
+defines, whether a private definition is reached at all, and whether a public one says what
+it does. The level above, files depending on files, is
 [Dependencies and layout](@ref).
 
 ## Within-file cohesion
@@ -304,6 +305,137 @@ callback, a string-dispatched name) carry no syntactic reference, so they are fl
 unless declared public or referenced from top level; accept one with
 `dendro-ignore: unreferenced`. Java resolves a same-package reference through its `:package`
 linkage, so a package-private class with no user in its package is flagged alongside a
-`private` method. A package-private *member* stays public, reached same-package through a
-receiver the resolver does not follow. PHP checks only a `private` method; its classes
-carry no package-private privacy.
+`private` method. A package-private *member* stays a root, reached same-package through a
+receiver the resolver does not follow; it carries the `:package` visibility, which reads as
+public here and only `:undocumented_public` tells apart. A Rust `pub(crate)` item reads the
+same way. PHP checks only a `private` method; its classes carry no package-private privacy.
+
+## Public definitions with no documentation
+
+Reported as `:undocumented_public`: a declared-public top-level definition with no
+documentation against it. A caller outside the corpus can reach the name and has nothing to
+read about what it does. Functions, types and macros are asked after. A constant is not,
+since a language documents a table of constants once at the table.
+
+Documentation is adjacency and never content. Nothing syntactic separates a docstring that
+states a contract from one restating the name above it, so the honest question is whether a
+definition has one at all. A doc node on the line above a definition documents it, and so
+does a docstring inside it. Rust writes `#[...]` as a sibling between the two, so the test
+steps over the lines an attribute covers. A doc comment also reaches across a plain comment
+line, as rustdoc, javadoc and tsc read it; a docstring does not, since Julia's parser pairs
+it with the form directly below and nothing else.
+
+Two more shapes count as documented with no doc node of their own, again because the
+language's doc tool presents them so. An overriding method inherits the overridden one's
+documentation. The marker is what the language writes for an override:
+
+| language | an override is |
+| --- | --- |
+| Java | an `@Override` method |
+| TypeScript | an `override` method |
+| Python | an `@override` or `@typing.override` definition |
+| PHP | a `#[\Override]` method |
+| C++ | an `override` member |
+| Rust | every method of an `impl Trait for` block |
+
+A constructor is documented by its class, whichever way the language spells one
+(`initialize`, `__init__`, `constructor`, `__construct`), so a bare one under an
+undocumented class adds nothing to the finding the class carries.
+
+A docstring documents a name where a doc comment documents a form. Julia's doc system shows
+one docstring on every method of a generic, and Sphinx documents a function once whatever
+its `typing.overload` stubs, so a definition is documented when a same-name definition in
+its file carries a docstring. The sharing stops at the file, and a doc comment shares
+nothing: javadoc is written per overload, and a bare overload beside a documented one is
+still reported.
+
+What counts as a doc node is each language's own convention, read off its query:
+
+| language | documentation is |
+| --- | --- |
+| Julia, Python | the docstring |
+| Rust | `///` and `/** */`, never `//!`, which documents the module |
+| Java, JavaScript, TypeScript, PHP | a comment opening `/**` |
+| Go | every `//` line above the declaration, which is what godoc takes |
+| Ruby | every `#` line above the definition, which is what RDoc takes |
+| C, C++ | every comment above the definition, or above a prototype of its name |
+| Bash | nothing, so a bash file draws no finding |
+
+Go and Ruby take every comment, so a `// TODO` above a function reads as documentation here
+because it reads as documentation to godoc. C and C++ take every comment for the same
+reason: C has no docstring, and curl and redis both document with a plain `/* */` block, so
+no other convention is left to prefer. Only a docstring documents from inside: a comment
+can sit anywhere in a body, and reading containment for one would let an aside in the middle
+of a function answer for the function.
+
+C and C++ declare a name apart from defining it, and curl documents at the prototype in the
+header, so a definition is documented when a prototype of its name anywhere in the corpus
+is. The header is also what makes it API. A non-`static` function no header (`.h`, `.hpp`,
+`.hh`, `.hxx`) declares is file-local in practice whatever its linkage, so a definition is
+asked after only when it sits in a header or a header declares it.
+
+An author can also declare a name out of the documented surface, and the rule reads that
+too. RDoc's `:nodoc:` on a definition's line excludes the definition, and `:nodoc: all` on a
+class line excludes its members along with it; neither is reported.
+
+The public surface is the one `:unreferenced` roots its dead-code search from, narrowed in
+two places. A package-private definition, a Java method with no modifier or a Rust
+`pub(crate)` or `pub(super)` item, is reachable within its package and outside the API a
+caller beyond it reads, so `:unreferenced` keeps it as a root and this rule leaves it out.
+And a language with no linkage entry reads as private here and public there. For
+`:unreferenced` an unknown visibility read as private would hide dead code. Here it would
+put a finding on every definition of a language whose public surface Dendro cannot read.
+
+The rule ships off. A project opts in through a `.dendro.toml`:
+
+```toml
+[rules]
+undocumented_public = true
+```
+
+Whether to do that is a project's own call, and the measurement is why the default is off.
+Across fourteen corpora in ten languages the undocumented share of the public surface runs
+from 6.7% in ripgrep to 93.8% in curl, five of them above half:
+
+| corpus | language | public | undocumented |
+| --- | --- | ---: | ---: |
+| ripgrep | rust | 240 | 16 (6.7%) |
+| fastmcp | python | 651 | 47 (7.2%) |
+| laravel-framework | php | 14851 | 1063 (7.2%) |
+| CommonMark.jl | julia | 107 | 16 (15.0%) |
+| requests | python | 125 | 19 (15.2%) |
+| flask | python | 100 | 22 (22.0%) |
+| typescript-sdk | typescript | 97 | 23 (23.7%) |
+| Dendro.jl | julia | 16 | 4 (25.0%) |
+| go-sdk | go | 495 | 247 (49.9%) |
+| HTTP.jl | julia | 54 | 28 (51.9%) |
+| guava | java | 10124 | 6149 (60.7%) |
+| rails | ruby | 4015 | 2679 (66.7%) |
+| DataFrames.jl | julia | 192 | 136 (70.8%) |
+| curl | c | 3768 | 3534 (93.8%) |
+
+That spread is not a quality ordering. It is what each community documents and where. curl
+documents in its headers and its manual, so its `.c` files read bare. Reading a plain
+comment block takes `curl/lib` from 1491 to 1058 and `redis/src` from 3759 to 1146. The
+prototype and the header gate take them to 442 and 707. Java inherits a javadoc
+on every overriding method, and 5169 of guava's findings carried `@Override`. Another 1701 sat
+on package-private members, the case the `:package` visibility leaves out, so with that
+reading guava reports 4448 and tokio, which marks nearly everything `pub(crate)`, 5 of the
+226 it reported before. Reading inherited documentation takes guava to 239 and gson from 303
+to 44; the constructor reading takes activesupport from 964 to 860 and rack from 350 to 303,
+and the comment step takes tokio to 1. Reading `:nodoc:` takes activesupport on to 667. Julia attaches
+one docstring to a generic, so the other methods of a documented function read bare. Those
+were most of DataFrames.jl's 136, and sharing a docstring across a file's same-name
+definitions takes `Documenter.jl/src` from 21 to 0, `Pkg.jl/src` from 161 to 141 and
+`JuliaSyntax.jl/src` from 16 to 8. Hand reading twenty of flask's findings found seven genuine; the
+rest were `typing.overload` stubs, `TYPE_CHECKING` shims and a class inheriting its
+documentation from a base.
+
+So turn it on where the project's convention is a docstring on every public definition, and
+expect little from it where the convention is something else. Accept one finding with
+`dendro-ignore: undocumented_public`.
+
+This shares no ground with `comment_density`, and the reason is structural. A docstring is a
+string and never a comment. A doc comment sits outside the definition span, where the
+per-unit fold never reaches. A project documenting entirely in docstrings scores both at
+zero.

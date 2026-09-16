@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in corpus finding `:undocumented_public`: a declared-public function, type or macro
+  with no documentation against it, reported at `:warn`. Documentation is adjacency and
+  never content, so a doc node on the line above a definition documents it, and so does a
+  docstring inside it. Each language is taken at its own word. Python and Julia use the
+  docstring; Rust uses `///` and `/** */`; javadoc and its cousins cover the rest. Go takes
+  every `//` line and Ruby every `#` line, the way godoc and RDoc do, and bash has no
+  documentation form at all. A constant is not asked after,
+  since a language documents a table of constants once at the table. It ships off because
+  the undocumented share of the public surface runs from 6.7% to 93.8% over fourteen
+  corpora, which is what each community documents and where. `[rules]
+  undocumented_public = true` enables it.
 - Corpus finding `:member_count`: how many definitions a class declares, reported at the
   declaration line with the class name. Constructors count here, where `:divisible_class`
   drops them, since a class with fifteen constructors is what a count is for. One location

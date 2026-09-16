@@ -27,6 +27,106 @@ end
     @test Set(strip(TreeSitter.slice(i.source, n)) for n in i.short_circuit.nodes) == Set(["and", "or"])
 end
 
+@testitem "@doc tags each language's documentation form" setup = [Fixtures] tags = [:query_index] begin
+    using TreeSitter
+
+    # One documented definition per language, written the way that language's readers and
+    # doc tools expect. What the query has to get right is which node carries the
+    # documentation; `:undocumented_public` reads adjacency from there.
+    cases = [
+        (:julia, "\"\"\"\nDocs.\n\"\"\"\nf() = 1\n"),
+        (:python, "def f():\n    \"\"\"Docs.\"\"\"\n    return 1\n"),
+        (:rust, "/// Docs.\npub fn f() {}\n"),
+        (:java, "class C {\n    /** Docs. */\n    int f() { return 1; }\n}\n"),
+        (:javascript, "/** Docs. */\nfunction f() { return 1; }\n"),
+        (:typescript, "/** Docs. */\nfunction f(): number { return 1; }\n"),
+        (:c, "/** Docs. */\nint f(void) { return 1; }\n"),
+        (:cpp, "/** Docs. */\nint f() { return 1; }\n"),
+        (:php, "<?php\n/** Docs. */\nfunction f() { return 1; }\n"),
+        (:go, "package p\n\n// Docs.\nfunc F() int { return 1 }\n"),
+        (:ruby, "# Docs.\ndef f\n  1\nend\n"),
+    ]
+    @testset "$lang" for (lang, src) in cases
+        i = Fixtures.idx(lang, src)
+        @test length(i.doc.nodes) == 1
+        @test occursin("Docs.", TreeSitter.slice(i.source, only(i.doc.nodes)))
+    end
+end
+
+@testitem "@doc leaves a comment that documents something else" setup = [Fixtures] tags = [:query_index] begin
+    # Rust's `//!` documents the module around it and a plain comment documents nothing,
+    # so neither is a definition's documentation. Python's docstring is the first string
+    # in the body, so a comment above the `def` is not one. Java's `/* */` is not javadoc.
+    @test isempty(Fixtures.idx(:rust, "//! Module docs.\n/* Aside. */\npub fn f() {}\n").doc.nodes)
+    @test isempty(Fixtures.idx(:python, "# Aside.\ndef f():\n    return 1\n").doc.nodes)
+    @test isempty(Fixtures.idx(:java, "class C {\n    /* Aside. */\n    int f() { return 1; }\n}\n").doc.nodes)
+end
+
+@testitem "@doc is silent for a language with no documentation form (bash)" setup = [Fixtures] tags = [:query_index] begin
+    # Bash has no documentation convention a parser can read, so the query tags nothing
+    # and the rule says nothing about a bash corpus.
+    @test isempty(Fixtures.idx(:bash, "# Aside.\nf() {\n  echo hi\n}\n").doc.nodes)
+end
+
+@testitem "@attribute tags the rust items a doc comment sits above" setup = [Fixtures] tags = [:query_index] begin
+    # Rust writes `#[...]` as a sibling above the item, so a doc comment above an
+    # attribute is not on the line before the definition. Every other language Dendro
+    # reads puts its attributes inside the declaration node, and tags none here.
+    i = Fixtures.idx(:rust, "/// Docs.\n#[inline]\npub fn f() {}\n")
+    @test length(i.attribute.nodes) == 1
+    @test isempty(Fixtures.idx(:php, "<?php\n#[Attr]\nfunction f() {}\n").attribute.nodes)
+    @test isempty(Fixtures.idx(:java, "class C {\n    @Override\n    int f() { return 1; }\n}\n").attribute.nodes)
+end
+
+@testitem "@inherits_doc tags the definition an override marker covers" setup = [Fixtures] tags = [:query_index] begin
+    using TreeSitter
+
+    # The capture is the node holding the overriding definition, so the definition sits
+    # inside it: the marked method in Java, TypeScript, C++ and PHP, the decorated
+    # definition in Python, and the whole trait impl in Rust, where rustdoc shows the
+    # trait's docs on every method of it. A plain method, decorator, or inherent impl
+    # carries no such node.
+    cases = [
+        (:java, "class C {\n    @Override\n    int f() { return 1; }\n    @Deprecated\n    int g() { return 1; }\n}\n"),
+        (:typescript, "class C extends B {\n    override f(): number { return 1; }\n    g(): number { return 1; }\n}\n"),
+        (:cpp, "struct C : B {\n    int f() override { return 1; }\n    int g() { return 1; }\n};\n"),
+        (:php, "<?php\nclass C extends B {\n    #[\\Override]\n    function f() { return 1; }\n    #[Pure]\n    function g() { return 1; }\n}\n"),
+        (:python, "class C(B):\n    @override\n    def f(self):\n        return 1\n    @cached\n    def g(self):\n        return 1\n"),
+        (:rust, "impl Trait for T {\n    fn f(&self) {}\n}\nimpl T {\n    fn g(&self) {}\n}\n"),
+    ]
+    @testset "$lang" for (lang, src) in cases
+        i = Fixtures.idx(lang, src)
+        @test length(i.inherits_doc.nodes) == 1
+        text = TreeSitter.slice(i.source, only(i.inherits_doc.nodes))
+        @test occursin("f(", text)
+        @test !occursin("g(", text)
+    end
+end
+
+@testitem "@prototype tags a function declaration and never a definition" setup = [Fixtures] tags = [:query_index] begin
+    # The capture is the declaration node, named through its declarator the way a
+    # definition is, so a pointer return wrapping the declarator does not hide the name. A
+    # definition and a variable initialised by a call are not prototypes.
+    cases = [
+        (:c, "int f(void);\nchar *g(int x);\nint h(void) { return 1; }\nint x = f();\n"),
+        (:cpp, "int f();\nchar *g(int x);\nint h() { return 1; }\nint x = f();\n"),
+    ]
+    @testset "$lang" for (lang, src) in cases
+        i = Fixtures.idx(lang, src)
+        @test [Dendro.unit_name(n, i) for n in i.prototype.nodes] == ["f", "g"]
+        @test [Dendro.line_of(n) for n in i.prototype.nodes] == [1, 2]
+    end
+    @test isempty(Fixtures.idx(:go, "package p\n\nfunc F() int { return 1 }\n").prototype.nodes)
+end
+
+@testitem "@nodoc tags an RDoc :nodoc: marker" setup = [Fixtures] tags = [:query_index] begin
+    # The marker is a comment carrying `:nodoc:`, on a class line or a definition's. A plain
+    # comment is not one, and no other language has the marker.
+    i = Fixtures.idx(:ruby, "class C # :nodoc: all\n  # Docs.\n  def f # :nodoc:\n    1\n  end\nend\n")
+    @test [Dendro.line_of(n) for n in i.nodoc.nodes] == [1, 3]
+    @test isempty(Fixtures.idx(:python, "# :nodoc:\ndef f():\n    return 1\n").nodoc.nodes)
+end
+
 @testitem "every capture name reaches its own QueryIndex field" tags = [:query_index] begin
     using Dendro: CONCEPT_NAMES, QueryIndex
 

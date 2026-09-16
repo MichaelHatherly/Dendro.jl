@@ -30,6 +30,11 @@
 
 (comment) @comment
 
+; godoc takes whatever `//` lines precede a declaration, so every one of them is
+; documentation. A `// TODO` above a function reads as documentation here because it
+; reads as documentation to godoc.
+((comment) @doc (#match? @doc "^//"))
+
 (identifier) @name
 
 ; Name a unit by its defining name, not the first identifier the lexical scan

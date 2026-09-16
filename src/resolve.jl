@@ -39,6 +39,18 @@ const EXTENSIONS = Dict{String, Symbol}(
     "tsx" => :typescript,
 )
 
+# The extensions a header carries. The languages these resolve to declare a name apart from
+# defining it, and there `:undocumented_public` reads a definition as API only when a header
+# declares it: a non-`static` function no header declares is file-local in practice
+# whatever its linkage.
+const HEADER_EXTENSIONS = Set{String}(["h", "hpp", "hh", "hxx"])
+const HEADER_LANGUAGES = Set{Symbol}(EXTENSIONS[ext] for ext in HEADER_EXTENSIONS)
+
+# A path's extension, lowercased and without its dot.
+path_extension(path::AbstractString) = lstrip(lowercase(last(splitext(path))), '.')
+
+is_header(path::AbstractString) = path_extension(path) in HEADER_EXTENSIONS
+
 """
     extension_map(profiles) -> Dict{String, Symbol}
 
@@ -69,10 +81,8 @@ unrecognised. `extensions` is an [`extension_map`](@ref) of the scan's registry,
 language registered in a `.dendro.toml` claims its own file types; it defaults to the
 built-in table, the languages Dendro ships.
 """
-function language_for_path(path::AbstractString, extensions::Dict{String, Symbol} = EXTENSIONS)
-    ext = lstrip(lowercase(last(splitext(path))), '.')
-    return get(extensions, ext, nothing)
-end
+language_for_path(path::AbstractString, extensions::Dict{String, Symbol} = EXTENSIONS) =
+    get(extensions, path_extension(path), nothing)
 
 """
     profile_for(name::Symbol) -> LanguageProfile

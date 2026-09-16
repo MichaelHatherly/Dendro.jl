@@ -41,6 +41,17 @@
 
 (comment) @comment
 
+; A docstring is the first statement of a body, and documents the definition that body
+; belongs to. A comment above the `def` is not one, whatever it says.
+(function_definition body: (block . (expression_statement (string) @doc)))
+(class_definition body: (block . (expression_statement (string) @doc)))
+
+; A method decorated `@override` or `@typing.override` inherits the overridden method's
+; docstring, which is what Sphinx and readers show for one with none of its own. The
+; decorator is a sibling of the `def` inside the decorated definition, so that is the node.
+((decorated_definition (decorator [(identifier) @_n (attribute attribute: (identifier) @_n)]))
+  @inherits_doc (#eq? @_n "override"))
+
 (identifier) @name
 
 (pass_statement) @trivial_body

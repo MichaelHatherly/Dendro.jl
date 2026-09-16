@@ -30,6 +30,14 @@
 
 [(line_comment) (block_comment)] @comment
 
+; Javadoc opens with `/**`. An ordinary block comment is an aside, not documentation.
+((block_comment) @doc (#match? @doc "^/\\*\\*"))
+
+; javadoc shows the overridden method's documentation on an `@Override` method with none
+; of its own, so the method inherits its docs. `@_n` anchors the name test.
+((method_declaration (modifiers (marker_annotation name: (identifier) @_n))) @inherits_doc
+  (#eq? @_n "Override"))
+
 (identifier) @name
 
 ; Name a unit by its declared name, not the first identifier the lexical scan

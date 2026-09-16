@@ -377,6 +377,19 @@ signature list and so names a bundler in its first lines. Answer a request to ma
 filter read syntax with that config key: the file it would parse is the file it has decided
 not to read.
 
+Documentation is adjacency, never content. `:undocumented_public` asks whether a
+declared-public definition has a doc node against it and never what the node says, because
+nothing syntactic separates a docstring stating a contract from one restating the name above
+it. The `@doc` capture takes each language at its own word: a docstring in Python and Julia,
+`///` in Rust, every `//` line in Go because that is what godoc takes. A language with no
+`LINKAGES` entry reads as private here, the inverse of `:unreferenced`'s default. For
+`:unreferenced` an unknown visibility read as private would hide dead code. Here it would
+put a finding on every definition of a surface Dendro cannot read, and silence is the safe
+failure when the subject is what a project chose to declare. The measurement carries the rest. Over fourteen
+corpora the undocumented share of the public surface runs from 6.7% to 93.8%, which is what
+each community documents and where, so the rule ships off, reports at `:warn`, and never
+reaches the gate.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment

@@ -52,6 +52,16 @@
 
 (comment) @comment
 
+; C++ has no docstring and most C++ is not Doxygen, so every comment is documentation, the
+; reading C and Go get for the same reason.
+(comment) @doc
+
+; Doxygen reuses the base member's documentation on an overriding member with none of its
+; own, and `override` is the marker a parser can read. `final` alone may be the first
+; declaration, so it is not one.
+((function_definition declarator: (function_declarator (virtual_specifier) @_v)) @inherits_doc
+  (#eq? @_v "override"))
+
 (identifier) @name
 
 ; Name a unit by the name in its declarator, not the first identifier the lexical
@@ -63,6 +73,15 @@
 (function_declarator declarator: (qualified_identifier name: (identifier) @def_name))
 (function_declarator declarator: (destructor_name) @def_name)
 (function_declarator declarator: (operator_name) @def_name)
+
+; A prototype: the declaration of a function defined elsewhere, through up to two
+; pointer levels of return type. Documentation against one documents the definition it
+; declares, and a header holding one is what makes that definition API.
+(declaration declarator: [
+  (function_declarator)
+  (pointer_declarator declarator: (function_declarator))
+  (pointer_declarator declarator: (pointer_declarator declarator: (function_declarator)))
+]) @prototype
 
 (return_statement) @return
 

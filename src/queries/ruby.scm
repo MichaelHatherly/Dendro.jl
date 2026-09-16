@@ -41,6 +41,14 @@
 
 (comment) @comment
 
+; RDoc takes whatever `#` lines precede a definition, so every comment is documentation,
+; the same reading Go gets for the same reason.
+(comment) @doc
+
+; RDoc's `:nodoc:` declares the definition on its line out of the documented surface, and
+; `:nodoc: all` on a class line covers the members too.
+((comment) @nodoc (#match? @nodoc ":nodoc:"))
+
 (identifier) @name
 
 (return) @return

@@ -36,6 +36,12 @@
 
 (comment) @comment
 
+; TSDoc opens with `/**`. An ordinary comment is an aside, not documentation.
+((comment) @doc (#match? @doc "^/\\*\\*"))
+
+; An `override` method inherits the overridden method's documentation.
+(method_definition (override_modifier)) @inherits_doc
+
 (identifier) @name
 
 ; Name a unit by its defining name, not the first identifier the lexical scan

@@ -180,7 +180,7 @@ scalar_metric_names(acc) = union(
 const TOGGLEABLE_RELATIONAL = (
     :reimplementation, :incoherent_package, :divisible_package, :child_count,
     :distant_definition, :divisible_class,
-    :library_duplicate, :library_near_duplicate,
+    :library_duplicate, :library_near_duplicate, :undocumented_public,
 )
 
 # Every rule name a `[rules]` key may toggle: built-in or optional, of either kind, the

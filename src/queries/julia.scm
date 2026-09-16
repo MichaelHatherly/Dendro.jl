@@ -136,6 +136,12 @@
 
 [(line_comment) (block_comment)] @comment
 
+; A docstring is the string literal written above a definition, its sibling at file or
+; module scope. Anchoring to those two containers keeps a string inside a function body,
+; which documents nothing, out of the capture.
+[(source_file (string_literal) @doc)
+ (module_definition (block (string_literal) @doc))]
+
 (identifier) @name
 
 (return_statement) @return

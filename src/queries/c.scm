@@ -27,6 +27,11 @@
 
 (comment) @comment
 
+; C has no docstring and most C is not Doxygen: curl and redis document with a plain
+; `/* */` block above the definition, so every comment is documentation, the same reading
+; Go gets for the same reason.
+(comment) @doc
+
 (identifier) @name
 
 ; Name a unit by the identifier in its declarator, not the first identifier the
@@ -34,6 +39,15 @@
 ; pattern matches the function_declarator at any depth, so pointer- and
 ; parenthesized-return wrappers around it do not hide the name.
 (function_declarator declarator: (identifier) @def_name)
+
+; A prototype: the declaration of a function defined elsewhere, through up to two
+; pointer levels of return type. curl documents at the prototype in the header, and a
+; header holding one is what makes the definition API.
+(declaration declarator: [
+  (function_declarator)
+  (pointer_declarator declarator: (function_declarator))
+  (pointer_declarator declarator: (pointer_declarator declarator: (function_declarator)))
+]) @prototype
 
 (return_statement) @return
 
