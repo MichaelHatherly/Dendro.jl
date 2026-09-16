@@ -12,7 +12,7 @@
 ; A rule of dashes and nothing else. A banner carrying a title is a heading and is left
 ; alone; this names the decoration with no content in it. A shebang is not a banner: `#!`
 ; opens with a character no rule of dashes contains.
-((comment) @banner_comment (#match? @banner_comment "^#[ \t]*[-=*_~#]{8,}[ \t]*$"))
+((comment) @banner_comment (#match? @banner_comment "^#[ \t]*[-=*_~#]{8,}[ \t\r]*$"))
 
 ; An `elif` testing what an earlier branch already tested. The earlier branch takes every
 ; value that reaches the later one, so the later body never runs and one of the two

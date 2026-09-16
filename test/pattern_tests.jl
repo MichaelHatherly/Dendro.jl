@@ -235,3 +235,27 @@ end
         end
     end
 end
+
+@testitem "the shipped fixtures pin the shipped queries under CRLF" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: check_patterns
+
+    # A Windows checkout turns every line ending into CRLF, and a line comment's node keeps
+    # the carriage return, so a regex anchored at `$` misses it unless it says so. Line
+    # endings are the only difference from the item above.
+    shipped = joinpath(pkgdir(Dendro), "test", "patterns")
+    _, srcdir = Fixtures.gitrepo()
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+    mktempdir() do dir
+        fixtures = joinpath(dir, "patterns")
+        cp(shipped, fixtures)
+        for (root, _, files) in walkdir(joinpath(fixtures, "tests")), f in files
+            path = joinpath(root, f)
+            write(path, replace(read(path, String), "\n" => "\r\n"))
+        end
+        withenv("XDG_CONFIG_HOME" => joinpath(dir, "xdg")) do
+            failures = check_patterns(srcdir; fixtures = [fixtures])
+            isempty(failures) || foreach(f -> println(stdout, f), failures)
+            @test isempty(failures)
+        end
+    end
+end

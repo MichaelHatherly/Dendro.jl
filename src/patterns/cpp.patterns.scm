@@ -12,7 +12,7 @@
 
 ; A rule of dashes and nothing else. A banner carrying a title is a heading and is left
 ; alone; this names the decoration with no content in it.
-((comment) @banner_comment (#match? @banner_comment "^//[ \t]*[-=*_~#]{8,}[ \t]*$"))
+((comment) @banner_comment (#match? @banner_comment "^//[ \t]*[-=*_~#]{8,}[ \t\r]*$"))
 
 ; Each branch returns a boolean literal, so the test is being written out a second time.
 ; `return c` is the whole of it.
