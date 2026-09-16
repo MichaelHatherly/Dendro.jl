@@ -82,6 +82,12 @@ The three cross-corpus keys live in the same table, since they are clone thresho
 the values they were measured at under
 [Duplication against a library](@ref).
 
+## Report
+
+The `[report]` table owns `base_summary`, which defaults to `true`. Set
+`base_summary = false` to skip scoring the base corpus while retaining the current scores
+and line delta. The text report then omits the base comparison columns.
+
 ## Tables owned by a feature
 
 Four tables are the configuration surface of one feature each, and each is documented

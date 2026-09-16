@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `[report] base_summary` config key for skipping the base corpus score pass when its
+  cost outweighs the comparison. It defaults to `true`; disabling it retains the current
+  scores and line delta while omitting the base comparison columns.
 - Two corpus summary scores on every report, `erosion` and `verbosity`, after
   SlopCodeBench. Erosion is the share of callable weight sitting in definitions past
   cyclomatic 10, weight being complexity times the square root of length. Verbosity is the

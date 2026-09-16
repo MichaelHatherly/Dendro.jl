@@ -142,6 +142,8 @@ out on its extension, which is also what keeps a vendored asset out of the count
 Scoring the base costs a second pass over the base tree, roughly half again the time of a
 `--base` scan. That pass rebuilds only what the two ratios read: the corpus, its parse, and
 the two clone passes.
+On a large corpus, set `[report] base_summary = false` when that cost outweighs the base
+comparison; the current scores and line delta remain.
 
 ### What the numbers are not
 

@@ -363,13 +363,24 @@
 # `Float64(cut)::Float64` on each of the four thresholds added three, since each assertion
 # is itself a counted report, and was reverted. No call-site annotation reaches the
 # kwsorter, so the two that remain are the price of the keyword form.
+#
+# The `[report] base_summary` key dropped sound from 1414 to 1403 and opt from 33 to 32.
+# Untyped it first measured 1428 and opt 34. One `[report]` applier of its own would have
+# cost the fourteen reports each `for (key, value) in table` walk carries, so the two
+# single-setting tables share `apply_scalar_key`, which reads the inner key, the field and
+# the coercion from `SCALAR_TABLES`. That left three narrowings to measure. Typing the
+# table's value tuple and the applier's parameters took sound to 1407: `setting::String`
+# turns the key comparison into a `String` match and `coerce::F` binds the coercion call.
+# Asserting the merged overrides at their own type, `::S`, took sound to 1403 and opt to
+# 32, since a field read from a table leaves the merged tuple abstract, and the widened
+# `scalars` then made `discover_config`'s two later `apply_toml!` calls runtime dispatches.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1414  # JET.report_package(Dendro; mode = :sound).
-const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
+const SOUND_LIMIT = 1403  # JET.report_package(Dendro; mode = :sound).
+const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin
     JET.test_package(Dendro; target_modules = (Dendro,), mode = :basic)

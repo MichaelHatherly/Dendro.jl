@@ -76,6 +76,32 @@ end
     @test cfg.ignore == ["vendor/"]
     @test cfg.misplaced == MISPLACED_BAND   # a field left unnamed keeps its default
     @test isempty(cfg.bands)
+    @test Set(fieldnames(Config)) == Set(
+        [
+            :cut, :bands, :unnatural, :low_cohesion, :divisible_class, :scattered,
+            :split_audience, :misplaced, :distant_definition, :back_edge,
+            :dependency_cycle, :hub, :incoherent_package, :divisible_package, :rules,
+            :min_size, :threshold, :radius_factor, :reimpl_threshold, :library_threshold,
+            :library_gate_coverage, :library_anchor_grain, :languages, :patterns,
+            :patterns_dir, :libraries, :ignore, :base_summary,
+        ]
+    )
+end
+
+@testitem "report config controls base summaries" setup = [Fixtures] tags = [:config] begin
+    using Dendro: discover_config
+
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        @test discover_config([dir]; use_files = false).base_summary
+
+        write(f, "[report]\nbase_summary = false\n")
+        cfg = Fixtures.isolated_config(dir, f)
+        @test !cfg.base_summary
+
+        write(f, "[report]\nunknown = false\n")
+        @test_logs (:warn,) Fixtures.isolated_config(dir, f)
+    end
 end
 
 @testitem "each relational band reaches its own Config field" tags = [:config] begin

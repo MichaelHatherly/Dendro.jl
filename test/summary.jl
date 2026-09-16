@@ -165,6 +165,24 @@ end
     @test occursin("(base 0.00, +", text)
 end
 
+@testitem "base summary scoring can be disabled" tags = [:summary] setup = [Fixtures] begin
+    root, src = Fixtures.gitrepo()
+    write(joinpath(src, "a.jl"), "f(x) = x\n")
+    Fixtures.commit!(root, "init")
+    write(joinpath(src, "a.jl"), "f(x) = x\ng(x) = x\n")
+
+    skipped = Dendro.analyze(
+        src; base = "HEAD", config = Dendro.Config(; base_summary = false)
+    ).summary
+    @test skipped.base == Dendro.CorpusScores()
+    @test skipped.now.lines == 2
+    @test skipped.now.callables == 2
+    @test skipped.delta == Dendro.LineDelta(1, 0)
+
+    measured = Dendro.analyze(src; base = "HEAD").summary
+    @test measured.base.lines == 1
+end
+
 # The delta counts the paths the scan would have parsed, not the paths it did: a file the
 # change deleted is in no corpus, and a net count has to go negative on a deletion.
 @testitem "the line delta counts the source a scan would have read" tags = [:summary] setup = [Fixtures] begin

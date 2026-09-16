@@ -59,7 +59,8 @@ are the cross-corpus duplication thresholds and `library_anchor_grain` widens th
 to compare blocks as well as whole functions; `libraries` holds the reference corpora a
 `[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name; and
 `ignore` holds gitignore-style patterns dropping paths from the scan, which
-[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces.
+[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces; `base_summary`
+controls whether a scan with a base ref scores that revision for comparison.
 Every field is a keyword taking that field's type and defaulting to its built-in, so
 `Config(; misplaced = (40, 60))` retunes one band and keeps the rest. Immutable: pass one
 to [`analyze`](@ref) with `config =` to skip file discovery.
@@ -92,6 +93,7 @@ struct Config
     patterns_dir::String
     libraries::Vector{Library}
     ignore::Vector{String}
+    base_summary::Bool
 
     # Built by keyword, never positionally. Twelve fields in a row are `Tuple{Int, Int}`
     # bands, so a positional call admits an argument list that compiles, typechecks, and
@@ -127,12 +129,13 @@ struct Config
         patterns_dir::String = "",
         libraries::Vector{Library} = Library[],
         ignore::Vector{String} = String[],
+        base_summary::Bool = true,
     ) = new(
         cut, bands, unnatural, low_cohesion, divisible_class, scattered, split_audience,
         misplaced, distant_definition, back_edge, dependency_cycle, hub,
         incoherent_package, divisible_package, rules, min_size, threshold, radius_factor,
         reimpl_threshold, library_threshold, library_gate_coverage, library_anchor_grain,
-        languages, patterns, patterns_dir, libraries, ignore,
+        languages, patterns, patterns_dir, libraries, ignore, base_summary,
     )
 end
 
@@ -314,6 +317,25 @@ function apply_clones(scalars, table, source)
     return scalars
 end
 
+# Apply a table holding one scalar setting: `setting` lands in `field` of the scalar
+# overrides through `coerce`, any other key in the `name` table warns.
+function apply_scalar_key(
+        scalars::S, table::Dict{String, Any}, source,
+        name::String, setting::String, field::Symbol, coerce::F
+    ) where {S, F}
+    for (key, value) in table
+        if key == setting
+            # `field` and `coerce` come from a table, so the merge is abstract where every
+            # other applier's is concrete. The assertion holds because a scalar table only
+            # ever sets a default the overrides already carry, at that default's type.
+            scalars = merge(scalars, NamedTuple{(field,)}((coerce(value, key, source),)))::S
+        else
+            @warn "Dendro: unknown $name key in $source, ignored" key
+        end
+    end
+    return scalars
+end
+
 # Coerce a TOML array of strings, the shape a library's `paths` and `ignore` take and the
 # raw form an extension list is read from.
 function string_list(value, key, source)::Vector{String}
@@ -440,19 +462,6 @@ end
 # through a named wrapper each: the wrappers would differ only in two arguments, which is
 # a forwarding pair rather than two ideas.
 
-# Apply a `[reimplementation]` table: the overlap `threshold` a candidate pair must
-# reach, anything else warns.
-function apply_reimplementation(scalars, table, source)
-    for (key, value) in table
-        if key == "threshold"
-            scalars = merge(scalars, (reimpl_threshold = config_float(value, key, source),))
-        else
-            @warn "Dendro: unknown reimplementation key in $source, ignored" key
-        end
-    end
-    return scalars
-end
-
 # Overlay one parsed TOML table onto the accumulating overrides, returning the scalar
 # settings (`cut` and the clone thresholds) it leaves. Only the keys present are
 # touched; an unknown top-level key warns rather than failing, so a file written for a
@@ -463,7 +472,7 @@ end
 # Dict, whose iteration order is arbitrary, so relying on file order would make a config
 # apply differently run to run.
 const CONFIG_KEY_ORDER = (
-    "patterns", "languages", "libraries", "cut", "clones", "reimplementation",
+    "patterns", "languages", "libraries", "cut", "clones", "reimplementation", "report",
     "patterns_dir", "ignore", "bands", "rules",
 )
 
@@ -478,14 +487,25 @@ function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
     return scalars
 end
 
+# Tables holding one scalar setting each: the key inside the table, the field of the
+# scalar overrides it lands in, and the coercion that reads it. `[reimplementation]` sets
+# the overlap `threshold` a candidate pair must reach; `[report]` sets whether a
+# base-scoped scan scores the base corpus for the comparison columns.
+const SCALAR_TABLES = Dict{String, Tuple{String, Symbol, Function}}(
+    "reimplementation" => ("threshold", :reimpl_threshold, config_float),
+    "report" => ("base_summary", :base_summary, config_bool),
+)
+
 # Apply one known top-level key, returning the scalar settings it leaves.
 function apply_key!(acc, scalars, key, value, source)
     if key == "cut"
         scalars = merge(scalars, (cut = config_float(value, key, source),))
     elseif key == "clones"
         scalars = apply_clones(scalars, config_table(value, key, source), source)
-    elseif key == "reimplementation"
-        scalars = apply_reimplementation(scalars, config_table(value, key, source), source)
+    elseif haskey(SCALAR_TABLES, key)
+        setting, field, coerce = SCALAR_TABLES[key]
+        table = config_table(value, key, source)
+        scalars = apply_scalar_key(scalars, table, source, key, setting, field, coerce)
     elseif key == "bands"
         apply_bands!(acc, config_table(value, key, source), source)
     elseif key == "rules"
@@ -572,6 +592,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         library_anchor_grain = false,
         patterns_dir = "",
         ignore = String[],
+        base_summary = true,
     )
     builtin = builtin_patterns_file()
     scalars = apply_toml!(acc, scalars, TOML.parsefile(builtin), builtin)
@@ -608,6 +629,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         patterns_dir = scalars.patterns_dir,
         libraries = sort!(collect(values(acc.libraries)); by = l -> l.name),
         ignore = scalars.ignore,
+        base_summary = scalars.base_summary,
     )
 end
 
@@ -655,5 +677,6 @@ function override_config(
         patterns_dir = config.patterns_dir,
         libraries = libraries === nothing ? config.libraries : as_libraries(libraries),
         ignore = config.ignore,
+        base_summary = config.base_summary,
     )
 end

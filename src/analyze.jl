@@ -367,7 +367,8 @@ function analyze(
     diff = base === nothing ? DiffSummary() : diff_summary(root, base)
     scope = base === nothing ? nothing : Scope(root, diff.ranges, files)
     delta = base === nothing ? LineDelta() : scan_delta(diff, root, roots, excluded, profiles)
-    was = base === nothing ? CorpusScores() : base_scores(roots, base, root, cfg, language, excluded)
+    was = base === nothing || !cfg.base_summary ?
+        CorpusScores() : base_scores(roots, base, root, cfg, language, excluded)
 
     findings = parallel_flatmap(length(files), Finding) do i
         f = files[i]
