@@ -134,3 +134,104 @@ end
         end
     end
 end
+
+@testitem "fixtures can live apart from the queries" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: check_patterns
+
+    root, srcdir = Fixtures.gitrepo()
+    pdir = joinpath(root, ".dendro", "patterns")
+    mkpath(pdir)
+    write(joinpath(pdir, "julia.patterns.scm"), "(while_statement) @loop_rule\n")
+    write(joinpath(root, ".dendro.toml"), "[patterns.loop_rule]\nmessage = \"m\"\n")
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+
+    elsewhere = joinpath(root, "fixtures")
+    mkpath(joinpath(elsewhere, "tests"))
+    # Deliberately wrong, so a pass would mean the fixture was never read.
+    write(
+        joinpath(elsewhere, "tests", "julia.jl"), """
+        function ok(x)
+            while x
+            end
+            for i in x  # dendro-expect: loop_rule
+            end
+        end
+        """
+    )
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            @test isempty(check_patterns(srcdir))
+            fails = check_patterns(srcdir; fixtures = [elsewhere])
+            # The query still comes from the pattern dir; only the fixture moved.
+            @test Set((f.line, f.kind) for f in fails) == Set([(2, :unexpected), (4, :missed)])
+        end
+    end
+end
+
+@testitem "a marker on its own line describes the line under it" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: check_patterns
+
+    root, srcdir = Fixtures.gitrepo()
+    pdir = joinpath(root, ".dendro", "patterns")
+    mkpath(joinpath(pdir, "tests"))
+    # A rule whose match is itself a comment. A comment carries no trailing comment, so
+    # the marker has nowhere to sit but the line above.
+    write(joinpath(pdir, "julia.patterns.scm"), "((line_comment) @rule_of_dashes (#match? @rule_of_dashes \"^#-{4,}\$\"))\n")
+    write(joinpath(root, ".dendro.toml"), "[patterns.rule_of_dashes]\nmessage = \"m\"\n")
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+    write(
+        joinpath(pdir, "tests", "julia.jl"), """
+        # dendro-expect: rule_of_dashes
+        #-----
+        # a heading keeps its text
+        """
+    )
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            @test isempty(check_patterns(srcdir; fixtures = [pdir]))
+        end
+    end
+end
+
+@testitem "a trailing marker still describes its own line" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: check_patterns
+
+    root, srcdir = Fixtures.gitrepo()
+    pdir = joinpath(root, ".dendro", "patterns")
+    mkpath(joinpath(pdir, "tests"))
+    write(joinpath(pdir, "julia.patterns.scm"), "(while_statement) @loop_rule\n")
+    write(joinpath(root, ".dendro.toml"), "[patterns.loop_rule]\nmessage = \"m\"\n")
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+    write(
+        joinpath(pdir, "tests", "julia.jl"), """
+        function ok(x)
+            while x    # dendro-expect: loop_rule
+                g()
+            end
+        end
+        """
+    )
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            @test isempty(check_patterns(srcdir; fixtures = [pdir]))
+        end
+    end
+end
+
+@testitem "the shipped fixtures pin the shipped queries" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: check_patterns
+
+    # Outside Dendro's own repo the pack is the whole cascade, so the six names the repo's
+    # rules shadow are read against the shipped query instead. The dogfood item runs the
+    # same fixtures with the shadowing in place, so one file pins both spellings and the
+    # two cannot drift apart unnoticed.
+    _, srcdir = Fixtures.gitrepo()
+    write(joinpath(srcdir, "f.jl"), "f(x) = x\n")
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            failures = check_patterns(srcdir; fixtures = [joinpath(pkgdir(Dendro), "test", "patterns")])
+            isempty(failures) || foreach(f -> println(stdout, f), failures)
+            @test isempty(failures)
+        end
+    end
+end

@@ -302,6 +302,25 @@ way: write the shape and the finding arrives at its severity. Nothing in a query
 the broken rule from the working one, so the declaration has to come from the author, and
 Dendro's own `.dendro.toml` is mostly guards for that reason.
 
+The pack Dendro ships is that stance applied to somebody else's repository. Eighteen rules
+in `src/patterns/` enter the cascade below the user-global config, and every one of them
+declares `guard = true` for the reason above: they name shapes a healthy codebase does not
+contain, so without the declaration a clean scan would print fifteen rules as broken.
+Every flag also ships at `severity = "warn"`, which is a separate decision and the one the
+pack lives or dies by. Nobody asked Dendro for a style opinion that arrives as a build
+failure in their own repository, and `errors` is what a downstream package gates its tests
+on, so the pack reports and never gates. A project that disagrees promotes a rule in one
+line, since a layer inherits the declaration below it.
+
+The three density scalars are the exception, and the measurement is what makes it
+defensible. `severity` says nothing about a scalar: a scalar gates at its own `high` band,
+so these three can reach the floor. Over 22837 callables in nine corpora, 97.5% score zero
+on all three, which means percentiles cannot site the edge, and the tail is a handful of
+named functions instead. Each `high` clears the worst of them, so tripping one takes an
+outlier well past anything nine real codebases contain. Retune those edges against new
+measurement, never against intuition, and answer a request to make the pack gate harder
+with the same evidence the near-duplicate pass had to produce.
+
 Dendro eats its own cooking. `test/dogfood.jl` asserts `isempty(Dendro.errors(src))`,
 the deterministic error floor: every finding at the `:high` absolute band, high-band
 scalars and all flags, percentile-free. This is a superset of the old hand-listed

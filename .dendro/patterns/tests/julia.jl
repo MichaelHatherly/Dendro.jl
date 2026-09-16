@@ -13,7 +13,7 @@
 # stay quiet on is a guard nobody has tested.
 
 function bare_handler(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch    # dendro-expect: empty_catch_binding
         return nothing
@@ -21,7 +21,7 @@ function bare_handler(x)
 end
 
 function commented_handler(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch    # dendro-expect: empty_catch_binding -- a comment must not defeat the rule
         return nothing
@@ -29,7 +29,7 @@ function commented_handler(x)
 end
 
 function bound_handler(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch err
         return err
@@ -39,7 +39,7 @@ end
 # A bound exception discarded anyway, in each of the three shapes that discard it. The
 # marker sits on the `catch`, which is the node the rule reports.
 function discards_bare(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch err    # dendro-expect: swallowed_error
         return
@@ -47,7 +47,7 @@ function discards_bare(x)
 end
 
 function discards_nothing(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch err    # dendro-expect: swallowed_error
         return nothing
@@ -55,7 +55,7 @@ function discards_nothing(x)
 end
 
 function discards_bare_value(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch err    # dendro-expect: swallowed_error
         nothing
@@ -65,7 +65,7 @@ end
 # Handling is not discarding. A body that logs, rethrows, or returns something derived from
 # the error has done something with it.
 function logs(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch err
         @warn "failed" err
@@ -73,7 +73,7 @@ function logs(x)
 end
 
 function rethrows(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch err
         rethrow()
@@ -81,7 +81,7 @@ function rethrows(x)
 end
 
 function converts(x)
-    try
+    try    # dendro-expect: try_density
         risky(x)
     catch err
         return err

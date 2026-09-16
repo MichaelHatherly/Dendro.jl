@@ -1321,6 +1321,30 @@ unsuppressed findings for gating.
   scoping, the report, the gate, and the ratchet work for it with no further code.
   Negation is a `.not` capture subtracting by node identity; a `_`-prefixed capture is a
   predicate helper and never a rule; a capture naming no declared rule is a load error.
+- The rules Dendro ships are a tier of that family and nothing more. `src/patterns/` holds
+  `builtin.toml` and one `<lang>.patterns.scm` per grammar, reached through
+  `BUILTIN_PATTERNS_DIR` (`patterns.jl`), a `RelocatableFolders` path for the reason
+  `QUERIES_DIR` is. `discover_config` applies the TOML before the file layers, and
+  `pattern_dirs` prepends the directory. Declarations cascade from the pack through the
+  global config to the repo's. Queries shadow on that same order, per rule per language.
+  Nothing about the tier is
+  special-cased: `[rules]` disables one of its rules, `[bands]` retunes one, and a repo
+  `[patterns.<name>]` replaces a declaration, all through the code a project's own rules
+  already travel. The pack is TOML where `BUILTIN_RULES` is a Julia constant because a
+  `Rule` carries a measuring function and a `PatternSpec` carries a message and a band,
+  which is what a user writes in a config file.
+- Layer inheritance is what lets one line override a shipped rule. `apply_pattern!` seeds
+  its defaults from the spec already in the accumulator, so a later layer naming an
+  existing rule sets the keys it names and inherits the rest. A name no layer has declared
+  still needs a `message`.
+- A shipped rule's fixtures live under `test/patterns/tests/`, not beside its query.
+  Fixtures are deliberately bad source and `src/` is what `test/dogfood.jl` scans, so
+  `check_patterns` takes a `fixtures` keyword that moves the fixture search and leaves the
+  query cascade alone. Every shipped rule declares `guard = true`, so the zero-match report
+  exempts it, and those fixtures are the only thing that would catch one going quiet after
+  a grammar bump. Only Dendro's own CI runs them. A fixture marker trailing code names its
+  own line; one with the line to itself names the line under it, which is how
+  `banner_comment` is pinned at all, a comment carrying no trailing comment.
 - Adding a language is data only: a query in `src/queries/<lang>.scm`, a
   `LanguageProfile` entry in `profiles.jl`, and an extension entry in `resolve.jl`.
   No metric code changes. If a metric needs a language special case, the query is
@@ -1360,6 +1384,13 @@ change that makes Dendro trip its own metrics is a signal to fix the code. The t
 `parameter_count` sites the floor surfaces (the `Finding` constructor, `mermaid_coupling`)
 carry inline `dendro-ignore: parameter_count` with a reason, suppressed rather than
 omitted from the gate, so the count stays honest.
+
+The same file checks both sets of pattern fixtures, `test/patterns/` for the shipped pack
+and `.dendro/patterns/` for the repo's own rules, naming each directory through
+`check_patterns`'s `fixtures` keyword. Six rule names are declared in both places, the
+repo's query shadowing the shipped one. `test/patterns/tests/julia.jl` is read under both
+cascades, which keeps the two spellings from drifting while the migration in `TODO.md` is
+outstanding.
 
 JET has an environment of its own in `jet/` and runs by `just jet`, outside the suite:
 basic mode is a zero-tolerance gate, sound mode and the optimization analyzer are

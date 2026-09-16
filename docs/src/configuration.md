@@ -18,12 +18,25 @@ the model internals are not.
 Discovery is a cascade, merged key by key, last wins:
 
 1. the built-in defaults,
-2. a user-global `~/.config/dendro/config.toml` (`XDG_CONFIG_HOME` if set),
-3. the repo `.dendro.toml`, found at the git toplevel of the scanned roots,
-4. any explicit [`analyze`](@ref) keyword.
+2. the pattern pack Dendro ships, `src/patterns/builtin.toml`,
+3. a user-global `~/.config/dendro/config.toml` (`XDG_CONFIG_HOME` if set),
+4. the repo `.dendro.toml`, found at the git toplevel of the scanned roots,
+5. any explicit [`analyze`](@ref) keyword.
 
 `--config=<file>` reads one file in place of discovery and `--no-config` ignores config
-files entirely; both are described in [Command line](@ref).
+files entirely; both are described in [Command line](@ref). Neither drops the pack, which
+is a default rather than a discovered layer. `[rules] <name> = false` is the lever for
+turning one of its rules off, per rule and by name, and [Rules Dendro ships](@ref) holds
+the rest of the recipe.
+
+Layer 2 is read through the same walk the two file layers take, so nothing about the
+shipped rules is a special case. A layer naming a rule an earlier one declared inherits
+that declaration and overrides only the keys it sets, which is how a repo promotes a
+shipped rule to `severity = "high"` in one line.
+
+The query files cascade the same way and separately, per rule per language: the pack's
+`src/patterns/`, then `~/.config/dendro/patterns/`, then the repo's `.dendro/patterns/`.
+A repo query for one rule in one language shadows the shipped one for that pair alone.
 
 The repo file is found once per run, not per subtree. One corpus means one baseline and
 one set of bands, since the corpus-relative score is global and per-directory bands would

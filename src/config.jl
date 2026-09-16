@@ -508,8 +508,13 @@ end
 
 The resolved [`Config`](@ref) for analyzing `roots`: the built-in defaults overlaid
 with the user-global config, then the repo `.dendro.toml`. `explicit` names a file to
-read in place of the discovered repo one and must exist. `use_files = false` skips all
-file layers, returning the built-in defaults.
+read in place of the discovered repo one and must exist. `use_files = false` skips the
+discovered layers, returning the built-in defaults.
+
+The pack of rules Dendro ships is among those defaults. It is applied as the layer below
+the user-global config, through the same walk a config file takes, so a project disables
+one of its rules, retunes a band, or replaces a declaration with the keys it already has
+for its own rules.
 """
 function discover_config(roots; explicit = nothing, use_files = true)
     acc = overrides()
@@ -522,6 +527,8 @@ function discover_config(roots; explicit = nothing, use_files = true)
         patterns_dir = "",
         ignore = String[],
     )
+    builtin = builtin_patterns_file()
+    scalars = apply_toml!(acc, scalars, TOML.parsefile(builtin), builtin)
     if use_files
         for path in config_files(roots, explicit)
             scalars = apply_toml!(acc, scalars, TOML.parsefile(path), path)

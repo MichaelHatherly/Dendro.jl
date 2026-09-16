@@ -91,6 +91,27 @@ Both are opt-in and both need a library to compare against. See
 | `library_duplicate` | opt-in | coverage of your function, percent | `:high` for a public whole-function match at or above `library_gate_coverage`, else `:warn` |
 | `library_near_duplicate` | opt-in | coverage of your function, percent | always `:warn`, so it never gates |
 
+## Names Dendro ships as pattern rules
+
+Eighteen further names come from the pattern pack in `src/patterns/`, on in every scan.
+Fifteen are flags at `warn`, so they report and never gate. Three are per-callable scalars
+that do gate, at a `high` edge measured to clear every function in nine corpora.
+
+| metric | band | value is | see |
+| --- | --- | --- | --- |
+| `type_check_density` | 3, 6 | runtime type checks that raise, in one definition | [Rules Dendro ships](@ref) |
+| `null_guard_density` | 3, 15 | null guards that return null, in one definition | [Rules Dendro ships](@ref) |
+| `try_density` | 3, 15 | independent try blocks in one definition | [Rules Dendro ships](@ref) |
+
+The fifteen flags:
+
+- `banner_comment`, `boolean_return`, `unreachable_branch`, `manual_min_max`
+- `swallowed_error`, `boolean_equality`, `empty_check`, `redundant_conversion`
+- `redundant_keys`, `redundant_collect`, `length_index_range`, `redundant_default`
+- `empty_error_type`, `type_equality`, `nothing_equality`
+
+All eighteen names take a `[bands]` or `[rules]` entry the way a built-in does.
+
 ## Names a project adds
 
 A `[patterns.<name>]` table declares a rule whose name joins this namespace, and a

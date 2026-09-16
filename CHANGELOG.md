@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A pack of eighteen lint rules Dendro ships and runs in every scan, declared in
+  `src/patterns/builtin.toml` and realised per grammar in `src/patterns/<lang>.patterns.scm`.
+  They name the idioms a working test suite leaves in place: a branch repeating an earlier
+  condition, a handler returning a constant over the error it caught, a length compared
+  against zero. Fifteen are flags at `warn`, so the pack reports and never fails a build.
+  Three are per-callable scalars, banded over 22837 callables in nine corpora so an
+  outlier is what it takes to trip one. The pack enters the config cascade below the
+  user-global layer, so `[rules]`, `[bands]` and a `[patterns.<name>]` table of your own
+  all reach it, and a layer inherits the declaration below it so promoting a shipped rule
+  is one line.
 - User-authored lint rules, a second tree-sitter query family. A `[patterns.<name>]` table
   in `.dendro.toml` declares a rule, language-independently, and a
   `.dendro/patterns/<lang>.patterns.scm` capture realises it for one grammar. A flag rule

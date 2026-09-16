@@ -62,6 +62,11 @@ julia -m Dendro --check src      # exit 1 on any error-severity finding (CI gate
 A project retunes the bands, the percentile cut, and which rules run from a `.dendro.toml`
 at its repo root, and writes rules of its own as tree-sitter queries.
 
+Eighteen such rules come with the package and run in every scan, naming the idioms a
+working test suite leaves in place: a branch repeating an earlier condition, a handler
+returning a constant over the error it caught, a length compared against zero. They report
+and never fail a build, and a project disables or retunes any of them by name.
+
 ## Languages
 
 bash, c, cpp, go, java, javascript, julia, php, python, ruby, rust, typescript. A project

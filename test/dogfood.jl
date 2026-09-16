@@ -21,7 +21,18 @@ end
     using Dendro
 
     srcdir = joinpath(pkgdir(Dendro), "src")
-    failures = Dendro.check_patterns(srcdir)
+    # Two fixture directories. The pack Dendro ships cannot keep its fixtures beside its
+    # queries, since `src/` is what the gate above scans, so they live under `test/`; the
+    # repo's own rules keep theirs beside the query. Naming both keeps each set pinned,
+    # and the pack's rules are all guards, so these fixtures are the only thing that would
+    # catch one of them going quiet after a grammar bump.
+    failures = Dendro.check_patterns(
+        srcdir;
+        fixtures = [
+            joinpath(pkgdir(Dendro), "test", "patterns"),
+            joinpath(pkgdir(Dendro), ".dendro", "patterns"),
+        ],
+    )
     isempty(failures) || foreach(f -> println(stdout, f), failures)
     @test isempty(failures)
 

@@ -300,8 +300,26 @@
 # gate. The prefix stays on the record because that is where a unit's derived state lives,
 # next to `histogram` and `digest`, not to dodge a threshold.
 #
+# The shipped pattern pack raised sound from 1379 to 1383 and left opt at 33. Two narrowing
+# attempts were measured, and both landed, taking the first count of 1401 down to 1383.
+# `apply_pattern!` now resolves the layer below to one concrete `PatternSpec` before
+# reading a field off it, which is worth 12 reports: `acc` is an untyped accumulator, so
+# every field read off the `Union{Nothing, PatternSpec}` the lookup yields was its own
+# report. Hoisting `acc.patterns` into a local took one more, since the function reads it
+# twice. `starts_its_line` takes a `String` rather than an `AbstractString`, worth 7: the
+# only caller passes `QueryIndex.source`, which is a `String`, and sound mode analyses
+# generic indexing over the abstract type.
+#
+# The four that remain are two sites and no new kind of dispatch. Two sit on
+# `get(specs, ...)` inside `apply_pattern!`, on the same untyped `acc` whose `setindex!`
+# already reported two. The other two sit on `check_patterns`'s new `fixtures` keyword,
+# one widening its kwarg lowering and one on `collect(String, fixtures)` over an untyped
+# value. Typing the keyword would clear them and would narrow a public API to
+# `Vector{String}` to do it, which costs more than four reports of intentional dynamic
+# dispatch.
+#
 # The count is stable under the order this file runs, basic mode then sound. Repeated runs
-# over an identical tree return 1379 every time, and dumping every report gives a
+# over an identical tree return the same number every time, and dumping every report gives a
 # byte-identical file each run. An earlier note here recorded about one report of
 # run-to-run variance and told a reader to discount a rise of one. That was measured with
 # the basic pass skipped, where what moves between runs is the printed signature of a
@@ -312,7 +330,7 @@ using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1379  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1383  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

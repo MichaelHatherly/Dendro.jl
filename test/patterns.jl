@@ -20,10 +20,12 @@
         )
         cfg = Fixtures.isolated_config(dir, f)
         specs = Dict(s.name => s for s in cfg.patterns)
+        # The pack Dendro ships is layer zero, so the config carries it too. Filtering to
+        # the three this item wrote is what keeps the item about them.
+        own = [s.name for s in cfg.patterns if s.name in (:abstract_field, :empty_catch_binding, :magic_number)]
 
-        @test length(cfg.patterns) == 3
         # Sorted by name, so a report reads in a stable order.
-        @test [s.name for s in cfg.patterns] == [:abstract_field, :empty_catch_binding, :magic_number]
+        @test own == [:abstract_field, :empty_catch_binding, :magic_number]
 
         @test specs[:abstract_field].message == "field typed Any forces a boxed load"
         @test specs[:abstract_field].severity === :warn   # the default keeps a new rule out of the gate
@@ -75,12 +77,12 @@ end
         write(f, "[patterns.a]\nmessage = \"m\"\nnonsense = 1\n")
         cfg = @test_logs (:warn,) match_mode = :any Fixtures.isolated_config(dir, f)
         # Warned and dropped, as an unknown band does: the rule still loads.
-        @test only(cfg.patterns).name === :a
+        @test only(s for s in cfg.patterns if s.name === :a).message == "m"
     end
 end
 
-@testitem "pattern dirs cascade global then repo" setup = [Fixtures] tags = [:patterns] begin
-    using Dendro: pattern_dirs
+@testitem "pattern dirs cascade builtin, global, repo" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: BUILTIN_PATTERNS_DIR, pattern_dirs
 
     root, srcdir = Fixtures.gitrepo()
     repo_dir = joinpath(root, ".dendro", "patterns")
@@ -94,14 +96,18 @@ end
         dirs = withenv("XDG_CONFIG_HOME" => xdg) do
             pattern_dirs(cfg, [srcdir])
         end
-        # Global first, repo second: the later entry wins for a rule defined in both.
-        # Resolved before comparing: macOS maps /var to /private/var and the repo dir
-        # arrives through `git rev-parse`, which reports the real path.
-        @test realpath.(dirs) == realpath.([global_dir, repo_dir])
+        # The shipped pack first, then global, then repo: the later entry wins for a rule
+        # defined in more than one. Resolved before comparing: macOS maps /var to
+        # /private/var and the repo dir arrives through `git rev-parse`, which reports the
+        # real path.
+        @test realpath.(dirs) ==
+            realpath.([String(BUILTIN_PATTERNS_DIR), global_dir, repo_dir])
     end
 end
 
 @testitem "patterns_dir resolves against its config file" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: BUILTIN_PATTERNS_DIR
+
     root, srcdir = Fixtures.gitrepo()
     elsewhere = joinpath(root, "lint", "queries")
     mkpath(elsewhere)
@@ -111,7 +117,10 @@ end
     # Relative to the config's own directory, never the process working directory,
     # so running dendro from a subdirectory keeps working.
     @test realpath(cfg.patterns_dir) == realpath(elsewhere)
-    @test realpath.(Dendro.pattern_dirs(cfg, [srcdir])) == [realpath(elsewhere)]
+    # It replaces the repo's own directory and nothing else: the shipped pack is still the
+    # layer under it, so naming a directory cannot cost a project the rules Dendro ships.
+    @test realpath.(Dendro.pattern_dirs(cfg, [srcdir])) ==
+        [realpath(String(BUILTIN_PATTERNS_DIR)), realpath(elsewhere)]
 end
 
 @testitem "a malformed pattern query names its file and line" setup = [Fixtures] tags = [:patterns] begin
@@ -545,7 +554,7 @@ end
     write(
         joinpath(pdir, "tests", "julia.jl"), """
         function f(x)
-            if x == nothing    # dendro-expect: optional_equality
+            if x == nothing    # dendro-expect: optional_equality, nothing_equality
                 return 0
             end
             if x === nothing
@@ -558,7 +567,7 @@ end
     write(
         joinpath(pdir, "tests", "python.py"), """
         def f(x):
-            if x == None:    # dendro-expect: optional_equality
+            if x == None:    # dendro-expect: optional_equality, nothing_equality
                 return 0
             if x is None:
                 return 1
@@ -571,4 +580,106 @@ end
             @test isempty(check_patterns(srcdir))
         end
     end
+end
+
+@testitem "a later layer overrides only the keys it sets" setup = [Fixtures] tags = [:patterns] begin
+    root, srcdir = Fixtures.gitrepo()
+    # The repo promotes a rule it did not write. Restating the declaration to change one
+    # key would put the shipped shape in two places, where the second drifts.
+    write(joinpath(root, ".dendro.toml"), "[patterns.magic_number]\nseverity = \"high\"\n")
+    mktempdir() do xdg
+        gdir = joinpath(xdg, "dendro")
+        mkpath(gdir)
+        write(
+            joinpath(gdir, "config.toml"), """
+            [patterns.magic_number]
+            message = "unnamed numeric literal"
+            kind    = "scalar"
+            band    = [3, 6]
+            scope   = "callable"
+            guard   = true
+            """
+        )
+        cfg = withenv("XDG_CONFIG_HOME" => xdg) do
+            Dendro.discover_config([srcdir])
+        end
+        spec = only(s for s in cfg.patterns if s.name === :magic_number)
+        @test spec.severity === :high
+        @test spec.message == "unnamed numeric literal"
+        @test spec.kind === :scalar
+        @test spec.band == (3, 6)
+        @test spec.scope === :callable
+        @test spec.guard
+    end
+end
+
+@testitem "a first declaration still needs a message" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: ConfigError
+
+    root, srcdir = Fixtures.gitrepo()
+    # Inheriting from an earlier layer is not the same as inheriting from nothing: a name
+    # no layer has declared has no message to fall back to.
+    write(joinpath(root, ".dendro.toml"), "[patterns.no_such_rule]\nseverity = \"high\"\n")
+    err = try
+        Fixtures.isolated_config([srcdir])
+        nothing
+    catch e
+        e
+    end
+    @test err isa ConfigError
+    @test occursin("message", err.msg)
+end
+
+@testitem "the shipped pack is layer zero of the cascade" setup = [Fixtures] tags = [:patterns] begin
+    _, srcdir = Fixtures.gitrepo()
+    cfg = Fixtures.isolated_config([srcdir])
+    @test [s.name for s in cfg.patterns] == [
+        :banner_comment, :boolean_equality, :boolean_return, :empty_check,
+        :empty_error_type, :length_index_range, :manual_min_max, :nothing_equality,
+        :null_guard_density, :redundant_collect, :redundant_conversion, :redundant_default,
+        :redundant_keys, :swallowed_error, :try_density, :type_check_density,
+        :type_equality, :unreachable_branch,
+    ]
+
+    # A shipped flag stays out of the `:high` floor a package gates its tests on, and a
+    # shipped rule is a guard, so a clean scan does not report it as broken.
+    flags = [s for s in cfg.patterns if s.kind === :flag]
+    @test length(flags) == 15
+    @test all(s -> s.severity === :warn, flags)
+    @test all(s -> s.guard, cfg.patterns)
+    @test all(s -> s.scope === :callable, [s for s in cfg.patterns if s.kind === :scalar])
+end
+
+@testitem "a project turns a shipped rule off, retunes it, or replaces it" setup = [Fixtures] tags = [:patterns] begin
+    using Dendro: resolve_rules
+
+    root, srcdir = Fixtures.gitrepo()
+    write(
+        joinpath(root, ".dendro.toml"), """
+        [rules]
+        banner_comment = false
+
+        [bands]
+        try_density = [1, 2]
+
+        [patterns.boolean_return]
+        message = "the house says something else about this one"
+        """
+    )
+    cfg = Fixtures.isolated_config([srcdir])
+    active = Set(r.name for r in resolve_rules(cfg))
+    @test !(:banner_comment in active)
+    @test :boolean_return in active
+    @test only(r for r in resolve_rules(cfg) if r.name === :try_density).band == (1, 2)
+    # Last layer wins by key, so replacing a declaration needs no new mechanism.
+    @test only(s for s in cfg.patterns if s.name === :boolean_return).message ==
+        "the house says something else about this one"
+end
+
+@testitem "the shipped pack is among the built-in defaults" setup = [Fixtures] tags = [:patterns] begin
+    # `use_files = false` skips the file layers of the cascade. The pack is not one of
+    # them: it is what the cascade starts from.
+    cfg = Dendro.discover_config([pwd()]; use_files = false)
+    @test !isempty(cfg.patterns)
+    @test :banner_comment in Set(s.name for s in cfg.patterns)
 end

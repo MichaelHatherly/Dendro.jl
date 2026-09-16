@@ -10,6 +10,11 @@
 # `rules.jl` beside `Rule`, since `Config` holds a vector of them; everything here is what
 # turns one into findings.
 
+# What a `[patterns.<name>]` table starts from when no earlier layer declared the name. The
+# empty `message` is what `apply_pattern!` checks for afterwards: a first declaration has
+# to say what the rule reports.
+const PATTERN_DEFAULTS = PatternSpec(Symbol(""), "", :warn, :flag, nothing, false, :any)
+
 # Coerce a TOML value naming one of a fixed set of symbols. Unlike an unknown key, which
 # warns and is dropped, a bad value here is an error: the author clearly meant to set it,
 # and guessing which of two severities they wanted would be worse than stopping.
@@ -24,13 +29,24 @@ end
 # Apply one `[patterns.<name>]` table. Only `message` is required; `severity`, `kind`, and
 # `guard` default, and `band` is required by a scalar and rejected on a flag. An unknown key
 # warns and is dropped, as a band does.
+#
+# A layer naming a rule an earlier one declared starts from that declaration rather than
+# from the defaults, so promoting a shipped rule to `severity = "high"` sets one key. The
+# alternative is restating the message, kind, band and scope in the repo file, where the
+# copy drifts from the shipped rule it claims to be.
 function apply_pattern!(acc, name::String, table::Dict{String, Any}, source)
-    message = ""
-    severity = :warn
-    kind = :flag
-    band = nothing
-    guard = false
-    scope = :any
+    # Resolved to one concrete `PatternSpec` before any field is read. `acc` is an untyped
+    # accumulator, so reading a field off the `Union{Nothing, PatternSpec}` the lookup
+    # yields costs a sound-mode report per field.
+    specs = acc.patterns
+    prior = get(specs, Symbol(name), nothing)
+    base = prior isa PatternSpec ? prior : PATTERN_DEFAULTS
+    message = base.message
+    severity = base.severity
+    kind = base.kind
+    band = base.band
+    guard = base.guard
+    scope = base.scope
     for (key, value) in table
         if key == "message"
             message = config_string(value, "patterns.$name.$key", source)
@@ -50,7 +66,7 @@ function apply_pattern!(acc, name::String, table::Dict{String, Any}, source)
     end
     isempty(message) && config_error("pattern `$name` in $source needs a `message`")
     validate_pattern_band(name, kind, band, source)
-    acc.patterns[Symbol(name)] = PatternSpec(Symbol(name), message, severity, kind, band, guard, scope)
+    specs[Symbol(name)] = PatternSpec(Symbol(name), message, severity, kind, band, guard, scope)
     return nothing
 end
 
@@ -83,17 +99,32 @@ end
 # The repo-relative default, under the directory holding `.dendro.toml`.
 const DEFAULT_PATTERNS_DIR = joinpath(".dendro", "patterns")
 
+# The rules Dendro ships: `builtin.toml` declares them and one `<lang>.patterns.scm` per
+# grammar realises them. Relocatable for the reason `QUERIES_DIR` is, since a precompiled
+# package that has moved still has to find its own queries.
+#
+# `BUILTIN_RULES` is a Julia constant where this is data on disk, and the difference is
+# what a rule carries. A `Rule` holds a measuring function, which only Julia can write; a
+# `PatternSpec` holds a message and a band, which is what a user writes in TOML. Shipping
+# the pack as TOML is what puts it in the same cascade a project's own rules travel, so
+# overriding one needs no mechanism of its own.
+const BUILTIN_PATTERNS_DIR = RelocatableFolders.@path joinpath(@__DIR__, "patterns")
+
+# The declarations file inside it, layer zero of the config cascade.
+builtin_patterns_file() = joinpath(String(BUILTIN_PATTERNS_DIR), "builtin.toml")
+
 """
     pattern_dirs(config, roots) -> Vector{String}
 
-The directories holding `<lang>.patterns.scm`, in cascade order: the user-global one
-first, then the repo's, so a rule defined in both resolves to the repo's.
+The directories holding `<lang>.patterns.scm`, in cascade order: the pack Dendro ships
+first, then the user-global one, then the repo's, so a rule defined in more than one
+resolves to the last.
 
 A `patterns_dir` set in a config file is resolved against that file's own directory, not
 the process working directory, so running `dendro` from a subdirectory keeps working.
 """
 function pattern_dirs(config::Config, roots)::Vector{String}
-    dirs = String[]
+    dirs = String[String(BUILTIN_PATTERNS_DIR)]
     global_dir = joinpath(dirname(global_config_path()), "patterns")
     isdir(global_dir) && push!(dirs, global_dir)
     repo = isempty(config.patterns_dir) ? repo_pattern_dir(roots) : config.patterns_dir

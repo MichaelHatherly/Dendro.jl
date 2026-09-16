@@ -6,7 +6,11 @@
         @test cfg.cut == 0.95
         @test isempty(cfg.bands)
         @test isempty(cfg.rules)
-        @test [r.name for r in resolve_rules(cfg)] == [r.name for r in BUILTIN_RULES]
+        # The pattern pack Dendro ships is among the defaults too, so the built-ins are the
+        # front of the active set rather than the whole of it.
+        active = [r.name for r in resolve_rules(cfg)]
+        @test active[1:length(BUILTIN_RULES)] == [r.name for r in BUILTIN_RULES]
+        @test Set(active[(length(BUILTIN_RULES) + 1):end]) == Set(s.name for s in cfg.patterns)
     end
 end
 
