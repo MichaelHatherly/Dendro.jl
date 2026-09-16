@@ -409,12 +409,25 @@
 # annotated `enough::Bool` local instead read 1436 and was reverted: the annotation is a
 # report of its own, the rate the `base_summary` and generated-filter measurements already
 # recorded.
+#
+# `:central_definition` (`central_definition.jl`) raised sound from 1434 to 1440 and left
+# opt at 32. Five are `cluster_central_definition`'s keyword-argument lowering, the per-pass
+# rate every cluster pass costs, and the sixth is one more keyword on the `Config` kwsorter,
+# the rate each of the last four bands recorded. Factoring `reference_edges` out of
+# `reach_graph` costs nothing: `unreferenced.jl` reads 8 before and after, since the new
+# function takes every argument positionally. It first measured 1441. Making `linkage`
+# positional took one off, the field read a keyword adds to the `kwcall` wrapper. One
+# narrowing was measured and reverted, reading 1441: `cut::Float64` and `min_defs::Int` in
+# place of the abstract `Real` and `Integer` the sibling passes take, which bought nothing
+# here as it bought nothing for `:file_length`. The pass's remaining `band`/`cut`/`min_defs`
+# keywords are what fourteen sibling passes take and what `analyze` calls them by; narrowing
+# those away was not attempted.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1434  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1440  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

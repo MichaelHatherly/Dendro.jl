@@ -637,12 +637,14 @@ Reporting:
   and `child_of` it reads.
 - `unreferenced.jl` defines dead-code detection by reachability, not the corpus graph but
   a dedicated reference graph over `table.defs` that keeps non-unit targets and discounts
-  no cross-cutting utility. `reach_graph` builds the forward edges (within-file bindings
-  and `corpus_references`, each attributed to its enclosing top-level definition by
-  `enclosing_def`) and the root set (declared-public definitions and those referenced from
-  top-level code); `reachable` walks it breadth-first. `cluster_unreferenced` emits an
-  `:unreferenced` finding per unreached definition, suppressible inline. Reads `linkage.jl`
-  for `corpus_references` and the public surface. Included after `scattered.jl`.
+  no cross-cutting utility. `reference_edges` walks the references once and returns a
+  `(source, target)` pair per reference (within-file bindings and `corpus_references`, each
+  attributed to its enclosing top-level definition by `enclosing_def`) along with the
+  targets top-level code names. `reach_graph` reads those as adjacency, joins the top-level
+  targets to the declared-public definitions for the root set, and `reachable` walks it
+  breadth-first. `cluster_unreferenced` emits an `:unreferenced` finding per unreached
+  definition, suppressible inline. Reads `linkage.jl` for `corpus_references` and the public
+  surface. Included after `scattered.jl`.
 - `cohesion.jl` defines within-file cohesion. `cluster_low_cohesion` reads the within
   view of the corpus graph, `components(adjacency(graph; within = true), file_nodes)`:
   cross-file edges never join one file's nodes, so the components restricted to a file are

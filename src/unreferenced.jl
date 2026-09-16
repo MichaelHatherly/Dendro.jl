@@ -30,14 +30,91 @@ function enclosing_def(ranges::Vector{Tuple{Int, Int, Int}}, from::Int, to::Int)
     return 0
 end
 
+# Record one reference's targets against `src`, the top-level definition containing it or 0
+# for a reference in top-level code. A reference from a definition draws an edge per target;
+# one from top-level code names its targets with no definition behind it.
+function record_reference!(
+        edges::Vector{Tuple{Int, Int}}, toplevel::Vector{Int}, src::Int, targets::Vector{Int}
+    )
+    if src == 0
+        append!(toplevel, targets)
+    else
+        for target in targets
+            push!(edges, (src, target))
+        end
+    end
+    return nothing
+end
+
+"""
+    reference_edges(files, table, linkage) -> (edges, toplevel)
+
+Every reference between the definitions of `table`, as a `(source, target)` index pair per
+reference, and the definitions named from top-level code. A reference is attributed to the
+top-level definition whose body contains it by byte range; one no definition contains runs
+in top-level code and lands in `toplevel`, carrying no source.
+
+Both edge sets are here, neither discounted for breadth: within-file bindings, whose targets
+are every same-file definition sharing the named one's name, and cross-file references,
+whose targets are every candidate the name reaches. A name matching several definitions
+reaches all of them rather than one picked by type or dispatch.
+
+Repetition is kept, one pair per reference, so a reader counting distinct sources and one
+summing references both take what they mean off the same walk. [`reach_graph`](@ref) reads
+it as reachability.
+"""
+function reference_edges(files::Vector{ParsedFile}, table::SymbolTable, linkage::ResolvedLinkage)
+    # The top-level function body ranges per file, a definition's index keyed by its
+    # name-node identity, and the definitions sharing a file and name, the three lookups
+    # the edges resolve against. A def carrying a function unit (`unit != 0`) is a
+    # top-level function; one at file scope is a leaf. Same-file same-name definitions
+    # resolve together: a reference binds lexically to one, but name resolution cannot
+    # tell a type from its constructor or one method from its overload, so reaching one
+    # reaches all, the within-file counterpart of the cross-file candidate split.
+    file_by_path = Dict{String, ParsedFile}(f.file => f for f in files)
+    topfns = Dict{String, Vector{Tuple{Int, Int, Int}}}()
+    byid = Dict{Tuple{String, NodeId}, Int}()
+    name_class = Dict{Tuple{String, String}, Vector{Int}}()
+    for (i, d) in enumerate(table.defs)
+        byid[(d.file, d.id)] = i
+        push!(get!(() -> Int[], name_class, (d.file, d.name)), i)
+        d.unit == 0 && continue
+        from, to = unit_span(file_by_path[d.file].index.units[d.unit])
+        push!(get!(() -> Tuple{Int, Int, Int}[], topfns, d.file), (from, to, i))
+    end
+
+    edges = Tuple{Int, Int}[]
+    toplevel = Int[]
+    empty_ranges = Tuple{Int, Int, Int}[]
+    for f in files
+        ranges = get(topfns, f.file, empty_ranges)
+        for (refid, defid) in f.index.bindings
+            target = get(byid, (f.file, defid), 0)
+            target == 0 && continue
+            record_reference!(
+                edges, toplevel, enclosing_def(ranges, refid[1], refid[2]),
+                name_class[(f.file, table.defs[target].name)]
+            )
+        end
+    end
+    for reference in linkage.references
+        ranges = get(topfns, reference.file.file, empty_ranges)
+        record_reference!(
+            edges, toplevel, enclosing_def(ranges, reference.ref.id[1], reference.ref.id[2]),
+            reference.candidates
+        )
+    end
+    return edges, toplevel
+end
+
 """
     reach_graph(files, table; linkage=resolve_linkage(files, table)) -> (adj, roots)
 
 The forward reference graph over `table.defs` and the root set a dead-code search starts
 from. `adj[i]` lists the definition indices definition `i` references; `roots` holds the
-declared-public definitions and those referenced from top-level code. Edges come from
-within-file bindings and cross-file references, each attributed to its enclosing top-level
-definition by byte range; a reference in top-level code seeds a root rather than an edge.
+declared-public definitions and those referenced from top-level code. The edges are
+[`reference_edges`](@ref) read as adjacency, and its top-level targets seed roots rather
+than edges: code that runs unconditionally keeps alive whatever it names.
 
 The cross-file edges and the public surface both come out of `linkage`, so a scan that has
 already resolved the corpus does not resolve it again here.
@@ -51,56 +128,17 @@ function reach_graph(
     roots = Set{Int}()
     file_by_path = Dict{String, ParsedFile}(f.file => f for f in files)
     surface = linkage.surface
-
-    # The top-level function body ranges per file, a definition's index keyed by its
-    # name-node identity, and the definitions sharing a file and name, the three lookups
-    # the edges resolve against. A def carrying a function unit (`unit != 0`) is a
-    # top-level function; one at file scope is a leaf. Same-file same-name definitions
-    # resolve together: a reference binds lexically to one, but name resolution cannot
-    # tell a type from its constructor or one method from its overload, so reaching one
-    # reaches all, the within-file counterpart of the cross-file candidate split.
-    topfns = Dict{String, Vector{Tuple{Int, Int, Int}}}()
-    byid = Dict{Tuple{String, NodeId}, Int}()
-    name_class = Dict{Tuple{String, String}, Vector{Int}}()
     for (i, d) in enumerate(table.defs)
-        byid[(d.file, d.id)] = i
-        push!(get!(() -> Int[], name_class, (d.file, d.name)), i)
         link = get(LINKAGES, file_by_path[d.file].language, nothing)
         public = link === nothing || link.is_public(d, get(() -> Set{String}(), surface, d.file))::Bool
         (public || d.external_root) && push!(roots, i)
-        d.unit == 0 && continue
-        from, to = unit_span(file_by_path[d.file].index.units[d.unit])
-        push!(get!(() -> Tuple{Int, Int, Int}[], topfns, d.file), (from, to, i))
     end
 
-    empty_ranges = Tuple{Int, Int, Int}[]
-    # Within-file edges: each binding's reference attributes to its enclosing top-level
-    # def, its targets every same-name definition in the file when the named one is a
-    # top-level symbol.
-    for f in files
-        ranges = get(topfns, f.file, empty_ranges)
-        for (refid, defid) in f.index.bindings
-            target = get(byid, (f.file, defid), 0)
-            target == 0 && continue
-            targets = name_class[(f.file, table.defs[target].name)]
-            src = enclosing_def(ranges, refid[1], refid[2])
-            src == 0 ? union!(roots, targets) : append!(adj[src], targets)
-        end
+    edges, toplevel = reference_edges(files, table, linkage)
+    for (src, target) in edges
+        push!(adj[src], target)
     end
-
-    # Cross-file edges: each resolved reference attributes to its enclosing top-level def,
-    # its targets every candidate definition the name reaches.
-    for reference in linkage.references
-        ranges = get(topfns, reference.file.file, empty_ranges)
-        src = enclosing_def(ranges, reference.ref.id[1], reference.ref.id[2])
-        if src == 0
-            for target in reference.candidates
-                push!(roots, target)
-            end
-        else
-            append!(adj[src], reference.candidates)
-        end
-    end
+    union!(roots, toplevel)
     return adj, roots
 end
 
