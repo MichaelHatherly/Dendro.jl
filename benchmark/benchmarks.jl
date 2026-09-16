@@ -170,9 +170,10 @@ SUITE["stages"]["scattered"] =
 # per capture rather than per match. These four cases separate the cost of declaring rules
 # at all from the cost of the predicate a rule chooses.
 #
-# `none` is the control: the same corpus with no rules declared, which must not move, since
-# the pattern pass is skipped entirely for a project that declares none.
+# `none` is the control: the same corpus under the shipped pack alone, the cost every scan
+# pays, read from a directory holding no query file of its own.
 
+const PATTERN_NONE_DIR = mktempdir()
 const PATTERN_DIR = mktempdir()
 mkpath(joinpath(PATTERN_DIR, ".dendro", "patterns"))
 
@@ -215,7 +216,12 @@ write(
 # nothing says so until CI runs the benchmark.
 function pattern_config(dir, specs)
     base = Dendro.discover_config([dir]; use_files = false)
-    replaced = (patterns = specs, patterns_dir = joinpath(dir, ".dendro", "patterns"))
+    # The shipped pack stays declared, since its queries are read whatever the config says
+    # and a capture naming an undeclared rule is a config error.
+    replaced = (
+        patterns = vcat(base.patterns, specs),
+        patterns_dir = joinpath(dir, ".dendro", "patterns"),
+    )
     return Dendro.Config(;
         (f => get(replaced, f, getfield(base, f)) for f in fieldnames(Dendro.Config))...
     )
@@ -225,7 +231,7 @@ flag_spec(name) = Dendro.PatternSpec(name, "benchmark rule", :warn, :flag, nothi
 scalar_spec(name) = Dendro.PatternSpec(name, "benchmark rule", :warn, :scalar, (5, 10))
 
 const PATTERN_CONFIGS = (
-    none = pattern_config(PATTERN_DIR, Dendro.PatternSpec[]),
+    none = pattern_config(PATTERN_NONE_DIR, Dendro.PatternSpec[]),
     flags = pattern_config(PATTERN_DIR, [flag_spec(:bench_catch), flag_spec(:bench_loop), flag_spec(:bench_literal)]),
     regex = pattern_config(PATTERN_MATCH_DIR, [flag_spec(:bench_named)]),
     scalars = pattern_config(
