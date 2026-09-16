@@ -206,6 +206,21 @@
         return sort!([Int(TreeSitter.start_point(n).row) + 1 for n in Dendro.pattern_hits(index, name)])
     end
 
+    # A ParsedFile whose index carries the hits of one pattern `query`, the corpus record a
+    # pass reading declared rules needs. `parsedfile` indexes no patterns, and the config
+    # cascade a scan resolves them through has nothing to say about a pass reading the
+    # index it produced.
+    function patternfile(lang, src, query::AbstractString; file = "f." * string(lang))
+        profile = Dendro.PROFILES[Symbol(lang)]
+        tree = Dendro.parse_source(Dendro.parser_for(profile), String(src))
+        index = idx(lang, src)
+        compiled = Dendro.compile_pattern_query(
+            Dendro.language_grammar(profile), query, "$(lang).patterns.scm"
+        )
+        Dendro.index_patterns!(index, tree, compiled, String(src))
+        return Dendro.ParsedFile(profile, String(src), file, tree, index, Dendro.Directive[])
+    end
+
     # --- Config fixtures ------------------------------------------------------
     # `discover_config` with the user-global layer pointed at an empty directory, so a
     # developer's own `~/.config/dendro/config.toml` cannot leak into an assertion.

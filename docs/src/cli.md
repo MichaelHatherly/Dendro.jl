@@ -33,6 +33,19 @@ dendro --check --since=origin/main src
 `--base` asks a different question, scoping the report to the lines a change touched, so
 naming both is a usage error rather than a silent choice of one.
 
+A `--base` run also closes with the two corpus scores read against that ref and a count of
+the lines the change added and removed:
+
+```
+erosion   0.42  (base 0.39, +0.03)
+verbosity 0.19  (base 0.21, -0.02)
+lines     +412 -118  (net +294)
+```
+
+Without a ref the first two lines print alone, with no comparison to draw. Neither score
+reaches the gate, so `--check` prints neither. [Scoring and metrics](@ref) says what each
+one measures and how far to trust it.
+
 Both read the repository through libgit2 rather than by running `git`, so neither needs
 the `git` or `tar` binaries on `PATH`. That matters in a minimal CI container, and it
 means the base revision is read straight from the object database: no worktree is

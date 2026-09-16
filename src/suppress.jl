@@ -28,6 +28,9 @@ const DIRECTIVE_RE = r"^[\s#/*;=!<>-]*dendro-ignore(-file)?\b(?:\s*:\s*([\w,\s]+
 # 1-based source line of a node's first character.
 line_of(node) = Int(TreeSitter.start_point(node).row) + 1
 
+# The 1-based source lines a node runs from and to, the region a `Location` records.
+line_span(node) = (line_of(node), Int(TreeSitter.end_point(node).row) + 1)
+
 # Parse the metric-list capture into a validated set, warning on unknown names.
 # `valid` is the active rule set's metric names. Names separate on commas or
 # whitespace, so a recognized metric still applies when stray words trail it; a

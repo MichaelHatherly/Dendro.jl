@@ -314,6 +314,18 @@ gate floor. A chain of directories each holding one child is a real layout defec
 see, because that is not about coupling at all and no reading of the graph finds it; answer
 that with a separate structural check, not by making this rule cleverer.
 
+A score is not a finding, and that is the line the two corpus ratios sit on. Erosion and
+verbosity are single numbers over a whole corpus, so neither names a site and neither names
+an edit. The gate reads findings, and no one commit can satisfy a ratio, so putting one in
+`errors` would make the gate unsatisfiable by construction. The two-score model has nothing
+to apply either. A band would need a target the corpus cannot supply, and a percentile needs
+a population where here there is one reading. What the pair leaves is the trend against
+yourself. That is why the paper's own numbers go in the docs and stay out of the report: a
+population is a population, never a threshold. The line delta sits on the same side. It
+says how large a change was beside what the scores say it made worse, and the size of a diff
+is a fact about it rather than a judgement on it. Answer a request to gate on any of the
+three by pointing at the finding that names the site.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment

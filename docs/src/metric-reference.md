@@ -83,6 +83,13 @@ The band column is empty where the metric is a flag and always reports `:high`.
 The twelve with a band are the relational names `[bands]` accepts. The rest carry no band
 to retune.
 
+### Not metrics
+
+A report closes with `erosion` and `verbosity`, and under `--base` with a count of the lines
+the change moved. None of the three is a metric, which is why none appears above. Each is a
+single ratio or count over the whole corpus, so it names no site, carries no band and no
+percentile, and never reaches the gate. [Scoring and metrics](@ref) covers them.
+
 ## Against a library
 
 Both are opt-in and both need a library to compare against. See

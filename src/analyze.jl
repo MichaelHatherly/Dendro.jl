@@ -16,7 +16,7 @@ end
 
 # A diff scope: the git toplevel, the changed line ranges per file relative to that root,
 # and each corpus file's path already resolved against it. Mirrors the per-file shape
-# `changed_ranges` returns.
+# `DiffSummary.ranges` carries.
 #
 # `rels` is resolved up front over the whole corpus rather than per location. Every scoping
 # test needs a location's repo-relative path, `realpath` is a syscall, and a dozen passes
@@ -79,26 +79,111 @@ function resolve_corpus(files::Vector{ParsedFile})
     )
 end
 
+# The two structural clone passes, unranked. Both the report and the corpus summary read
+# them, the report after ranking and the summary as they come, since a cluster's rank orders
+# a report and neither ratio reads it.
+structural_clones(files::Vector{ParsedFile}, cfg::Config) = (
+    cluster_duplicates(files; min_size = cfg.min_size),
+    cluster_near_duplicates(
+        files; min_size = cfg.min_size, threshold = cfg.threshold,
+        radius_factor = cfg.radius_factor
+    ),
+)
+
+"""
+    scan_delta(diff, root, roots, ignore, profiles) -> LineDelta
+
+How many lines the change added and removed across the source a scan covers, summed over
+`diff`'s per-path tallies.
+
+Which paths count is decided here rather than in `git.jl`, because it is a question about
+the scan rather than about the diff: a path under one of `roots`, with an extension one of
+`profiles` claims, that `ignore` does not drop. That is "the paths the scan would have
+parsed", not the paths it did. A deleted file is in no corpus, and the net has to go
+negative when a change removes one.
+
+Two consequences to know rather than to fix. Rename detection is off, so a rename reads as
+a deletion plus an addition. A binary or unparseable file is excluded by the extension test,
+which is also what keeps a vendored asset out of the count.
+"""
+function scan_delta(
+        diff::DiffSummary, root::AbstractString, roots::Vector{String},
+        ignore::Vector{String}, profiles::Dict{Symbol, LanguageProfile}
+    )
+    rels = String[relpath(realpath(p), root) for p in roots]
+    patterns = compile_ignores(ignore)
+    extensions = extension_map(profiles)
+    added = removed = 0
+    for (path, d) in diff.stats
+        lang = language_for_path(path, extensions)
+        (lang === nothing || !haskey(profiles, lang)) && continue
+        # Ignore patterns are matched against the path relative to the root that was
+        # scanned, the way `source_files` matches them.
+        any(r -> under(path, r) && walks_to(patterns, relpath(path, r)), rels) || continue
+        added += d.added
+        removed += d.removed
+    end
+    return LineDelta(added, removed)
+end
+
+"""
+    base_scores(roots, ref, root, cfg, language, ignore) -> CorpusScores
+
+The same scores over `roots` as they stood at `ref`, so a report can say which way an edit
+moved them. `ignore` is the resolved pattern list, the config's and the caller's together.
+
+Only what the two ratios read is rebuilt: the corpus, its parse, and the two structural
+clone passes. Bindings, linkage, both graphs, naturalness, the libraries and the clone
+ranking are all skipped, since none of them changes a ratio and each is a large share of a
+scan. Roots absent at `ref` leave an empty corpus, which scores zero and reads in the report
+as no comparison to draw.
+
+Every argument is positional. A keyword splits a method into a `kwcall` wrapper and a body,
+and the sound analyser then raises every report against the body twice, which is the same
+reason `with_base_corpus` takes its `keyword` positionally. The profile registry and the
+pattern directories are re-derived here rather than passed for the same reason: both are
+pure functions of `cfg` and `roots`, and two more arguments cost more than two `merge`s.
+The directories resolve against `roots` and never the base corpus, so a repo's own rules
+score both revisions.
+"""
+function base_scores(
+        roots::Vector{String}, ref, root::AbstractString, cfg::Config, language, ignore::Vector{String}
+    )
+    profiles = resolve_profiles(cfg)
+    dirs = pattern_dirs(cfg, roots)
+    return with_base_corpus(roots, ref, root) do troot, tpaths
+        isempty(tpaths) && return CorpusScores()
+        corpus = collect_corpus(tpaths, ignore, language; profiles)
+        files = parse_corpus(
+            corpus; language, profiles, patterns = cfg.patterns,
+            pattern_dirs = dirs, bindings = false, directives = false
+        )
+        exact, near = structural_clones(files, cfg)
+        return corpus_scores(files, [exact; near], cfg.patterns)
+    end
+end
+
 # Every clone pass, scoped and ranked by how far apart a cluster's members sit in the module
 # graph. The opt-in vocabulary pass is gated here rather than resolved into the rule set,
 # and reads the unscoped clone findings: a pair is excluded because the structural passes
 # reported it at all, not because the diff kept it.
+#
+# Both views come back. The scoped one is the report; the unscoped structural pair is what
+# the corpus summary measures, since a ratio over the corpus cannot be narrowed to the files
+# a diff touched.
 function clone_clusters(files::Vector{ParsedFile}, cfg::Config, scope, placement::ModulePlacement)
-    exact = rank_clones!(cluster_duplicates(files; min_size = cfg.min_size), placement)
-    near = rank_clones!(
-        cluster_near_duplicates(
-            files; min_size = cfg.min_size, threshold = cfg.threshold,
-            radius_factor = cfg.radius_factor
-        ), placement
-    )
+    exact, near = structural_clones(files, cfg)
+    rank_clones!(exact, placement)
+    rank_clones!(near, placement)
+    structural = [exact; near]
     findings = [scope_clusters(exact, scope); scope_clusters(near, scope)]
-    get(cfg.rules, RELATIONAL.reimplementation, false) || return findings
+    get(cfg.rules, RELATIONAL.reimplementation, false) || return findings, structural
     reimpl = cluster_reimplementations(
         files; min_size = cfg.min_size, threshold = cfg.reimpl_threshold,
-        clone_findings = [exact; near]
+        clone_findings = structural
     )
     append!(findings, scope_clusters(rank_clones!(reimpl, placement), scope))
-    return findings
+    return findings, structural
 end
 
 # The grain the near pass and the reference index it reads have to agree on, resolved in one
@@ -262,7 +347,8 @@ function analyze(
     profiles = resolve_profiles(cfg)
     # The config's patterns and the keyword's add up, so a repo excludes its vendored tree
     # once in `.dendro.toml` and a caller narrows further without restating it.
-    corpus = collect_corpus(roots, String[cfg.ignore; ignore], language; profiles)
+    excluded = String[cfg.ignore; ignore]
+    corpus = collect_corpus(roots, excluded, language; profiles)
     references = reference_indices(
         active_libraries(cfg), corpus; min_size = cfg.min_size, profiles, grain = library_grain(cfg)
     )
@@ -274,13 +360,14 @@ function analyze(
     # Resolved once for the whole scan: which metrics' distributions support a rank.
     guard = percentile_guard(bl, cfg.cut)
 
-    # Assigned once, so the scoring closure captures it concretely, never as a `Core.Box`.
-    scope = if base === nothing
-        nothing
-    else
-        root = git_toplevel(roots)
-        Scope(root, changed_ranges(root, base), files)
-    end
+    # Each assigned once, so the scoring closure captures them concretely, never as a
+    # `Core.Box`. The base ref's own scores are taken here too, against the same config, so
+    # a retuned band never reads as a movement on its own.
+    root = base === nothing ? "" : git_toplevel(roots)
+    diff = base === nothing ? DiffSummary() : diff_summary(root, base)
+    scope = base === nothing ? nothing : Scope(root, diff.ranges, files)
+    delta = base === nothing ? LineDelta() : scan_delta(diff, root, roots, excluded, profiles)
+    was = base === nothing ? CorpusScores() : base_scores(roots, base, root, cfg, language, excluded)
 
     findings = parallel_flatmap(length(files), Finding) do i
         f = files[i]
@@ -298,8 +385,10 @@ function analyze(
     end
 
     res = resolve_corpus(files)
-    append!(findings, clone_clusters(files, cfg, scope, ModulePlacement(res.file_graph)))
+    clones, structural = clone_clusters(files, cfg, scope, ModulePlacement(res.file_graph))
+    append!(findings, clones)
     append!(findings, library_clusters(files, cfg, scope, references))
     append!(findings, relational_clusters(files, cfg, scope, res))
-    return Findings(findings, unmatched_patterns(files, cfg.patterns))
+    summary = ScanSummary(corpus_scores(files, structural, cfg.patterns), was, delta)
+    return Findings(findings, unmatched_patterns(files, cfg.patterns), summary)
 end

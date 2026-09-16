@@ -10,6 +10,7 @@ import TreeSitter
 
 public analyze, active, errors, github_annotations, mermaid
 public Finding, Findings, Location
+public ScanSummary, CorpusScores, LineDelta
 public Rule, BUILTIN_RULES, OPTIONAL_RULES, PatternSpec
 public Library
 public check_patterns, PatternTestFailure
@@ -30,6 +31,7 @@ include("suppress.jl")
 include("parsed_file.jl")
 include("baseline.jl")
 include("report.jl")
+include("summary.jl")
 include("scoring.jl")
 include("diff.jl")
 include("git.jl")

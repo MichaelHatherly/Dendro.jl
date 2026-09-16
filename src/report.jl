@@ -5,7 +5,14 @@
     Location
 
 A code site: its `file` path, 1-based `line`, enclosing `unit` name ("" when no name node
-is found), and an optional `label`, what this site means to the finding carrying it.
+is found), an optional `label`, what this site means to the finding carrying it, and the
+`lastline` the site runs to.
+
+`lastline` is the region a finding covers, which is what `corpus_scores` measures verbosity
+over. It defaults to `line`, since most sites building a location report a point and have
+no span to give. Diff scoping deliberately does not read it: `in_scope` and the gate's
+`fkey` still test the first line alone, so widening a scope to a whole span stays a
+separate decision from recording one.
 
 A label is what lets a finding name an edit rather than only score one. `:scattered` counts
 how many communities a file's units are pulled into; the label on each location says which
@@ -23,8 +30,10 @@ struct Location
     line::Int
     unit::String
     label::String
+    lastline::Int
 end
-Location(file, line, unit) = Location(file, line, unit, "")
+Location(file, line, unit, label) = Location(file, line, unit, label, line)
+Location(file, line, unit) = Location(file, line, unit, "", line)
 
 """
     Finding
@@ -50,12 +59,14 @@ struct Finding
     suppressed::Bool
 end
 
-# Single-location finding, the shape every per-file metric produces. Its nine
+# Single-location finding, the shape every per-file metric produces. Its ten
 # parameters mirror the struct's seven fields with the location split into file,
-# line, and unit, so the count tracks the struct, not a wide interface.
+# line, unit, and last line, so the count tracks the struct, not a wide interface.
 # dendro-ignore: parameter_count
-Finding(file, line, unit, metric, value, absolute, percentile, kind, suppressed) =
-    Finding(metric, [Location(file, line, unit)], value, absolute, percentile, kind, suppressed)
+Finding(file, line, lastline, unit, metric, value, absolute, percentile, kind, suppressed) =
+    Finding(
+    metric, [Location(file, line, unit, "", lastline)], value, absolute, percentile, kind, suppressed
+)
 
 """
     Scan
@@ -111,7 +122,10 @@ function unit_findings!(out, scan::Scan, unit::Unit)
         outlier = pct !== nothing && pct >= scan.cut
         if band != :ok || outlier
             sup = is_suppressed(scan.directives, unit.firstline, r.name)
-            push!(out, Finding(scan.file, unit.firstline, name, r.name, value, band, pct, :scalar, sup))
+            push!(
+                out,
+                Finding(scan.file, unit.firstline, unit.lastline, name, r.name, value, band, pct, :scalar, sup)
+            )
         end
     end
     return out
@@ -126,12 +140,15 @@ end
 # the gate unsatisfiable on a codebase where it fires.
 function flag_findings!(out, scan::Scan, nodes, metric::Symbol, severity::Symbol = :high)
     for node in nodes
-        line = line_of(node)
+        line, lastline = line_span(node)
         in_scope(scan, line) || continue
         name = is_function(node, scan.index) ?
             unit_name(node, scan.index) : ""
         sup = is_suppressed(scan.directives, line, metric)
-        push!(out, Finding(scan.file, line, name, metric, nothing, severity, nothing, :flag, sup))
+        push!(
+            out,
+            Finding(scan.file, line, lastline, name, metric, nothing, severity, nothing, :flag, sup)
+        )
     end
     return out
 end
@@ -157,6 +174,63 @@ function findings_for(scan::Scan)
 end
 
 """
+    CorpusScores
+
+Two ratios over one corpus, with the sizes they were divided by.
+
+- `erosion`: the share of callable mass sitting in complex functions.
+- `verbosity`: the share of source lines a flag rule or a clone finding covers.
+- `lines`: physical source lines across the corpus, verbosity's denominator.
+- `callables`: how many definitions erosion was computed over.
+
+A default-constructed value is the empty corpus, every score zero. `lines` is what tells
+that apart from a scored corpus, since a corpus holding source always has lines.
+
+Neither ratio is a [`Finding`](@ref) and neither reaches the gate. A ratio over a corpus
+names no site, so it names no edit; see `corpus_scores`.
+"""
+struct CorpusScores
+    erosion::Float64
+    verbosity::Float64
+    lines::Int
+    callables::Int
+end
+CorpusScores() = CorpusScores(0.0, 0.0, 0, 0)
+
+"""
+    LineDelta
+
+How many lines a change added and removed, libgit2's own tally over the diff. A fact about
+the size of a change rather than a judgement about it, so like [`CorpusScores`](@ref) it is
+reported and never gated.
+"""
+struct LineDelta
+    added::Int
+    removed::Int
+end
+LineDelta() = LineDelta(0, 0)
+
+"""
+    ScanSummary
+
+What one scan measured about its corpus as a whole: the scores `now`, the same scores at
+the `base` ref, and the line `delta` between the two. Without a `base` ref the last two are
+empty, which is what a report reads to decide whether it has a comparison to print.
+"""
+struct ScanSummary
+    now::CorpusScores
+    base::CorpusScores
+    delta::LineDelta
+end
+ScanSummary() = ScanSummary(CorpusScores(), CorpusScores(), LineDelta())
+ScanSummary(now::CorpusScores) = ScanSummary(now, CorpusScores(), LineDelta())
+
+# Whether this summary was measured against a base ref. An empty base corpus has no lines
+# and a scored one always does, so the denominator is the signal rather than a fourth field
+# restating what the first three already say.
+has_base(s::ScanSummary) = s.base.lines > 0
+
+"""
     Findings <: AbstractVector{Finding}
 
 The result of [`analyze`](@ref): the findings it produced, printed as a report.
@@ -171,8 +245,13 @@ struct Findings <: AbstractVector{Finding}
     # validation nor a review catches. Carried on the result rather than warned, since it
     # describes the run rather than diagnosing a file.
     unmatched::Vector{Symbol}
+    # What the scan measured about the corpus as a whole. Empty unless `analyze` built it:
+    # `high_floor` and the ratchet rebuild a `Findings` from a finding set alone, and a
+    # corpus ratio is not a finding set to difference.
+    summary::ScanSummary
 end
-Findings(items::Vector{Finding}) = Findings(items, Symbol[])
+Findings(items::Vector{Finding}, unmatched::Vector{Symbol}) = Findings(items, unmatched, ScanSummary())
+Findings(items::Vector{Finding}) = Findings(items, Symbol[], ScanSummary())
 
 Base.size(fs::Findings) = size(fs.items)
 Base.getindex(fs::Findings, i::Int) = fs.items[i]
@@ -182,8 +261,13 @@ Base.IndexStyle(::Type{Findings}) = IndexLinear()
     active(findings) -> Findings
 
 The findings not suppressed by an inline directive. Use this for gating.
+
+Everything the scan measured about the run rather than about a file, the unmatched rules
+and the corpus summary, carries over: a directive accepts one finding and says nothing
+about either.
 """
-active(findings) = Findings(filter(f -> !f.suppressed, findings))
+active(findings::Findings) =
+    Findings(filter(f -> !f.suppressed, findings), findings.unmatched, findings.summary)
 
 # A location's label as it renders, set off from the unit name so the two read apart. Empty
 # for a site whose finding attached no meaning to it, which is every per-file metric.
@@ -194,6 +278,50 @@ note(loc::Location) = isempty(loc.label) ? "" : string("  [", loc.label, "]")
 function score_suffix(f::Finding)
     rel = f.percentile === nothing ? "" : string("; p", round(Int, f.percentile * 100))
     return string("(", f.absolute, rel, ")")
+end
+
+# A summary ratio to two decimal places. Printf is not a dependency, and both ratios run
+# from zero to one, so two digits are the whole reading rather than a format to negotiate.
+function two_places(x::Float64)
+    hundredths = round(Int, abs(x) * 100)
+    return string(x < 0 ? "-" : "", hundredths ÷ 100, ".", lpad(hundredths % 100, 2, '0'))
+end
+
+# The width the summary labels share, so the values line up under each other.
+const SUMMARY_LABEL = 9
+
+# One summary score, and with a base ref what it was there and which way it moved. The
+# movement is signed both ways: a report read at a glance has to say which direction is
+# which without the reader subtracting.
+function score_line(io::IO, label::AbstractString, now::Float64, base::Float64, compare::Bool)
+    moved = now - base
+    sign = moved < 0 ? "" : "+"
+    against = compare ? string("  (base ", two_places(base), ", ", sign, two_places(moved), ")") : ""
+    println(io, rpad(label, SUMMARY_LABEL), " ", two_places(now), against)
+    return nothing
+end
+
+# How large the change was, beside what the scores say it made worse. The size is a fact
+# about the diff rather than a judgement on it, so it prints as a count and carries no band.
+function delta_line(io::IO, d::LineDelta)
+    net = d.added - d.removed
+    println(
+        io, rpad("lines", SUMMARY_LABEL), " +", d.added, " -", d.removed,
+        "  (net ", net < 0 ? "" : "+", net, ")"
+    )
+    return nothing
+end
+
+# The corpus scores, printed after every finding. A summary with no lines was never
+# measured: `high_floor` and the ratchet rebuild a `Findings` from findings alone, and the
+# gate has nothing to say about a ratio.
+function show_summary(io::IO, s::ScanSummary)
+    s.now.lines > 0 || return nothing
+    compare = has_base(s)
+    score_line(io, "erosion", s.now.erosion, s.base.erosion, compare)
+    score_line(io, "verbosity", s.now.verbosity, s.base.verbosity, compare)
+    compare && delta_line(io, s.delta)
+    return nothing
 end
 
 # The REPL display for the `Findings` `analyze` returns. Each finding prints as
@@ -222,6 +350,7 @@ function Base.show(io::IO, ::MIME"text/plain", findings::Findings)
     suppressed > 0 && println(io, suppressed, " finding(s) suppressed by directives")
     isempty(findings.unmatched) ||
         println(io, "warning: pattern rule(s) matched nothing: ", join(findings.unmatched, ", "))
+    show_summary(io, findings.summary)
     return nothing
 end
 

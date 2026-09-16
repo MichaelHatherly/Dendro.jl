@@ -334,12 +334,30 @@
 # `any_state` loop rather than `all(isempty, mine)` removed one, and narrowing
 # `min_methods` to `Int` removed the other, so what is left is the kwarg shape rather than
 # inference that could be recovered. Basic mode stays at zero.
+#
+# The pattern pack and `:divisible_class` were built on separate branches from 1379, one
+# raising sound to 1383 and the other to 1386. Stacked, the tree measures 1390, the two
+# raises added together and nothing more, so the sum is the limit and each branch's
+# paragraph above stands as the evidence for its share. Opt stays at 33.
+#
+# The corpus scores and the line delta (`summary.jl`, `ScanSummary`, `CorpusScores` and
+# `LineDelta` in `report.jl`, `lastline` on `Location`) raised sound from 1390 to 1412 and
+# left opt at 33. Eleven of the 22 sit in `report.jl`, the `convert(::Type{T}, ::Any)`
+# report each field of a struct's implicit all-`Any` constructor raises, the rate `Finding`
+# (five) and `Scan` (seven) already pay, here for three new types and one field each on
+# `Findings` and `Location`. The rest follow the new values through `analyze.jl` (six),
+# `git.jl` (two), `ignore.jl`, `suppress.jl` and `summary.jl` (one each). Two narrowings
+# were measured. Making `base_scores` positional landed and took 1418 to 1412, since a
+# keyword splits a method into a `kwcall` wrapper and a body and every report against the
+# body counts twice. Typed inner constructors on the three new structs took it to 1403 and
+# were reverted: they leave three result types stricter than every neighbouring one and
+# still do not reach 1390.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1386  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1412  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

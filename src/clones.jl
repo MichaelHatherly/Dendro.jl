@@ -262,7 +262,14 @@ function cluster_duplicates(files::Vector{ParsedFile}; min_size::Integer = DEFAU
         length(idxs) < 2 && continue
         maximal = filter(i -> !subsumed(i, entries, buckets, anchor_at), idxs)
         length(maximal) < 2 && continue
-        locations = [Location(entries[i].file, entries[i].line, entries[i].unit) for i in maximal]
+        # The far end comes off the anchor's own node rather than a field beside `line`.
+        # Every subtree large enough to bucket becomes an entry and only a reported one
+        # needs a span, so the read belongs here and not in the record.
+        locations = [
+            Location(
+                entries[i].file, entries[i].line, entries[i].unit, "", last(line_span(entries[i].node))
+            ) for i in maximal
+        ]
         suppressed = any(entries[i].suppressed for i in maximal)
         push!(findings, Finding(RELATIONAL.duplicate, locations, length(locations), :high, nothing, :flag, suppressed))
     end
@@ -583,7 +590,7 @@ function clone_units(files::Vector{ParsedFile}, min_size::Integer, metric::Symbo
         for unit in units(f.index)
             sequence, histogram, digest, size = clone_features(unit, f.index)
             size < unit_floor(unit, f.index, min_size) && continue
-            loc = Location(f.file, unit.firstline, unit_name(unit, f.index))
+            loc = Location(f.file, unit.firstline, unit_name(unit, f.index), "", unit.lastline)
             sup = is_suppressed(f.directives, unit.firstline, metric)
             push!(
                 out,

@@ -91,3 +91,75 @@ in the right file, scattering whether a file's units belong to one module, and
 reachability whether a private definition is dead, reported as `:unreferenced`. All four
 are in [Cohesion and placement](@ref). The readings taken one level up, over files
 depending on files, are in [Dependencies and layout](@ref).
+
+## Corpus scores
+
+Every reading above names a site. The two scores here name none: each is one ratio over the
+whole corpus, printed after the last finding and nowhere else.
+
+```
+erosion   0.16
+verbosity 0.03
+```
+
+Erosion is the share of a codebase's callable weight sitting in complex functions. A
+definition's weight is its cyclomatic complexity times the square root of its length, and
+erosion is the weight in definitions past complexity 10 over the weight in all of them. The
+cut comes from SlopCodeBench, which takes it from Radon. It coincides with `cyclomatic`'s
+own warn edge, so the two agree by construction: the rule says which functions sit past the
+edge, and erosion says how much of the codebase they are.
+
+Verbosity is the share of source lines a finding covers. The numerator is every line a
+declared flag rule matched or a `:duplicate` or `:near_duplicate` finding spans, counted
+once however many findings reach it; the denominator is the corpus's physical lines. Only
+declared rules count, the pack Dendro ships plus whatever a project adds, since that is the
+population SlopCodeBench measures. Built-in flags are out, and so is a scalar pattern rule:
+a scalar counts matches per unit and names no region. A suppressed match still counts, since
+a `dendro-ignore` accepts a finding where this measures what the source holds.
+
+Both read the whole corpus even under `--base`. A diff narrows which findings get reported;
+it cannot narrow the codebase a ratio is taken over.
+
+### Reading them against a base ref
+
+With a `base` ref the same scores are taken over the corpus as it stood there, so each line
+says what it was and which way it moved. A third line says how large the change was:
+
+```
+erosion   0.42  (base 0.39, +0.03)
+verbosity 0.19  (base 0.21, -0.02)
+lines     +412 -118  (net +294)
+```
+
+The line counts are libgit2's own tally over the diff, restricted to the source the scan
+covers: a path under a scanned root, with an extension a language profile claims, surviving
+`ignore`. Those are the paths the scan would have parsed. A file the change deleted is in no
+corpus, and its lines still reach the removed count, which is what lets a net go negative.
+Two consequences follow from reading git instead of the parsed files. Rename detection is
+off, so a rename reads as a deletion plus an addition. A binary or unparseable file falls
+out on its extension, which is also what keeps a vendored asset out of the count.
+
+Scoring the base costs a second pass over the base tree, roughly half again the time of a
+`--base` scan. That pass rebuilds only what the two ratios read: the corpus, its parse, and
+the two clone passes.
+
+### What the numbers are not
+
+SlopCodeBench's Table 2 measured Python two ways:
+
+| | verbosity | erosion |
+| --- | --- | --- |
+| human-written | 0.15 ± 0.06 | 0.31 ± 0.17 |
+| agent-written | 0.33 ± 0.10 | 0.68 ± 0.20 |
+
+Dendro never prints those beside your own, because they are a population and never a
+threshold.
+
+They are not comparable. Verbosity's numerator here is whichever rules you have enabled,
+where the paper counts a fixed set of eight Python rules; the shipped pack is fifteen flags
+across twelve languages, and a project adding its own moves the number again. Erosion pools
+every language in the corpus, where the paper measured Python alone.
+
+The value is the trend against yourself. A ratio over a corpus names no site, so it names no
+edit, and no one commit can satisfy it. That is why neither is a finding, neither carries a
+band or a percentile, and neither reaches [`errors`](@ref).

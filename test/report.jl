@@ -59,6 +59,28 @@ end
     end
 end
 
+# A location spans a region, not a point, and the region is what the verbosity score
+# measures. The short constructors keep naming a single line, since most of the sites
+# building one have no span to give.
+@testitem "a location spans from its line to its last" tags = [:report] begin
+    @test Dendro.Location("f.jl", 7, "g").lastline == 7
+    @test Dendro.Location("f.jl", 7, "g", "toward h.jl").lastline == 7
+
+    mktempdir() do dir
+        # A scalar finding spans its unit, and a flag finding the node it fired on. The
+        # catch clause runs lines 4 to 5, so both readings are wider than their first line.
+        path = joinpath(dir, "c.jl")
+        write(path, "function f(a, b, c, d, e, g)\n    try\n        h(a)\n    catch\n    end\nend\n")
+        findings = Dendro.analyze(path)
+
+        scalar = first(only(filter(x -> x.metric == :parameter_count, findings)).locations)
+        @test (scalar.line, scalar.lastline) == (1, 6)
+
+        flag = first(only(filter(x -> x.metric == :empty_catch, findings)).locations)
+        @test (flag.line, flag.lastline) == (4, 5)
+    end
+end
+
 @testitem "report formatting" tags = [:report] begin
     mktempdir() do dir
         path = joinpath(dir, "c.jl")

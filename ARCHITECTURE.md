@@ -75,9 +75,12 @@ percentile. This is corpus-shaping, distinct from `base` scoping, which restrict
 already-built corpus to changed lines.
 
 With `base`, `analyze` scopes to a git diff: it parses the diff of the working tree
-against that ref via `changed_ranges` and restricts each file's findings (and the
+against that ref via `diff_summary` and restricts each file's findings (and the
 duplicate clusters, exact and near, through the shared `scope_clusters`) to the
-touched line ranges. Nothing else branches the flow.
+touched line ranges. The corpus summary is the exception, and deliberately so: a ratio over
+a corpus cannot be narrowed to the files a diff touched, so both halves read past the scope
+(`## Corpus scores`). A `base` ref also adds a second pass over the base tree and reads the
+diff's line tallies, both of which feed the summary alone. Nothing else branches the flow.
 
 ## Parallelism
 
@@ -367,15 +370,30 @@ Reporting:
   `show` method) that emits GitHub Actions workflow commands for inline PR
   annotations. Both share `score_suffix`. A finding renderer takes `Findings`; a
   graph renderer (`mermaid`, `mermaid.jl`) takes the corpus, since a graph is not
-  recoverable from findings.
+  recoverable from findings. It also holds the result types the corpus summary fills,
+  `CorpusScores`, `LineDelta` and `ScanSummary`. They sit beside `Findings` because
+  `Findings` carries one as a field and so needs it declared first, and because every other
+  result type already lives here.
+- `summary.jl` is the corpus summary pass: `corpus_scores` and the two halves behind it,
+  `erosion_score` and `covered_lines`. It reads a parsed corpus, the unscoped clone
+  findings, and the declared `PatternSpec`s, and returns a `CorpusScores`. `base_scores` and
+  `scan_delta` sit in `analyze.jl` instead: collecting and parsing a second corpus is what
+  that file does, and reaching the config cascade from here would put the pass in the same
+  dependency cycle. Included after `report.jl`, whose types it fills, and read by
+  `analyze.jl`.
 - `diff.jl` defines the line-range vocabulary a scope is expressed in: `coalesce_lines`
   merges added line numbers into ranges, and `inrange`/`intersects` test a span against
   them. The line numbers themselves come from `git.jl`.
 - `git.jl` is everything Dendro asks of a git repository, and the only file that knows
   libgit2 exists. `git_toplevel` resolves the repo root for the ratchet base, the spatial
   `base` scope, the `:change` diagram, and the discovered `.dendro.toml`.
-  `changed_ranges` reads a revision against the working tree into per-file line ranges,
-  pulling each hunk's lines out of a `git_patch` rather than parsing diff text.
+  `diff_summary` reads a revision against the working tree in one walk over the patches,
+  returning a `DiffSummary` of both readings: the per-file added-line `ranges` a scope tests
+  against, pulled hunk by hunk out of a `git_patch` rather than parsed from diff text, and
+  the per-file `stats` from `git_patch_line_stats`, libgit2's own tally. The tally comes
+  from that call rather than off the per-line walk, so the two cannot drift apart on a shape
+  the walk treats specially. They key different path sets: a pure deletion adds no line and
+  so has no `ranges` entry, while its `stats` entry is what lets a net count go negative.
   `with_base_corpus` materialises a revision into a tempdir by walking its tree and
   writing each blob (`checkout_tree`, `write_entry`), with `base_tree` resolving the ref.
   The `LibGit2` stdlib owns repository and object lifetimes; raw `ccall` covers only the
@@ -685,7 +703,11 @@ Reporting:
   the symbol table, the `ResolvedLinkage` over it, and both graphs, built once),
   `clone_clusters`
   (exact and near duplicates plus the config-gated reimplementation pass, each ranked
-  against the `ModulePlacement`), `library_clusters` (the two cross-corpus passes, beside
+  against the `ModulePlacement`, returning both the scoped findings and the unscoped
+  structural pair the summary reads), `structural_clones` (the two structural passes
+  unranked, shared by that and by the base pass), `base_scores` and `scan_delta` (what a
+  `base` ref adds to the summary, both covered in `## Corpus scores`),
+  `library_clusters` (the two cross-corpus passes, beside
   the clone family rather than inside it, since a one-location finding has no module
   distance for `rank_clones!` to read), `relational_clusters` (naturalness, low cohesion,
   cross-file placement, scattering, unreferenced definitions, the audience pass over the
@@ -844,8 +866,14 @@ so the parallel pass shares it with no lock. The gate's `fkey` and the `:change`
 `edges_by_path` memoize the same resolution per keying pass, through `relative_to`
 (`analyze.jl`), where the corpus is not to hand.
 
-`Location` (`report.jl`). A code site: file, 1-based line, enclosing unit name, and an
-optional label. A `Finding` carries one or more. A finding about something larger than a unit
+`Location` (`report.jl`). A code site: file, 1-based line, enclosing unit name, an optional
+label, and the last line the site runs to. That span is what `corpus_scores` measures
+verbosity over; `in_scope` and the gate's `fkey` still read the first line alone, so
+widening a diff scope to a whole span stays a separate decision from recording one. Four
+sites set a real span: `unit_findings!` and the near-duplicate emitter read it off the unit,
+`flag_findings!` and `cluster_duplicates` off the node. Every other site takes the default,
+the first line again.
+A `Finding` carries one or more. A finding about something larger than a unit
 points at a representative real site rather than inventing one: `:scattered` names one
 unit per community, and `:incoherent_package`, whose subject is a directory, names a
 representative unit in it. `:divisible_package` does the same for a directory and for each
@@ -880,7 +908,19 @@ are kept in the vector, not dropped, so they can be counted.
 `Findings` (`report.jl`). What `analyze` returns: an `AbstractVector{Finding}`, so
 it filters, iterates, and indexes like any vector, with a `show` method that
 renders the report. The wrapper exists so display lives on a Dendro-owned type
-rather than pirating `show` for `Vector{Finding}`.
+rather than pirating `show` for `Vector{Finding}`. Beside the findings it carries what the
+scan measured about the run: `unmatched`, the declared rules that matched nothing, and
+`summary`, the corpus scores. `active` preserves both, since a directive accepts one finding
+and says nothing about either. `high_floor` and `ratchet` rebuild from a finding set alone,
+so `errors` returns both empty.
+
+`ScanSummary` (`report.jl`). What a scan measured about its corpus as a whole: the
+`CorpusScores` `now`, the same `base` scores at the ref, and the `LineDelta` between them.
+`CorpusScores` holds the two ratios plus the sizes they divided by, `lines` and `callables`.
+`lines` is also the signal that a summary was measured at all. The renderer reads it before
+printing anything, and `has_base` reads the base copy of it to decide whether there is a
+comparison to draw. Without a base ref the last two fields are empty. None of the three is a
+`Finding` and none reaches the gate: see `## Corpus scores`.
 
 `Scan` (`report.jl`). The fixed context for analysing one file: the query index,
 path, the active `rules`, optional baseline, cut percentile, optional diff line
@@ -912,6 +952,42 @@ user-authored pattern rule may declare `:warn`, and `:library_duplicate` and
 `:library_near_duplicate` decide their band per finding, since only a match against a
 public whole library function names an import to make. The gate reads the band, not the
 kind.
+
+## Corpus scores
+
+Two ratios over the whole corpus, computed by `corpus_scores` (`summary.jl`) and carried on
+`Findings.summary`. Neither is a `Finding`, so neither has a band, a percentile, or a
+location, and neither reaches the gate. The text renderer prints them after the last finding;
+`github_annotations` prints nothing, since an annotation anchors on a line.
+
+Erosion is `erosion_score`: each callable's `erosion_mass`, complexity times the square root
+of its length, summed over the definitions past `EROSION_COMPLEXITY` and divided by the sum
+over all of them. Verbosity is `covered_lines` over `physical_lines`: the distinct
+`(file, line)` pairs a declared flag rule or a clone finding covers, over the corpus's
+lines. A line two findings both reach counts once.
+
+Three decisions shape what the numerator holds. Only declared pattern rules count, which is
+the population SlopCodeBench measures and what `PatternSpec.kind === :flag` selects; a
+built-in flag would shift the shape and `empty_catch` would double-count the pack's
+`swallowed_error`. Suppressed matches count, because a directive accepts a finding where
+this measures the source. The flagged half reads `f.index.patterns` directly rather than the
+findings, which is one of two ways the pass gets past the diff scope.
+
+The other is `clone_clusters` (`analyze.jl`), which returns both the scoped findings and the
+unscoped structural pair. `structural_clones` builds that pair, and both the report and the
+summary read it: the report after `rank_clones!`, the summary as it comes, since a cluster's
+rank orders a report and no ratio reads it. A `base` ref adds `base_scores` (`analyze.jl`),
+a second pass through `with_base_corpus` running only `collect_corpus`, `parse_corpus`
+without bindings or directives, and `structural_clones`. No linkage, no graphs, no
+naturalness, no libraries: none of them moves a ratio, and each is a large share of a scan.
+It costs about 1.5x a `--base` scan.
+
+`scan_delta` (`analyze.jl`) sums the diff's per-path tallies over the source the scan
+covers. Which paths count is decided there rather than in `git.jl`, since it is a question
+about the scan: a path under one of `roots`, with an extension `profiles` claims, that
+`walks_to` (`ignore.jl`) says the corpus walk would reach. Those are the paths the scan
+*would have* parsed. A deleted file is in no corpus, and its lines still have to land in
+`removed` or a net could never go negative.
 
 ## Duplicate detection
 

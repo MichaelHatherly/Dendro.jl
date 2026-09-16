@@ -70,11 +70,44 @@ function added_lines!(added::Vector{Int}, patch::Ptr{Cvoid})
     return added
 end
 
-# Each delta's added lines, coalesced into ranges and keyed by the new-side path. A file
-# with no added lines gets no entry, so a pure deletion and a binary change (which carries
-# no hunks at all) both fall out rather than being special-cased.
-function diff_ranges(diff::LibGit2.GitDiff)
-    out = Dict{String, Vector{UnitRange{Int}}}()
+# One patch's added and removed line counts, libgit2's own tally. One call per patch rather
+# than a count taken off the per-line walk, so the two readings cannot drift apart on a
+# shape the walk treats specially.
+function patch_line_stats(patch::Ptr{Cvoid})
+    context, additions, deletions = Ref{Csize_t}(0), Ref{Csize_t}(0), Ref{Csize_t}(0)
+    ok = ccall(
+        (:git_patch_line_stats, LibGit2_jll.libgit2), Cint,
+        (Ptr{Csize_t}, Ptr{Csize_t}, Ptr{Csize_t}, Ptr{Cvoid}),
+        context, additions, deletions, patch
+    )
+    ok == 0 || return LineDelta()
+    return LineDelta(Int(additions[]), Int(deletions[]))
+end
+
+"""
+    DiffSummary
+
+One diff read two ways, keyed by the new-side path relative to the repository root: the
+`ranges` of added lines a scope restricts findings to, and the `stats` counting how many
+lines each path added and removed.
+
+Both come out of one walk over the same patches, since asking libgit2 twice would diff the
+trees twice. They are not the same set of paths: a file with no added lines gets no `ranges`
+entry, where a pure deletion has to keep its `stats` entry or a net count could never go
+negative.
+"""
+struct DiffSummary
+    ranges::Dict{String, Vector{UnitRange{Int}}}
+    stats::Dict{String, LineDelta}
+end
+DiffSummary() = DiffSummary(Dict{String, Vector{UnitRange{Int}}}(), Dict{String, LineDelta}())
+
+# Each delta's added lines coalesced into ranges, and each delta's line tally, from one walk
+# over the patches. A file with no added lines gets no range entry, so a pure deletion and a
+# binary change (which carries no hunks at all) both fall out rather than being special-cased.
+function walk_diff(diff::LibGit2.GitDiff)
+    ranges = Dict{String, Vector{UnitRange{Int}}}()
+    stats = Dict{String, LineDelta}()
     added = Int[]
     for i in 1:LibGit2.count(diff)
         patch = Ref{Ptr{Cvoid}}(C_NULL)
@@ -86,29 +119,31 @@ function diff_ranges(diff::LibGit2.GitDiff)
         try
             empty!(added)
             added_lines!(added, patch[])
-            isempty(added) || (out[unsafe_string(diff[i].new_file.path)] = coalesce_lines(added))
+            path = unsafe_string(diff[i].new_file.path)
+            isempty(added) || (ranges[path] = coalesce_lines(added))
+            stats[path] = patch_line_stats(patch[])
         finally
             ccall((:git_patch_free, LibGit2_jll.libgit2), Cvoid, (Ptr{Cvoid},), patch[])
         end
     end
-    return out
+    return DiffSummary(ranges, stats)
 end
 
 """
-    changed_ranges(root, base) -> Dict{String,Vector{UnitRange{Int}}}
+    diff_summary(root, base) -> DiffSummary
 
-The line ranges each file added or changed between `base` and the working tree, keyed by
-the path relative to `root`. The same question `git diff <base>` answers: the comparison
-is against the working tree with the index folded in, not against the index alone, so an
-uncommitted edit is in scope the way a review reads it.
+Both readings of the diff between `base` and the working tree, keyed by the path relative
+to `root`. The same question `git diff <base>` answers: the comparison is against the
+working tree with the index folded in, not against the index alone, so an uncommitted edit
+is in scope the way a review reads it.
 """
-function changed_ranges(root::AbstractString, base)
+function diff_summary(root::AbstractString, base)
     repo = LibGit2.GitRepoExt(root)
     return try
         tree = base_tree(repo, base, "base")
         diff = LibGit2.diff_tree(repo, tree)
         try
-            return diff_ranges(diff)
+            return walk_diff(diff)
         finally
             close(diff)
             close(tree)

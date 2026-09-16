@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Two corpus summary scores on every report, `erosion` and `verbosity`, after
+  SlopCodeBench. Erosion is the share of callable weight sitting in definitions past
+  cyclomatic 10, weight being complexity times the square root of length. Verbosity is the
+  share of source lines a declared flag rule or a clone finding covers. Both read the whole
+  corpus even under `base`, and neither is a finding: a ratio over a corpus names no site, so
+  it carries no band, no percentile and no route into `errors`. They reach the API as
+  `Findings.summary`, a `ScanSummary` of `CorpusScores`.
+- The corpus scores read against a `base` ref, so each report line says what it was there
+  and which way it moved. The base pass rebuilds only what the two ratios read, at roughly
+  1.5x a `--base` scan.
+- A count of the lines a change added and removed, printed under the scores with a `base`
+  ref. libgit2's own tally over the diff supplies it, restricted to the source the scan
+  covers: under a scanned root, an extension a profile claims, surviving `ignore`. A deleted
+  file's lines land in the removed count, so the net goes negative when a change removes
+  code.
 - A pack of eighteen lint rules Dendro ships and runs in every scan, declared in
   `src/patterns/builtin.toml` and realised per grammar in `src/patterns/<lang>.patterns.scm`.
   They name the idioms a working test suite leaves in place: a branch repeating an earlier
@@ -84,6 +99,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `active` now preserves the unmatched-pattern-rule list. It had been dropped since the list
+  was added, so `dendro <path>` never printed the warning about a rule matching nothing
+  anywhere in the corpus. The gate still drops that list, along with the new corpus summary:
+  a ratchet compares finding sets, and neither one is a finding set.
+- `Location` gained a `lastline`, the far end of the region a finding covers, defaulting to
+  `line` at the sites that report a point. Diff scoping and the ratchet key still read the
+  first line alone.
 - A scalar's corpus percentile is read only where the distribution supports a rank. A
   metric that is zero across most of a corpus has a rank that stops ranking: once the share
   of units holding nothing passes the cut, every unit sits above it and the rule reports

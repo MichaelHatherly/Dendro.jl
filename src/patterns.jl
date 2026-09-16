@@ -349,19 +349,6 @@ function index_patterns!(
     return index
 end
 
-"""
-    pattern_hits(index, name) -> Vector{TreeSitter.Node}
-
-The nodes rule `name` reports in this tree: what its query captured, less what its `.not`
-patterns cancelled. Empty when the rule has no query for this language, which is ordinary
-rather than an error.
-"""
-function pattern_hits(index::QueryIndex, name::Symbol)::Vector{TreeSitter.Node}
-    bucket = get(index.patterns, name, nothing)
-    bucket === nothing && return TreeSitter.Node[]
-    return TreeSitter.Node[n for n in bucket.hits.nodes if !(n in bucket.excluded)]
-end
-
 # --- Resolving a language's rules across both locations -------------------------------
 #
 # Both pattern directories are read and composed, so house rules kept in
