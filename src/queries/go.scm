@@ -1,11 +1,20 @@
 ; Go node identification. Go has no finally construct, so that concept has no
 ; pattern. The default switch branch has its own node type and is excluded from
 ; @decision.
+;
+; No @class. A receiver method is a file-scope sibling of the type it acts on, with no
+; container node to read the method set off. Keying a synthetic class by receiver name is
+; a different mechanism and would be its own change.
 
 [(function_declaration) (method_declaration)] @function
 
 [(if_statement) (for_statement) (expression_case) (type_case)
  (communication_case)] @decision
+
+; The decision count's reading of a switch: the arms @decision charges one apiece, and
+; the switch that replaces them. default_case is no decision, so it is no arm either.
+[(expression_case) (type_case) (communication_case)] @switch_arm
+[(expression_switch_statement) (type_switch_statement) (select_statement)] @switch_stmt
 
 [(if_statement) (for_statement) (expression_switch_statement)
  (type_switch_statement) (select_statement)] @nesting
@@ -25,6 +34,11 @@
 (block) @body
 
 (comment) @comment
+
+; godoc takes whatever `//` lines precede a declaration, so every one of them is
+; documentation. A `// TODO` above a function reads as documentation here because it
+; reads as documentation to godoc.
+((comment) @doc (#match? @doc "^//"))
 
 (identifier) @name
 

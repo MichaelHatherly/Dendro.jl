@@ -144,9 +144,13 @@ per-project band tuning, `trivial_wrapper` has a higher false-positive rate,
 `unreachable_after_jump` flags code after an unconditional jump, `npath` grows
 multiplicatively so its band wants per-project tuning, `local_count` likewise,
 `shadowed_variable` reads name collisions some idioms make routine (a method
-local matching a class attribute), and `fan_out` cannot separate a smell from a
+local matching a class attribute), `fan_out` cannot separate a smell from a
 legitimate orchestrator by any fixed band (idiomatic corpora run p99 from 9 to
-26 distinct callees). Use them with
+26 distinct callees), and `comment_density` reads the same number for a function
+narrated statement by statement and for one whose comments carry the constraints
+a reader needs. `cyclomatic_modified` charges a switch one decision in place of
+one per arm, which suits a codebase whose wide dispatch tables are a table and
+reads a codebase whose switch arms each carry logic too kindly. Use them with
 `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`.
 """
 const OPTIONAL_RULES = Rule[
@@ -157,6 +161,8 @@ const OPTIONAL_RULES = Rule[
     Rule(:local_count, :scalar, (10, 15), local_count, :high, :callable),
     Rule(:shadowed_variable, :flag, nothing, shadowed_variables),
     Rule(:fan_out, :scalar, (12, 20), fan_out),
+    Rule(:comment_density, :scalar, COMMENT_DENSITY_BAND, comment_density, :high, :callable),
+    Rule(:cyclomatic_modified, :scalar, CYCLOMATIC_MODIFIED_BAND, cyclomatic_modified),
 ]
 
 # The active rules of one kind (`:scalar` or `:flag`), in order.
@@ -173,17 +179,22 @@ const RELATIONAL = (
     library_near_duplicate = :library_near_duplicate,
     unnatural = :unnatural,
     low_cohesion = :low_cohesion,
+    file_length = :file_length,
+    divisible_class = :divisible_class,
     scattered = :scattered,
     split_audience = :split_audience,
     misplaced = :misplaced,
     distant_definition = :distant_definition,
     unreferenced = :unreferenced,
+    undocumented_public = :undocumented_public,
     reimplementation = :reimplementation,
     back_edge = :back_edge,
     dependency_cycle = :dependency_cycle,
     hub = :hub,
     incoherent_package = :incoherent_package,
     divisible_package = :divisible_package,
+    child_count = :child_count,
+    member_count = :member_count,
 )
 const RELATIONAL_METRICS = values(RELATIONAL)
 

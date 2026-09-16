@@ -29,6 +29,18 @@ errors
 Finding
 Findings
 Location
+GeneratedFile
+```
+
+## Corpus summary
+
+What a scan measured about its corpus as a whole, reached through `Findings.summary`. See
+[Corpus scores](@ref) for what the two ratios mean.
+
+```@docs
+ScanSummary
+CorpusScores
+LineDelta
 ```
 
 ## Rules

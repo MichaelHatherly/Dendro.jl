@@ -448,3 +448,525 @@ end
     @test :fan_out ∉ names(Dendro.BUILTIN_RULES)
     @test only(r.band for r in Dendro.OPTIONAL_RULES if r.name == :fan_out) == (12, 20)
 end
+
+@testitem "comment_density (julia)" setup = [Fixtures] tags = [:metrics] begin
+    function density(src)
+        i = Fixtures.idx(:julia, src)
+        return Dendro.comment_density(first(Dendro.units(i)), i)
+    end
+
+    # Eleven lines, four of them comment. 4/11 rounds to 36.
+    narrated = """
+    function f(xs)
+        # narrate the setup
+        total = 0
+        # narrate the loop
+        for x in xs
+            # narrate the add
+            total += x
+        end
+        # narrate the return
+        return total
+    end
+    """
+    @test density(narrated) == 36
+
+    # A block comment counts every line it spans: three of eleven rounds to 27.
+    blocked = """
+    function g(x)
+        #= a block comment
+           spanning three
+           source lines =#
+        y = x + 1
+        z = y * 2
+        w = z - 3
+        v = w + 4
+        u = v * 5
+        return u
+    end
+    """
+    @test density(blocked) == 27
+
+    # A trailing comment counts the one line it sits on: two of ten is 20.
+    trailing = """
+    function h(x)
+        y = x + 1   # why one
+        z = y * 2   # why two
+        a = z + 3
+        b = a + 4
+        c = b + 5
+        d = c + 6
+        e = d + 7
+        return e
+    end
+    """
+    @test density(trailing) == 20
+
+    # Ten lines of code and nothing said about them.
+    bare = """
+    function k(x)
+        a = x + 1
+        b = a + 2
+        c = b + 3
+        d = c + 4
+        e = d + 5
+        g = e + 6
+        h = g + 7
+        return h
+    end
+    """
+    @test density(bare) == 0
+end
+
+@testitem "comment_density (python)" setup = [Fixtures] tags = [:metrics] begin
+    src = """
+    def f(xs):
+        # one
+        total = 0
+        # two
+        for x in xs:
+            # three
+            total += x
+        # four
+        total = total * 2
+        return total
+    """
+    i = Fixtures.idx(:python, src)
+    @test Dendro.comment_density(first(Dendro.units(i)), i) == 40
+end
+
+@testitem "comment_density stops at a nested callable (julia)" setup = [Fixtures] tags = [:metrics] begin
+    # The closure's narration is the closure's. `outer` keeps its own one comment over
+    # its fourteen lines; the closure scores its two over the ten it spans.
+    src = """
+    function outer(xs)
+        # outer narration
+        inner = function (y)
+            # inner narration
+            # more inner narration
+            a = y + 1
+            b = a + 2
+            c = b + 3
+            d = c + 4
+            e = d + 5
+            return e
+        end
+        return inner(first(xs))
+    end
+    """
+    i = Fixtures.idx(:julia, src)
+    units = Dendro.units(i)
+    outer = units[findfirst(u -> u.firstline == 1, units)]
+    inner = units[findfirst(u -> u.firstline == 3, units)]
+
+    @test Dendro.comment_density(outer, i) == 7
+    @test Dendro.comment_density(inner, i) == 20
+end
+
+@testitem "comment_density reads nothing below the length floor" setup = [Fixtures] tags = [:metrics] begin
+    function density(src)
+        i = Fixtures.idx(:julia, src)
+        return Dendro.comment_density(first(Dendro.units(i)), i)
+    end
+
+    # One line with one comment is 100% and says nothing, which is what the floor is for.
+    @test density("f(x) = x  # why\n") == 0
+    @test density("function f(x)\n    # why\n    return x\nend\n") == 0
+
+    # Nine lines stay silent; the tenth is where the ratio starts being read.
+    short = """
+    function f(x)
+        # why
+        a = x + 1
+        b = a + 2
+        c = b + 3
+        d = c + 4
+        e = d + 5
+        return e
+    end
+    """
+    @test density(short) == 0
+    @test Dendro.MIN_COMMENT_DENSITY_LINES == 10
+
+    long = """
+    function f(x)
+        # why
+        a = x + 1
+        b = a + 2
+        c = b + 3
+        d = c + 4
+        e = d + 5
+        g = e + 6
+        return g
+    end
+    """
+    @test density(long) == 10
+end
+
+@testitem "a docstring never reaches comment_density" setup = [Fixtures] tags = [:metrics] begin
+    # A Python or Julia docstring is a string node, and every other language attaches its
+    # doc comment as a sibling of the definition rather than a descendant, so no callable
+    # here scores for the documentation written above it.
+    documented = Dict(
+        :julia => """
+            \"\"\"
+                f(x)
+
+            Add seven, one step at a time.
+            \"\"\"
+            function f(x)
+                a = x + 1
+                b = a + 1
+                c = b + 1
+                d = c + 1
+                e = d + 1
+                g = e + 1
+                h = g + 1
+                return h
+            end
+            """,
+        :python => """
+            def f(x):
+                \"\"\"Add seven, one step at a time.\"\"\"
+                a = x + 1
+                b = a + 1
+                c = b + 1
+                d = c + 1
+                e = d + 1
+                g = e + 1
+                h = g + 1
+                return h
+            """,
+        :javascript => """
+            /**
+             * Add seven, one step at a time.
+             */
+            function f(x) {
+              let a = x + 1;
+              let b = a + 1;
+              let c = b + 1;
+              let d = c + 1;
+              let e = d + 1;
+              let g = e + 1;
+              let h = g + 1;
+              return h;
+            }
+            """,
+        :typescript => """
+            /**
+             * Add seven, one step at a time.
+             */
+            function f(x: number): number {
+              let a = x + 1;
+              let b = a + 1;
+              let c = b + 1;
+              let d = c + 1;
+              let e = d + 1;
+              let g = e + 1;
+              let h = g + 1;
+              return h;
+            }
+            """,
+        :java => """
+            class C {
+              /**
+               * Add seven, one step at a time.
+               */
+              int f(int x) {
+                int a = x + 1;
+                int b = a + 1;
+                int c = b + 1;
+                int d = c + 1;
+                int e = d + 1;
+                int g = e + 1;
+                int h = g + 1;
+                return h;
+              }
+            }
+            """,
+        :go => """
+            package p
+
+            // F adds seven, one step at a time.
+            func F(x int) int {
+            	a := x + 1
+            	b := a + 1
+            	c := b + 1
+            	d := c + 1
+            	e := d + 1
+            	g := e + 1
+            	h := g + 1
+            	return h
+            }
+            """,
+        :rust => """
+            /// Add seven, one step at a time.
+            fn f(x: i32) -> i32 {
+                let a = x + 1;
+                let b = a + 1;
+                let c = b + 1;
+                let d = c + 1;
+                let e = d + 1;
+                let g = e + 1;
+                let h = g + 1;
+                h
+            }
+            """,
+        :c => """
+            /**
+             * Add seven, one step at a time.
+             */
+            int f(int x) {
+              int a = x + 1;
+              int b = a + 1;
+              int c = b + 1;
+              int d = c + 1;
+              int e = d + 1;
+              int g = e + 1;
+              int h = g + 1;
+              return h;
+            }
+            """,
+        :cpp => """
+            /**
+             * Add seven, one step at a time.
+             */
+            int f(int x) {
+              int a = x + 1;
+              int b = a + 1;
+              int c = b + 1;
+              int d = c + 1;
+              int e = d + 1;
+              int g = e + 1;
+              int h = g + 1;
+              return h;
+            }
+            """,
+        :php => """
+            <?php
+            /**
+             * Add seven, one step at a time.
+             */
+            function f(\$x) {
+              \$a = \$x + 1;
+              \$b = \$a + 1;
+              \$c = \$b + 1;
+              \$d = \$c + 1;
+              \$e = \$d + 1;
+              \$g = \$e + 1;
+              \$h = \$g + 1;
+              return \$h;
+            }
+            """,
+        :ruby => """
+            # Add seven, one step at a time.
+            def f(x)
+              a = x + 1
+              b = a + 1
+              c = b + 1
+              d = c + 1
+              e = d + 1
+              g = e + 1
+              h = g + 1
+              h
+            end
+            """,
+        :bash => """
+            # Add seven, one step at a time.
+            f() {
+              a=\$((\$1 + 1))
+              b=\$((a + 1))
+              c=\$((b + 1))
+              d=\$((c + 1))
+              e=\$((d + 1))
+              g=\$((e + 1))
+              h=\$((g + 1))
+              echo \$h
+            }
+            """,
+    )
+
+    @test sort(collect(keys(documented))) == sort(collect(keys(Dendro.PROFILES)))
+    @testset "$lang" for lang in sort(collect(keys(documented)))
+        i = Fixtures.idx(lang, documented[lang])
+        callables = [u for u in Dendro.units(i) if Dendro.is_callable(u, i)]
+        @test !isempty(callables)
+        for u in callables
+            @test Dendro.function_length(u) >= Dendro.MIN_COMMENT_DENSITY_LINES
+            @test Dendro.comment_density(u, i) == 0
+        end
+    end
+end
+
+@testitem "comment_density is an optional rule" tags = [:metrics] begin
+    names(rules) = [r.name for r in rules]
+    @test :comment_density in names(Dendro.OPTIONAL_RULES)
+    @test :comment_density ∉ names(Dendro.BUILTIN_RULES)
+
+    rule = only(r for r in Dendro.OPTIONAL_RULES if r.name == :comment_density)
+    @test rule.kind === :scalar
+    @test rule.scope === :callable
+    @test rule.band == (30, 50)
+end
+
+@testitem "a switch costs one decision, not one per arm (c)" setup = [Fixtures] tags = [:metrics] begin
+    # One switch of five arms. `cyclomatic` charges the base path plus five arms, six;
+    # `cyclomatic_modified` charges the base path plus the switch, two.
+    src = "int f(int x){ switch(x){ case 1: return 1; case 2: return 2; case 3: return 3; case 4: return 4; case 5: return 5; } return 0; }"
+    i = Fixtures.idx(:c, src)
+    u = only(Dendro.units(i))
+    @test Dendro.cyclomatic(u, i) == 6
+    @test Dendro.cyclomatic_modified(u, i) == 2
+end
+
+@testitem "each switch costs its own decision (c)" setup = [Fixtures] tags = [:metrics] begin
+    # Two switches of three arms. `cyclomatic` charges the base path plus six arms, seven;
+    # `cyclomatic_modified` charges the base path plus one per switch, three.
+    src = """
+    int f(int x, int y) {
+      switch (x) { case 1: a(); break; case 2: b(); break; case 3: c(); break; }
+      switch (y) { case 1: d(); break; case 2: e(); break; case 3: g(); break; }
+      return 0;
+    }
+    """
+    i = Fixtures.idx(:c, src)
+    u = only(Dendro.units(i))
+    @test Dendro.cyclomatic(u, i) == 7
+    @test Dendro.cyclomatic_modified(u, i) == 3
+end
+
+@testitem "a default arm costs nothing either way" setup = [Fixtures] tags = [:metrics] begin
+    # Whether a grammar spells the default branch as an ordinary arm (C) or gives it its
+    # own node type (Go, JavaScript, PHP) decides whether `cyclomatic` charges for it.
+    # `cyclomatic_modified` charges the switch, so the two readings of a default agree.
+    cases = [
+        (
+            :c,
+            "int f(int x){ switch(x){ case 1: a(); break; case 2: b(); break; } return 0; }",
+            "int f(int x){ switch(x){ case 1: a(); break; case 2: b(); break; default: c(); } return 0; }",
+        ),
+        (
+            :go,
+            "func f(x int){ switch x { case 1: a(); case 2: b() } }",
+            "func f(x int){ switch x { case 1: a(); case 2: b(); default: c() } }",
+        ),
+        (
+            :javascript,
+            "function f(x){ switch(x){ case 1: a(); break; case 2: b(); break; } }",
+            "function f(x){ switch(x){ case 1: a(); break; case 2: b(); break; default: c(); } }",
+        ),
+        (
+            :php,
+            "<?php function f(\$x){ switch(\$x){ case 1: a(); break; case 2: b(); break; } }",
+            "<?php function f(\$x){ switch(\$x){ case 1: a(); break; case 2: b(); break; default: c(); } }",
+        ),
+    ]
+    @testset "$lang" for (lang, bare, defaulted) in cases
+        readings = map((bare, defaulted)) do src
+            i = Fixtures.idx(lang, src)
+            return Dendro.cyclomatic_modified(only(Dendro.units(i)), i)
+        end
+        @test readings[1] == 2
+        @test readings[2] == 2
+    end
+end
+
+@testitem "a java fallthrough group costs the switch once" setup = [Fixtures] tags = [:metrics] begin
+    # `case 1: case 2:` parses as two switch_labels, so `cyclomatic` charges both. The
+    # switch is one dispatch however its labels are grouped, so `cyclomatic_modified` reads
+    # the same number as it does for the arms written apart.
+    shared = "class C {\n  int f(int x) {\n    switch (x) { case 1: case 2: return 1; default: return 0; }\n  }\n}\n"
+    apart = "class C {\n  int f(int x) {\n    switch (x) { case 1: return 1; case 2: return 1; default: return 0; }\n  }\n}\n"
+
+    readings = map((shared, apart)) do src
+        i = Fixtures.idx(:java, src)
+        u = only(Dendro.units(i))
+        return (Dendro.cyclomatic(u, i), Dendro.cyclomatic_modified(u, i))
+    end
+    @test readings[1] == (4, 2)
+    @test readings[2] == (4, 2)
+end
+
+@testitem "a rust match costs one decision (rust)" setup = [Fixtures] tags = [:metrics] begin
+    # Five arms, the wildcard among them, since a `_ =>` is a match_arm like any other.
+    src = "fn f(x: i32) -> i32 { match x { 1 => 1, 2 => 2, 3 => 3, 4 => 4, _ => 0 } }"
+    i = Fixtures.idx(:rust, src)
+    u = only(Dendro.units(i))
+    @test Dendro.cyclomatic(u, i) == 6
+    @test Dendro.cyclomatic_modified(u, i) == 2
+end
+
+@testitem "a python match reads one higher than cyclomatic (python)" setup = [Fixtures] tags = [:metrics] begin
+    # The one language where the modified count is the larger of the two. Python's
+    # `case_clause` is not a `@decision`, so `cyclomatic` charges a match nothing at all
+    # and subtracting its arms takes nothing back, leaving the switch's own charge. Pinned
+    # here rather than fixed: putting `case_clause` in `@decision` would move every python
+    # baseline, and that is a change with its own measurement to make.
+    src = "def f(x):\n    match x:\n        case 1:\n            return 1\n        case 2:\n            return 2\n        case _:\n            return 0\n"
+    i = Fixtures.idx(:python, src)
+    u = only(Dendro.units(i))
+    @test Dendro.cyclomatic(u, i) == 1
+    @test Dendro.cyclomatic_modified(u, i) == 2
+end
+
+@testitem "ruby and bash read a case without npath moving" setup = [Fixtures] tags = [:metrics] begin
+    # Neither language wires npath's switch family, so `@switch_arm` and `@switch_stmt` are
+    # the only place their case nodes are named. The npath readings are pinned beside the
+    # complexity ones so widening `@switch` or `@case` to reach these two, which would send
+    # npath through `switch_npath` and its zero-arm recursion, fails here.
+    ruby = "def f(x)\n  case x\n  when 1 then 1\n  when 2 then 2\n  else 0\n  end\nend\n"
+    bash = "f() {\n  case \"\$1\" in\n    a) echo 1 ;;\n    b) echo 2 ;;\n    *) echo 3 ;;\n  esac\n}\n"
+
+    i = Fixtures.idx(:ruby, ruby)
+    u = only(Dendro.units(i))
+    @test Dendro.cyclomatic(u, i) == 3
+    @test Dendro.cyclomatic_modified(u, i) == 2
+    @test Dendro.npath(u, i) == 1
+
+    i = Fixtures.idx(:bash, bash)
+    u = only(Dendro.units(i))
+    @test Dendro.cyclomatic(u, i) == 4
+    @test Dendro.cyclomatic_modified(u, i) == 2
+    @test Dendro.npath(u, i) == 1
+end
+
+@testitem "julia reads the same number either way (julia)" setup = [Fixtures] tags = [:metrics] begin
+    # Julia has no switch construct, so nothing is subtracted and nothing is added, and the
+    # two metrics agree on every shape the language can write.
+    sources = [
+        "ternary" => "f(x) = x > 0 ? x : -x\n",
+        "ifelseif" => "function f(x)\n    if x > 0\n        a(x)\n    elseif x < 0\n        b(x)\n    end\nend\n",
+        "loops" => "function f(xs)\n    for x in xs\n        while x > 0\n            x -= 1\n        end\n    end\nend\n",
+        "trycatch" => "function f(x)\n    try\n        a(x)\n    catch\n        b(x)\n    end\nend\n",
+        "bools" => "function f(x, y)\n    return x > 0 && y > 0 || x == y\nend\n",
+    ]
+    @testset "$name" for (name, src) in sources
+        i = Fixtures.idx(:julia, src)
+        u = first(Dendro.units(i))
+        @test Dendro.cyclomatic_modified(u, i) == Dendro.cyclomatic(u, i)
+    end
+end
+
+@testitem "cyclomatic_modified is an optional rule" setup = [Fixtures] tags = [:metrics] begin
+    names(rules) = [r.name for r in rules]
+    @test :cyclomatic_modified in names(Dendro.OPTIONAL_RULES)
+    @test :cyclomatic_modified ∉ names(Dendro.BUILTIN_RULES)
+
+    rule = only(r for r in Dendro.OPTIONAL_RULES if r.name == :cyclomatic_modified)
+    @test rule.band == Dendro.CYCLOMATIC_MODIFIED_BAND
+    @test rule.band == only(r.band for r in Dendro.BUILTIN_RULES if r.name == :cyclomatic)
+    # A variant reading of `cyclomatic` measures what `cyclomatic` measures, top-level code
+    # among it, so it takes the same `:any` scope rather than a definition's.
+    @test rule.scope === :any
+
+    # A function past the high band fires only once the optionals are in the rule set.
+    body = join(("    if x == $(k)\n        g($(k))\n    end" for k in 1:25), "\n")
+    src = "function branchy(x)\n$(body)\n    return x\nend\n"
+    mktempdir() do dir
+        path = joinpath(dir, "branchy.jl")
+        write(path, src)
+        @test isempty(filter(f -> f.metric === :cyclomatic_modified, Dendro.analyze(path)))
+        both = [Dendro.BUILTIN_RULES; Dendro.OPTIONAL_RULES]
+        @test !isempty(filter(f -> f.metric === :cyclomatic_modified, Dendro.analyze(path; rules = both)))
+    end
+end

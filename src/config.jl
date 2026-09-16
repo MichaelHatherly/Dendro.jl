@@ -17,12 +17,13 @@
 const DEFAULT_CUT = 0.95
 
 # The relational metrics whose band a `[bands]` key may set. The rest of a `[bands]`
-# table names scalar rules. Ordered as the `Config` fields are, since the constructor is
-# positional and every band shares a type.
+# table names scalar rules. Ordered as the `Config` fields and the constructor's keywords
+# are, so the three lists read against each other.
 const RELATIONAL_BANDS = (
-    :unnatural, :low_cohesion, :scattered, :split_audience, :misplaced,
-    :distant_definition, :back_edge, :dependency_cycle, :hub, :incoherent_package,
-    :divisible_package,
+    :unnatural, :low_cohesion, :file_length, :divisible_class, :scattered, :split_audience,
+    :misplaced, :distant_definition, :back_edge, :dependency_cycle, :hub,
+    :incoherent_package, :divisible_package, :child_count,
+    :member_count,
 )
 
 # A malformed `.dendro.toml` value: a band that is not two integers, a `cut` that is
@@ -45,8 +46,8 @@ config_error(msg) = throw(ConfigError(msg))
 Resolved tuning thresholds for one analysis, built by `discover_config` from the
 built-in defaults and a `.dendro.toml`. `cut` is the percentile cutoff; `bands`
 overrides scalar rule `(warn, high)` tuples by metric name; one field per relational
-metric overrides that metric's band; `rules` toggles a rule on or off by name, and the
-`reimplementation`, `incoherent_package` and `divisible_package` corpus passes with it; `min_size`,
+metric overrides that metric's band; `rules` toggles a rule on or off by name, and every
+corpus pass `TOGGLEABLE_RELATIONAL` names with it; `min_size`,
 `threshold`, and `radius_factor`
 are the clone-detection thresholds; `reimpl_threshold` is the reimplementation overlap
 cutoff; `languages` carries the languages the config registers beyond the ones Dendro
@@ -59,14 +60,21 @@ are the cross-corpus duplication thresholds and `library_anchor_grain` widens th
 to compare blocks as well as whole functions; `libraries` holds the reference corpora a
 `[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name; and
 `ignore` holds gitignore-style patterns dropping paths from the scan, which
-[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces.
-Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
+[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces; `generated` holds
+signatures matched against a file's head beside the built-in ones, and `generated_enabled`
+is whether that filter runs at all; `base_summary`
+controls whether a scan with a base ref scores that revision for comparison.
+Every field is a keyword taking that field's type and defaulting to its built-in, so
+`Config(; misplaced = (40, 60))` retunes one band and keeps the rest. Immutable: pass one
+to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
     cut::Float64
     bands::Dict{Symbol, Tuple{Int, Int}}
     unnatural::Tuple{Int, Int}
     low_cohesion::Tuple{Int, Int}
+    file_length::Tuple{Int, Int}
+    divisible_class::Tuple{Int, Int}
     scattered::Tuple{Int, Int}
     split_audience::Tuple{Int, Int}
     misplaced::Tuple{Int, Int}
@@ -76,6 +84,8 @@ struct Config
     hub::Tuple{Int, Int}
     incoherent_package::Tuple{Int, Int}
     divisible_package::Tuple{Int, Int}
+    child_count::Tuple{Int, Int}
+    member_count::Tuple{Int, Int}
     rules::Dict{Symbol, Bool}
     min_size::Int
     threshold::Float64
@@ -89,6 +99,59 @@ struct Config
     patterns_dir::String
     libraries::Vector{Library}
     ignore::Vector{String}
+    generated::Vector{String}
+    generated_enabled::Bool
+    base_summary::Bool
+
+    # Built by keyword, never positionally. Twelve fields in a row are `Tuple{Int, Int}`
+    # bands, so a positional call admits an argument list that compiles, typechecks, and
+    # attaches each band to the wrong metric; two branches each adding a metric merge into
+    # one. Each default is the built-in the cascade starts from, so a caller names only
+    # what it sets, and each keyword takes its field's own type rather than converting to
+    # it: every value arriving here has been coerced by a `config_*` helper already.
+    Config(;
+        cut::Float64 = DEFAULT_CUT,
+        bands::Dict{Symbol, Tuple{Int, Int}} = Dict{Symbol, Tuple{Int, Int}}(),
+        unnatural::Tuple{Int, Int} = UNNATURAL_BAND,
+        low_cohesion::Tuple{Int, Int} = LOW_COHESION_BAND,
+        file_length::Tuple{Int, Int} = FILE_LENGTH_BAND,
+        divisible_class::Tuple{Int, Int} = DIVISIBLE_CLASS_BAND,
+        scattered::Tuple{Int, Int} = SCATTERED_BAND,
+        split_audience::Tuple{Int, Int} = SPLIT_AUDIENCE_BAND,
+        misplaced::Tuple{Int, Int} = MISPLACED_BAND,
+        distant_definition::Tuple{Int, Int} = DISTANT_DEFINITION_BAND,
+        back_edge::Tuple{Int, Int} = BACK_EDGE_BAND,
+        dependency_cycle::Tuple{Int, Int} = DEPENDENCY_CYCLE_BAND,
+        hub::Tuple{Int, Int} = HUB_BAND,
+        incoherent_package::Tuple{Int, Int} = INCOHERENT_PACKAGE_BAND,
+        divisible_package::Tuple{Int, Int} = DIVISIBLE_PACKAGE_BAND,
+        child_count::Tuple{Int, Int} = CHILD_COUNT_BAND,
+        member_count::Tuple{Int, Int} = MEMBER_COUNT_BAND,
+        rules::Dict{Symbol, Bool} = Dict{Symbol, Bool}(),
+        min_size::Int = DEFAULT_MIN_SIZE,
+        threshold::Float64 = DEFAULT_THRESHOLD,
+        radius_factor::Float64 = DEFAULT_RADIUS_FACTOR,
+        reimpl_threshold::Float64 = DEFAULT_REIMPL_THRESHOLD,
+        library_threshold::Float64 = DEFAULT_LIBRARY_THRESHOLD,
+        library_gate_coverage::Int = DEFAULT_LIBRARY_GATE_COVERAGE,
+        library_anchor_grain::Bool = false,
+        languages::Dict{Symbol, LanguageProfile} = Dict{Symbol, LanguageProfile}(),
+        patterns::Vector{PatternSpec} = PatternSpec[],
+        patterns_dir::String = "",
+        libraries::Vector{Library} = Library[],
+        ignore::Vector{String} = String[],
+        generated::Vector{String} = String[],
+        generated_enabled::Bool = true,
+        base_summary::Bool = true,
+    ) = new(
+        cut, bands, unnatural, low_cohesion, file_length, divisible_class, scattered,
+        split_audience, misplaced, distant_definition, back_edge, dependency_cycle, hub,
+        incoherent_package, divisible_package, child_count, member_count,
+        rules, min_size, threshold, radius_factor,
+        reimpl_threshold, library_threshold, library_gate_coverage, library_anchor_grain,
+        languages, patterns, patterns_dir, libraries, ignore, generated, generated_enabled,
+        base_summary,
+    )
 end
 
 """
@@ -115,8 +178,9 @@ scalar_metric_names(acc) = union(
 # gated in `analyze` rather than resolved into the rule set, so `resolve_rules`
 # ignores these names.
 const TOGGLEABLE_RELATIONAL = (
-    :reimplementation, :incoherent_package, :divisible_package, :distant_definition,
-    :library_duplicate, :library_near_duplicate,
+    :reimplementation, :incoherent_package, :divisible_package, :child_count,
+    :distant_definition, :divisible_class,
+    :library_duplicate, :library_near_duplicate, :undocumented_public,
 )
 
 # Every rule name a `[rules]` key may toggle: built-in or optional, of either kind, the
@@ -268,6 +332,25 @@ function apply_clones(scalars, table, source)
     return scalars
 end
 
+# Apply a table holding one scalar setting: `setting` lands in `field` of the scalar
+# overrides through `coerce`, any other key in the `name` table warns.
+function apply_scalar_key(
+        scalars::S, table::Dict{String, Any}, source,
+        name::String, setting::String, field::Symbol, coerce::F
+    ) where {S, F}
+    for (key, value) in table
+        if key == setting
+            # `field` and `coerce` come from a table, so the merge is abstract where every
+            # other applier's is concrete. The assertion holds because a scalar table only
+            # ever sets a default the overrides already carry, at that default's type.
+            scalars = merge(scalars, NamedTuple{(field,)}((coerce(value, key, source),)))::S
+        else
+            @warn "Dendro: unknown $name key in $source, ignored" key
+        end
+    end
+    return scalars
+end
+
 # Coerce a TOML array of strings, the shape a library's `paths` and `ignore` take and the
 # raw form an extension list is read from.
 function string_list(value, key, source)::Vector{String}
@@ -394,19 +477,6 @@ end
 # through a named wrapper each: the wrappers would differ only in two arguments, which is
 # a forwarding pair rather than two ideas.
 
-# Apply a `[reimplementation]` table: the overlap `threshold` a candidate pair must
-# reach, anything else warns.
-function apply_reimplementation(scalars, table, source)
-    for (key, value) in table
-        if key == "threshold"
-            scalars = merge(scalars, (reimpl_threshold = config_float(value, key, source),))
-        else
-            @warn "Dendro: unknown reimplementation key in $source, ignored" key
-        end
-    end
-    return scalars
-end
-
 # Overlay one parsed TOML table onto the accumulating overrides, returning the scalar
 # settings (`cut` and the clone thresholds) it leaves. Only the keys present are
 # touched; an unknown top-level key warns rather than failing, so a file written for a
@@ -417,8 +487,8 @@ end
 # Dict, whose iteration order is arbitrary, so relying on file order would make a config
 # apply differently run to run.
 const CONFIG_KEY_ORDER = (
-    "patterns", "languages", "libraries", "cut", "clones", "reimplementation",
-    "patterns_dir", "ignore", "bands", "rules",
+    "patterns", "languages", "libraries", "cut", "clones", "reimplementation", "report",
+    "patterns_dir", "ignore", "generated", "bands", "rules",
 )
 
 function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
@@ -432,14 +502,34 @@ function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
     return scalars
 end
 
+# Tables holding one scalar setting each: the key inside the table, the field of the
+# scalar overrides it lands in, and the coercion that reads it. `[reimplementation]` sets
+# the overlap `threshold` a candidate pair must reach; `[report]` sets whether a
+# base-scoped scan scores the base corpus for the comparison columns.
+const SCALAR_TABLES = Dict{String, Tuple{String, Symbol, Function}}(
+    "reimplementation" => ("threshold", :reimpl_threshold, config_float),
+    "report" => ("base_summary", :base_summary, config_bool),
+)
+
+# The top-level `generated` key: an array of signatures to match beside the built-in ones,
+# or a boolean turning the content filter off and on. `false` is there for the project whose
+# own source names a bundler in a file header, since the key adds to the built-in list and
+# takes nothing out of it. A later config layer replaces an earlier one, the way `ignore` does.
+function apply_generated(scalars, value, key, source)
+    value isa Bool && return merge(scalars, (generated = String[], generated_enabled = value))
+    return merge(scalars, (generated = string_list(value, key, source), generated_enabled = true))
+end
+
 # Apply one known top-level key, returning the scalar settings it leaves.
 function apply_key!(acc, scalars, key, value, source)
     if key == "cut"
         scalars = merge(scalars, (cut = config_float(value, key, source),))
     elseif key == "clones"
         scalars = apply_clones(scalars, config_table(value, key, source), source)
-    elseif key == "reimplementation"
-        scalars = apply_reimplementation(scalars, config_table(value, key, source), source)
+    elseif haskey(SCALAR_TABLES, key)
+        setting, field, coerce = SCALAR_TABLES[key]
+        table = config_table(value, key, source)
+        scalars = apply_scalar_key(scalars, table, source, key, setting, field, coerce)
     elseif key == "bands"
         apply_bands!(acc, config_table(value, key, source), source)
     elseif key == "rules"
@@ -448,6 +538,8 @@ function apply_key!(acc, scalars, key, value, source)
         scalars = merge(scalars, (patterns_dir = config_path(value, key, source),))
     elseif key == "ignore"
         scalars = merge(scalars, (ignore = string_list(value, key, source),))
+    elseif key == "generated"
+        scalars = apply_generated(scalars, value, key, source)
     else
         applier = key == "languages" ? apply_language! :
             key == "libraries" ? apply_library! : apply_pattern!
@@ -508,8 +600,13 @@ end
 
 The resolved [`Config`](@ref) for analyzing `roots`: the built-in defaults overlaid
 with the user-global config, then the repo `.dendro.toml`. `explicit` names a file to
-read in place of the discovered repo one and must exist. `use_files = false` skips all
-file layers, returning the built-in defaults.
+read in place of the discovered repo one and must exist. `use_files = false` skips the
+discovered layers, returning the built-in defaults.
+
+The pack of rules Dendro ships is among those defaults. It is applied as the layer below
+the user-global config, through the same walk a config file takes, so a project disables
+one of its rules, retunes a band, or replaces a declaration with the keys it already has
+for its own rules.
 """
 function discover_config(roots; explicit = nothing, use_files = true)
     acc = overrides()
@@ -521,31 +618,51 @@ function discover_config(roots; explicit = nothing, use_files = true)
         library_anchor_grain = false,
         patterns_dir = "",
         ignore = String[],
+        generated = String[],
+        generated_enabled = true,
+        base_summary = true,
     )
+    builtin = builtin_patterns_file()
+    scalars = apply_toml!(acc, scalars, TOML.parsefile(builtin), builtin)
     if use_files
         for path in config_files(roots, explicit)
             scalars = apply_toml!(acc, scalars, TOML.parsefile(path), path)
         end
     end
-    return Config(
-        scalars.cut, acc.bands,
-        get(acc.relational, :unnatural, UNNATURAL_BAND),
-        get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
-        get(acc.relational, :scattered, SCATTERED_BAND),
-        get(acc.relational, :split_audience, SPLIT_AUDIENCE_BAND),
-        get(acc.relational, :misplaced, MISPLACED_BAND),
-        get(acc.relational, :distant_definition, DISTANT_DEFINITION_BAND),
-        get(acc.relational, :back_edge, BACK_EDGE_BAND),
-        get(acc.relational, :dependency_cycle, DEPENDENCY_CYCLE_BAND),
-        get(acc.relational, :hub, HUB_BAND),
-        get(acc.relational, :incoherent_package, INCOHERENT_PACKAGE_BAND),
-        get(acc.relational, :divisible_package, DIVISIBLE_PACKAGE_BAND),
-        acc.rules,
-        scalars.min_size, scalars.threshold, scalars.radius_factor,
-        scalars.reimpl_threshold, scalars.library_threshold, scalars.library_gate_coverage,
-        scalars.library_anchor_grain, acc.languages,
-        sort!(collect(values(acc.patterns)); by = s -> s.name), scalars.patterns_dir,
-        sort!(collect(values(acc.libraries)); by = l -> l.name), scalars.ignore,
+    return Config(;
+        cut = scalars.cut,
+        bands = acc.bands,
+        unnatural = get(acc.relational, :unnatural, UNNATURAL_BAND),
+        low_cohesion = get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
+        file_length = get(acc.relational, :file_length, FILE_LENGTH_BAND),
+        divisible_class = get(acc.relational, :divisible_class, DIVISIBLE_CLASS_BAND),
+        scattered = get(acc.relational, :scattered, SCATTERED_BAND),
+        split_audience = get(acc.relational, :split_audience, SPLIT_AUDIENCE_BAND),
+        misplaced = get(acc.relational, :misplaced, MISPLACED_BAND),
+        distant_definition = get(acc.relational, :distant_definition, DISTANT_DEFINITION_BAND),
+        back_edge = get(acc.relational, :back_edge, BACK_EDGE_BAND),
+        dependency_cycle = get(acc.relational, :dependency_cycle, DEPENDENCY_CYCLE_BAND),
+        hub = get(acc.relational, :hub, HUB_BAND),
+        incoherent_package = get(acc.relational, :incoherent_package, INCOHERENT_PACKAGE_BAND),
+        divisible_package = get(acc.relational, :divisible_package, DIVISIBLE_PACKAGE_BAND),
+        child_count = get(acc.relational, :child_count, CHILD_COUNT_BAND),
+        member_count = get(acc.relational, :member_count, MEMBER_COUNT_BAND),
+        rules = acc.rules,
+        min_size = scalars.min_size,
+        threshold = scalars.threshold,
+        radius_factor = scalars.radius_factor,
+        reimpl_threshold = scalars.reimpl_threshold,
+        library_threshold = scalars.library_threshold,
+        library_gate_coverage = scalars.library_gate_coverage,
+        library_anchor_grain = scalars.library_anchor_grain,
+        languages = acc.languages,
+        patterns = sort!(collect(values(acc.patterns)); by = s -> s.name),
+        patterns_dir = scalars.patterns_dir,
+        libraries = sort!(collect(values(acc.libraries)); by = l -> l.name),
+        ignore = scalars.ignore,
+        generated = scalars.generated,
+        generated_enabled = scalars.generated_enabled,
+        base_summary = scalars.base_summary,
     )
 end
 
@@ -565,16 +682,39 @@ function override_config(
         config::Config; cut = nothing, min_size = nothing,
         threshold = nothing, radius_factor = nothing, libraries = nothing
     )
-    return Config(
-        cut === nothing ? config.cut : Float64(cut), config.bands,
-        config.unnatural, config.low_cohesion, config.scattered, config.split_audience,
-        config.misplaced, config.distant_definition, config.back_edge, config.dependency_cycle,
-        config.hub, config.incoherent_package, config.divisible_package, config.rules,
-        min_size === nothing ? config.min_size : Int(min_size),
-        threshold === nothing ? config.threshold : Float64(threshold),
-        radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
-        config.reimpl_threshold, config.library_threshold, config.library_gate_coverage,
-        config.library_anchor_grain, config.languages, config.patterns, config.patterns_dir,
-        libraries === nothing ? config.libraries : as_libraries(libraries), config.ignore,
+    return Config(;
+        cut = cut === nothing ? config.cut : Float64(cut),
+        bands = config.bands,
+        unnatural = config.unnatural,
+        low_cohesion = config.low_cohesion,
+        file_length = config.file_length,
+        divisible_class = config.divisible_class,
+        scattered = config.scattered,
+        split_audience = config.split_audience,
+        misplaced = config.misplaced,
+        distant_definition = config.distant_definition,
+        back_edge = config.back_edge,
+        dependency_cycle = config.dependency_cycle,
+        hub = config.hub,
+        incoherent_package = config.incoherent_package,
+        divisible_package = config.divisible_package,
+        child_count = config.child_count,
+        member_count = config.member_count,
+        rules = config.rules,
+        min_size = min_size === nothing ? config.min_size : Int(min_size),
+        threshold = threshold === nothing ? config.threshold : Float64(threshold),
+        radius_factor = radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
+        reimpl_threshold = config.reimpl_threshold,
+        library_threshold = config.library_threshold,
+        library_gate_coverage = config.library_gate_coverage,
+        library_anchor_grain = config.library_anchor_grain,
+        languages = config.languages,
+        patterns = config.patterns,
+        patterns_dir = config.patterns_dir,
+        libraries = libraries === nothing ? config.libraries : as_libraries(libraries),
+        ignore = config.ignore,
+        generated = config.generated,
+        generated_enabled = config.generated_enabled,
+        base_summary = config.base_summary,
     )
 end

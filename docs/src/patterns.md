@@ -14,6 +14,18 @@ names a *rule* instead of a concept. The set of names is open and the queries ar
 against concrete grammar node types deliberately, because being language-specific is the
 point.
 
+## The pack that comes with the package
+
+Eighteen pattern rules ship with Dendro and run in every scan, catalogued under
+[Rules Dendro ships](@ref). They are ordinary pattern rules in every respect, and they
+enter the cascade as the layer below your user-global config, so `[rules]`, `[bands]` and
+a `[patterns.<name>]` table of your own all reach them.
+
+One rule they leave to a built-in: the identity wrapper, `def f(x): return g(x)`. The
+`trivial_wrapper` rule already names that shape and more of it, reading a body through the
+concept vocabulary rather than one grammar's spelling. It is off by default for false
+positives, and turns on with `[rules] trivial_wrapper = true`.
+
 ## Declaring a rule
 
 A rule is declared once, language-independently, in `.dendro.toml`:

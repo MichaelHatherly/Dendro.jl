@@ -9,6 +9,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in scalar `cyclomatic_modified`: `cyclomatic` with a whole switch charged one
+  decision in place of one per arm. A dispatch over twenty cases has twenty paths and one
+  idea, so the plain count puts it at the top of the file while a reviewer who opens it
+  finds a table. A rule of its own instead of a mode on `cyclomatic`, since a band, a
+  suppression and a ratchet key all read a metric name as an identity. Banded `[11, 21]`,
+  which is `cyclomatic`'s band, so the two are read on one scale. It ships off because the
+  two agree on 98.4% of 58340 definitions measured over fourteen corpora, and exactly on
+  Julia, which has no switch. Where they part the gap is wide: 204 definitions differ by
+  more than five, and curl's 90-branch `curl_easy_strerror` reads 3. Python is the one
+  language reading the higher of the two, since its `case_clause` is no decision point.
+  `[rules] cyclomatic_modified = true` enables it.
+- Opt-in corpus finding `:undocumented_public`: a declared-public function, type or macro
+  with no documentation against it, reported at `:warn`. Documentation is adjacency and
+  never content, so a doc node on the line above a definition documents it, and so does a
+  docstring inside it. Each language is taken at its own word. Python and Julia use the
+  docstring; Rust uses `///` and `/** */`; javadoc and its cousins cover the rest. Go takes
+  every `//` line and Ruby every `#` line, the way godoc and RDoc do, and bash has no
+  documentation form at all. A constant is not asked after,
+  since a language documents a table of constants once at the table. It ships off because
+  the undocumented share of the public surface runs from 6.7% to 93.8% over fourteen
+  corpora, which is what each community documents and where. `[rules]
+  undocumented_public = true` enables it.
+- Corpus finding `:member_count`: how many definitions a class declares, reported at the
+  declaration line with the class name. Constructors count here, where `:divisible_class`
+  drops them, since a class with fifteen constructors is what a count is for. One location
+  and not one per member, since the edit the finding names is the class. Covers the same
+  seven languages `:divisible_class` does, and a language tagging no `@class` scores
+  nothing. On by default, banded `[20, 40]`: twenty is the level the God-class
+  detectors are written around and reports 7.6% of the 5478 classes measured across eight
+  corpora, and forty holds the 2.1% nobody argues about.
+- `child_count`, a directory rule over the number of direct children a directory holds, off
+  by default and enabled with `[rules] child_count = true`. The other directory rules read
+  coupling. Take a directory whose contents belong where they are and divide into no
+  independent groups: it can still hold ninety files, and no reading of the graph finds
+  that.
+  The node set is the one `divisible_package` reads, a child file counting one and a child
+  subdirectory counting one, so the two are a pair: this one says a directory holds too
+  many children and that one says how they group. Both band edges come from a measurement
+  over 2310 directories in 37 corpora, since nobody publishes a limit on directory width,
+  and warn at 25 reports 2.4% of directories against high at 40 reporting 1.1%. The one
+  location is the earliest file the directory holds, and its label carries the lines under
+  the directory alongside the split between files and subdirectories. Retune it with
+  `[bands] child_count` and accept one directory with `dendro-ignore: child_count`.
+- `file_length`, a per-file scalar over a file's physical lines, on by default and gating at
+  `:high`. It carries the two scores every other scalar carries, the fixed band and the
+  corpus percentile. Both band edges come from published file-size limits. ESLint's
+  `max-lines` defaults to 300 code lines and SonarQube's to 750; adding blanks and comments
+  puts `warn` at 500. Checkstyle's `FileLength` defaults to 2000 and counts every line
+  already, so that is `high`. Over 1183 files in nine corpora the two edges report 19.1% and
+  1.4%. The finding sits on line 1, since a file holds no site standing for the whole. A
+  spatial `--base` scope therefore keeps it only where the change reaches that line, and the
+  `--since` ratchet, keyed on the location set, is what reads the rule over a change. Retune
+  it with `[bands] file_length` and accept one file with `dendro-ignore-file: file_length`.
+- A generated and bundled file filter. Dendro reads the first 40 lines of every file it is
+  about to parse and turns away one carrying a generator's header or a bundler's module
+  runtime. A checked-in bundle no `ignore` pattern names now stays out of the percentile
+  baseline, the clone clusters and both graphs. The window comes from a measurement over
+  18279 files in 24 corpora: it catches 21 of the 29 generated files and turns away two
+  that are hand-written, where whole-file matching would turn away twenty. A scan
+  warns once with the count and the first few paths, and the report closes with a line
+  naming the count and the signatures behind it. The files reach the API as
+  `Findings.generated`, a `GeneratedFile` each. A top-level `generated` key in
+  `.dendro.toml` adds signatures to the built-in list, and `generated = false` reads every
+  file.
+- A `[report] base_summary` config key for skipping the base corpus score pass when its
+  cost outweighs the comparison. It defaults to `true`; disabling it retains the current
+  scores and line delta while omitting the base comparison columns.
+- Two corpus summary scores on every report, `erosion` and `verbosity`, after
+  SlopCodeBench. Erosion is the share of callable weight sitting in definitions past
+  cyclomatic 10, weight being complexity times the square root of length. Verbosity is the
+  share of source lines a declared flag rule or a clone finding covers. Both read the whole
+  corpus even under `base`, and neither is a finding: a ratio over a corpus names no site, so
+  it carries no band, no percentile and no route into `errors`. They reach the API as
+  `Findings.summary`, a `ScanSummary` of `CorpusScores`.
+- The corpus scores read against a `base` ref, so each report line says what it was there
+  and which way it moved. The base pass rebuilds only what the two ratios read, at roughly
+  1.5x a `--base` scan.
+- A count of the lines a change added and removed, printed under the scores with a `base`
+  ref. libgit2's own tally over the diff supplies it, restricted to the source the scan
+  covers: under a scanned root, an extension a profile claims, surviving `ignore`. A deleted
+  file's lines land in the removed count, so the net goes negative when a change removes
+  code.
+- A pack of eighteen lint rules Dendro ships and runs in every scan, declared in
+  `src/patterns/builtin.toml` and realised per grammar in `src/patterns/<lang>.patterns.scm`.
+  They name the idioms a working test suite leaves in place: a branch repeating an earlier
+  condition, a handler returning a constant over the error it caught, a length compared
+  against zero. Fifteen are flags at `warn`, so the pack reports and never fails a build.
+  Three are per-callable scalars, banded over 22837 callables in nine corpora so an
+  outlier is what it takes to trip one. The pack enters the config cascade below the
+  user-global layer, so `[rules]`, `[bands]` and a `[patterns.<name>]` table of your own
+  all reach it, and a layer inherits the declaration below it so promoting a shipped rule
+  is one line.
 - User-authored lint rules, a second tree-sitter query family. A `[patterns.<name>]` table
   in `.dendro.toml` declares a rule, language-independently, and a
   `.dendro/patterns/<lang>.patterns.scm` capture realises it for one grammar. A flag rule
@@ -34,6 +126,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   match; a capture naming no declared rule is a load error, catching a typo and a predicate
   helper that lost its `_` prefix; and a rule that compiled cleanly but matched nothing
   anywhere in the corpus is reported after the scan.
+- Opt-in corpus finding `:divisible_class`: a class whose methods fall into several groups
+  sharing no state, the LCOM4 reading at the level LCOM4 was defined for. Two methods link
+  when they name a field of the same instance or one calls the other, and the score is the
+  number of components the methods fall into. The finding names the class and one method per
+  component. Covers Python, Java, JavaScript, TypeScript, PHP, Ruby and Rust, the languages
+  that put a class's methods inside the node declaring it; Julia, Go, C and C++ score
+  nothing, each for a reason its query header records. Constructors are dropped from the
+  method set, and a class whose methods name no field is not scored, since its component
+  count is its method count. Measured over 828 classes in five corpora, a few independent
+  groups is ordinary and the tail is dominated by utility and abstract classes, so the rule
+  ships off. `[rules] divisible_class = true` enables it; banded `[13, 22]`.
 - Opt-in corpus finding `:divisible_package`: a directory whose direct children divide into
   groups that could become subdirectories. Where `:incoherent_package` asks whether a
   directory's contents belong elsewhere, this asks whether contents that do belong are
@@ -52,9 +155,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nearest it. Measured over 5798 scored definitions in nine corpora, separation is ordinary
   and the tail is long, so the band marks only what is beyond argument and the rule ships
   off. `[rules] distant_definition = true` enables it; banded `[25, 50]`.
+- Opt-in per-function scalar `comment_density`: the percentage of a definition's lines
+  given over to comment, for the function narrated statement by statement. The count stops
+  at a nested callable, so a closure's narration scores on the closure, and a definition
+  under ten lines reads zero, where one trailing comment alone would be 100%. A docstring
+  never counts in any of the twelve languages. Measured over 22838 definitions in nine
+  corpora, `warn` at 30 sits above the p95 of eight of them and `high` at 50 above the p99
+  of seven. Hand reading that range found ordinary explanation throughout, so the rule
+  ships off. `[rules] comment_density = true` enables it; banded `[30, 50]`.
 
 ### Changed
 
+- `active` now preserves the unmatched-pattern-rule list. It had been dropped since the list
+  was added, so `dendro <path>` never printed the warning about a rule matching nothing
+  anywhere in the corpus. The gate still drops that list, along with the new corpus summary:
+  a ratchet compares finding sets, and neither one is a finding set.
+- `Location` gained a `lastline`, the far end of the region a finding covers, defaulting to
+  `line` at the sites that report a point. Diff scoping and the ratchet key still read the
+  first line alone.
+- `Config` is built by keyword, each keyword taking its field's type and defaulting to the
+  built-in, so `Config(; misplaced = (40, 60))` retunes one band and keeps the rest. A
+  positional call no longer resolves: twelve fields in a row are `(warn, high)` band tuples,
+  and a positional argument list can attach each band to the wrong metric while compiling
+  and typechecking. Coercion stays at the config boundary, so `Config(; cut = 1)` now wants
+  `1.0`.
 - A scalar's corpus percentile is read only where the distribution supports a rank. A
   metric that is zero across most of a corpus has a rank that stops ranking: once the share
   of units holding nothing passes the cut, every unit sits above it and the rule reports

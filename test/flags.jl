@@ -326,6 +326,40 @@ end
     @test broad(:julia, "function f()\n    try\n        g()\n    catch e\n    end\nend\n") == 0
 end
 
+@testitem "broad_catches exempt a handler that ends by rethrowing" setup = [Fixtures] tags = [:flags] begin
+    broad(lang, src) = length(Dendro.broad_catches(Fixtures.idx(lang, src)))
+
+    # A handler whose last statement throws swallows nothing: a bare rethrow and a
+    # wrap-and-rethrow both pass the error on. One that logs and returns, or rethrows
+    # only on a branch, still swallows.
+    @test broad(:python, "try:\n    f()\nexcept BaseException:\n    log()\n    raise\n") == 0
+    @test broad(:python, "try:\n    f()\nexcept:\n    raise ValueError('x') from e\n") == 0
+    @test broad(:python, "try:\n    f()\nexcept:\n    raise\n    # trailing comment\n") == 0
+    @test broad(:python, "try:\n    f()\nexcept BaseException:\n    log()\n    return\n") == 1
+    @test broad(:python, "try:\n    f()\nexcept:\n    if x:\n        raise\n") == 1
+
+    @test broad(:java, "class C { void f() { try { g(); } catch (Throwable t) { throw t; } } }") == 0
+    @test broad(:java, "class C { void f() { try { g(); } catch (Throwable t) { log(t); throw new RuntimeException(\"x\", t); } } }") == 0
+    @test broad(:java, "class C { void f() { try { g(); } catch (Throwable t) { log(t); return; } } }") == 1
+    @test broad(:java, "class C { void f() { try { g(); } catch (Throwable t) { if (x) throw t; } } }") == 1
+
+    @test broad(:cpp, "void f() { try { g(); } catch (...) { throw; } }") == 0
+    @test broad(:cpp, "void f() { try { g(); } catch (...) { log(); throw std::runtime_error(\"x\"); } }") == 0
+    @test broad(:cpp, "void f() { try { g(); } catch (...) { log(); return; } }") == 1
+    @test broad(:cpp, "void f() { try { g(); } catch (...) { if (x) throw; } }") == 1
+
+    @test broad(:php, "<?php try { f(); } catch (\\Throwable \$e) { throw \$e; }") == 0
+    @test broad(:php, "<?php try { f(); } catch (Throwable \$e) { log(\$e); throw new RuntimeException('x', 0, \$e); }") == 0
+    @test broad(:php, "<?php try { f(); } catch (Throwable \$e) { log(\$e); return; }") == 1
+    @test broad(:php, "<?php try { f(); } catch (Throwable \$e) { if (\$x) throw \$e; }") == 1
+
+    @test broad(:ruby, "begin\n  f\nrescue Exception => e\n  log(e)\n  raise\nend\n") == 0
+    @test broad(:ruby, "begin\n  f\nrescue Exception => e\n  raise Foo, 'x'\nend\n") == 0
+    @test broad(:ruby, "def g\n  f\nrescue Exception => e\n  raise Foo.new('x')\nend\n") == 0
+    @test broad(:ruby, "begin\n  f\nrescue Exception => e\n  log(e)\n  return\nend\n") == 1
+    @test broad(:ruby, "begin\n  f\nrescue Exception\n  raise if x\nend\n") == 1
+end
+
 @testitem "shadowed_variables (julia)" setup = [Fixtures] tags = [:flags] begin
     shadowed(src) = length(Dendro.shadowed_variables(Fixtures.idx(:julia, src)))
 

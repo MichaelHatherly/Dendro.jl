@@ -300,20 +300,199 @@
 # gate. The prefix stays on the record because that is where a unit's derived state lives,
 # next to `histogram` and `digest`, not to dodge a threshold.
 #
+# The shipped pattern pack raised sound from 1379 to 1383 and left opt at 33. Two narrowing
+# attempts were measured, and both landed, taking the first count of 1401 down to 1383.
+# `apply_pattern!` now resolves the layer below to one concrete `PatternSpec` before
+# reading a field off it, which is worth 12 reports: `acc` is an untyped accumulator, so
+# every field read off the `Union{Nothing, PatternSpec}` the lookup yields was its own
+# report. Hoisting `acc.patterns` into a local took one more, since the function reads it
+# twice. `starts_its_line` takes a `String` rather than an `AbstractString`, worth 7: the
+# only caller passes `QueryIndex.source`, which is a `String`, and sound mode analyses
+# generic indexing over the abstract type.
+#
+# The four that remain are two sites and no new kind of dispatch. Two sit on
+# `get(specs, ...)` inside `apply_pattern!`, on the same untyped `acc` whose `setindex!`
+# already reported two. The other two sit on `check_patterns`'s new `fixtures` keyword,
+# one widening its kwarg lowering and one on `collect(String, fixtures)` over an untyped
+# value. Typing the keyword would clear them and would narrow a public API to
+# `Vector{String}` to do it, which costs more than four reports of intentional dynamic
+# dispatch.
+#
 # The count is stable under the order this file runs, basic mode then sound. Repeated runs
-# over an identical tree return 1379 every time, and dumping every report gives a
+# over an identical tree return the same number every time, and dumping every report gives a
 # byte-identical file each run. An earlier note here recorded about one report of
 # run-to-run variance and told a reader to discount a rise of one. That was measured with
 # the basic pass skipped, where what moves between runs is the printed signature of a
 # report rather than how many there are, so it was wrong to generalise from it. Treat a
 # rise of one as a real move and find the report behind it.
+#
+# `:divisible_class` (`class_cohesion.jl`) raised sound from 1379 to 1386, opt unchanged.
+# Six of the seven sit on `cluster_divisible_class`'s signature: the keyword-argument
+# lowering every `cluster_*` pass already counts, at one more site. The seventh is in
+# `build_index`, where skipping a `_`-prefixed capture adds a branch to the union split
+# already counted there. It first measured 1388: writing the no-field gate as the concrete
+# `any_state` loop rather than `all(isempty, mine)` removed one, and narrowing
+# `min_methods` to `Int` removed the other, so what is left is the kwarg shape rather than
+# inference that could be recovered. Basic mode stays at zero.
+#
+# The pattern pack and `:divisible_class` were built on separate branches from 1379, one
+# raising sound to 1383 and the other to 1386. Stacked, the tree measures 1390, the two
+# raises added together and nothing more, so the sum is the limit and each branch's
+# paragraph above stands as the evidence for its share. Opt stays at 33.
+#
+# The corpus scores and the line delta (`summary.jl`, `ScanSummary`, `CorpusScores` and
+# `LineDelta` in `report.jl`, `lastline` on `Location`) raised sound from 1390 to 1412 and
+# left opt at 33. Eleven of the 22 sit in `report.jl`, the `convert(::Type{T}, ::Any)`
+# report each field of a struct's implicit all-`Any` constructor raises, the rate `Finding`
+# (five) and `Scan` (seven) already pay, here for three new types and one field each on
+# `Findings` and `Location`. The rest follow the new values through `analyze.jl` (six),
+# `git.jl` (two), `ignore.jl`, `suppress.jl` and `summary.jl` (one each). Two narrowings
+# were measured. Making `base_scores` positional landed and took 1418 to 1412, since a
+# keyword splits a method into a `kwcall` wrapper and a body and every report against the
+# body counts twice. Typed inner constructors on the three new structs took it to 1403 and
+# were reverted: they leave three result types stricter than every neighbouring one and
+# still do not reach 1390.
+#
+# Constructing `Config` by keyword raised sound from 1412 to 1414 and left opt at 33. The
+# 27 reports on the positional `Config(::Any ×27)` constructor went; 29 arrived on
+# `Core.kwcall(::NamedTuple, ::Type{Config})`, the kwsorter analysed with an unparameterised
+# `NamedTuple`, plus one on the concrete `kwcall` from `override_config`, whose four
+# threshold slots are `Any`. It first measured 1439. Typing every keyword with its field's
+# type took 25 off and stays. A `@NamedTuple` assertion on the merged `scalars`, the move
+# recorded above for `cluster_back_edge`'s floors, changed nothing and was reverted. A
+# `Float64(cut)::Float64` on each of the four thresholds added three, since each assertion
+# is itself a counted report, and was reverted. No call-site annotation reaches the
+# kwsorter, so the two that remain are the price of the keyword form.
+#
+# The `[report] base_summary` key dropped sound from 1414 to 1403 and opt from 33 to 32.
+# Untyped it first measured 1428 and opt 34. One `[report]` applier of its own would have
+# cost the fourteen reports each `for (key, value) in table` walk carries, so the two
+# single-setting tables share `apply_scalar_key`, which reads the inner key, the field and
+# the coercion from `SCALAR_TABLES`. That left three narrowings to measure. Typing the
+# table's value tuple and the applier's parameters took sound to 1407: `setting::String`
+# turns the key comparison into a `String` match and `coerce::F` binds the coercion call.
+# Asserting the merged overrides at their own type, `::S`, took sound to 1403 and opt to
+# 32, since a field read from a table leaves the merged tuple abstract, and the widened
+# `scalars` then made `discover_config`'s two later `apply_toml!` calls runtime dispatches.
+#
+# The generated-file filter raised sound from 1403 to 1422 and left opt at 32. The `Config`
+# kwsorter takes two more keywords, `generated` and `generated_enabled`, for two, and
+# `apply_key!` gains their branch for two more; `apply_generated` costs three at `::Any`.
+# `parse_chunk!` and `parse_corpus`'s kwarg lowering take two each for the signature list
+# and the `excluded` sink, `ParseOptions` one more field across its positional form and its
+# kwcall, and `warn_generated` three. `Findings` gains a fourth field for one, and the
+# two-field `GeneratedFile` costs two through its default constructor, the rate `Location`
+# and `Finding` already pay. Three narrowings were measured and reverted: asserting
+# `apply_generated`'s merges at their own type went to 1427, since the merge was already
+# concrete and each assertion is a report; inlining `apply_generated` into `apply_key!`
+# moved its three reports and removed none; and writing the warning as one interpolated
+# string changed nothing.
+#
+# `:file_length` (`file_length.jl`) raised sound from 1422 to 1428 and left opt at 32.
+# Five sit on `cluster_file_length`'s keyword-argument lowering, the per-pass rate
+# `cohesion.jl` and `scattered.jl` each pay at exactly five, and the sixth is one more
+# keyword on the `Config` kwsorter. Two narrowings were measured and reverted, each reading
+# 1428: `cut::Float64` and `min_files::Int` in place of the abstract `Real` and `Integer`
+# the sibling passes take, and a `::Vector{Finding}` return annotation. The reports are
+# Base's kwsorter, so dropping the keywords is the only remaining move, and that would
+# part this pass from every sibling's signature.
+#
+# `:child_count` (`directory_size.jl`) raised sound from 1428 to 1434 and left opt at 32,
+# the same six `:file_length` cost and for the same reasons: five on
+# `cluster_child_count`'s keyword-argument lowering, the per-pass rate, and one more
+# keyword on the `Config` kwsorter. It first measured 1435. The seventh report was an
+# uncovered `directory_findings` match, since `min_dirs::Integer` leaves
+# `length(scored) >= min_dirs` typed `Any` where the callee takes a `Bool`, and
+# `min_dirs::Int` takes it off. That parts the signature from the `Integer` its sibling
+# directory passes take, which is the trade the count is worth here where it was not for
+# `:file_length`, whose own narrowing bought nothing. Writing the comparison to an
+# annotated `enough::Bool` local instead read 1436 and was reverted: the annotation is a
+# report of its own, the rate the `base_summary` and generated-filter measurements already
+# recorded.
+#
+# `:central_definition` (`central_definition.jl`) raised sound from 1434 to 1440 and left
+# opt at 32. Five are `cluster_central_definition`'s keyword-argument lowering, the per-pass
+# rate every cluster pass costs, and the sixth is one more keyword on the `Config` kwsorter,
+# the rate each of the last four bands recorded. Factoring `reference_edges` out of
+# `reach_graph` costs nothing: `unreferenced.jl` reads 8 before and after, since the new
+# function takes every argument positionally. It first measured 1441. Making `linkage`
+# positional took one off, the field read a keyword adds to the `kwcall` wrapper. One
+# narrowing was measured and reverted, reading 1441: `cut::Float64` and `min_defs::Int` in
+# place of the abstract `Real` and `Integer` the sibling passes take, which bought nothing
+# here as it bought nothing for `:file_length`. The pass's remaining `band`/`cut`/`min_defs`
+# keywords are what fourteen sibling passes take and what `analyze` calls them by; narrowing
+# those away was not attempted.
+#
+# `:member_count` (`class_size.jl`) raised sound from 1440 to 1445 and left opt at 32. Four
+# are `cluster_class_size`'s keyword-argument lowering, under the five every cluster pass
+# costs because `band` is positional here, and the fifth is one more keyword on the `Config`
+# kwsorter, the rate each of the last five bands recorded. It first measured 1449, and both
+# narrowings landed. Making
+# `band` positional took one off, the `kwcall` wrapper trade `cluster_central_definition`
+# already makes. Declaring `ClassSubject`'s inner constructor took three off, which is worth
+# recording against the note above that a struct's converting outer constructor has nowhere
+# to go: an inner constructor taking the field types keeps Julia from generating that one,
+# and with it the `convert(::Type{...}, ::Any)` match per field. `PatternSpec` carries those
+# reports still, left alone as out of scope. The pass's remaining `cut` and `min_classes`
+# keywords are what fourteen sibling passes take and what `analyze` calls them by; narrowing
+# those away was not attempted.
+#
+# `:undocumented_public` (`undocumented_public.jl`) lowered sound from 1445 to 1444 and left
+# opt at 32, the first pass to land below the limit it started at. It first measured 1449 and
+# 33. Making `linkage` positional took three off, the `kwcall` wrapper trade the two passes
+# above already make. The last new report was the dispatch through the function-valued
+# `Linkage.is_public` field, one sound and one opt, the rate `reach_graph` recorded when it
+# first paid it. Extracting that call into `def_public` (`linkage.jl`) took two more sound
+# reports off and the opt report with them: both readers of the public surface wrote the same
+# expression, so the analyser counted the dispatch twice, and one shared site counts once.
+# Everything else the pass reads is concrete, the `@doc` and `@attribute` concept nodes, the
+# byte spans and the kind tuple, so it adds nothing.
+#
+# `cyclomatic_modified` (`metrics.jl`, `rules.jl`) raised sound from 1444 to 1448 and left
+# opt at 32. All four reports are `metrics.jl` and all four are `independent_paths`, the
+# higher-order extraction the two readings share: two for `1 + count(...)` and
+# `1 + fold_run(count, ...)` with `count` unbound, and two more inside `fold_run`, whose
+# generic body is now analysed with `f::Any` as well as concretely. The rate is the one
+# `subtree_any(pred::P)` already recorded for a higher-order walk. The new
+# `OPTIONAL_RULES` entry costs nothing: `rules.jl` stays at 19.
+#
+# The extraction is not optional, which is what makes the four irreducible. Each reading
+# written with its own `1 + ...` is what Dendro's own duplicate rule caught on the first
+# run, both method pairs at 21 named nodes against a control-free floor of 20. Two
+# narrowings were measured and both reverted. Asserting `::Int` on the counter's result
+# read 1448 again, trading two `UnanalyzedCallReport`s for two `UnsoundBuiltinErrorReport`s
+# on the typeassert itself. Taking the count by value instead, `independent_paths(::Int)`
+# with the fold moved to each call site, removes all four and puts the duplicate rule back:
+# the four call sites land at 20 named nodes, which is the floor rather than below it.
+#
+# Dropping `:central_definition` lowered sound from 1448 to 1442 and left opt at 32, the six
+# its own entry above recorded going on: five on the pass's keyword-argument lowering and one
+# on the `Config` kwsorter. `reference_edges` stays in `unreferenced.jl` with `reach_graph`
+# as its one reader, and the entry above measured that factoring at nothing.
+#
+# The Julia 1.13.0 bump raised sound from 1442 to 1444 and left opt at 32, with main moving
+# 1379 to 1380 on the same bump, so it tracks the toolchain. The composition moved more than
+# the count: eight arrived and six left. Six of the eight are `replace(::AbstractString,
+# pair)` calls (`fragments.jl`, `ignore.jl` twice, `linkage.jl`, `mermaid.jl`, `report.jl`)
+# that 1.12 analysed and 1.13 reports unanalyzed, and two are `iterate` over the
+# `Iterators.Filter` `rules_of_kind` returns in `baseline.jl`. The six that left are the
+# five `in(sym, allowed)` reports on a `Union{}`-typed `sym` at `patterns.jl:24` and one `>`
+# on `Any` at `placement.jl:63`, both sites 1.13 now infers past.
+#
+# Counting a pattern rule's hits per unit as they are bucketed raised sound from 1444 to
+# 1445 and left opt at 32. The one report is the third field on `PatternBucket`: sound mode
+# charges a `MethodErrorReport` per field on a struct's default constructor, for the
+# `convert` of an `::Any` argument, so the two at `query_index.jl:62` became three at `:67`.
+# Comparing the two report lists, nothing else moved and the rest of the diff is line
+# numbers. The field replaces the subtree fold `pattern_count` ran per unit per rule, 2.2 ms
+# of an 85 ms scan of `test/corpus`.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1379  # JET.report_package(Dendro; mode = :sound).
-const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
+const SOUND_LIMIT = 1445  # JET.report_package(Dendro; mode = :sound).
+const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin
     JET.test_package(Dendro; target_modules = (Dendro,), mode = :basic)

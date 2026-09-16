@@ -49,6 +49,19 @@ asked for.
   counted by its final name. The band sits at the p95/p99 of a six-corpus calibration,
   and no fixed band separates a smell from a legitimate orchestrator: idiomatic corpora
   run p99 anywhere from 9 to 26.
+- `comment_density`, the percentage of a definition's lines given over to comment, for
+  the function narrated statement by statement. The band was measured over 22838
+  definitions in nine corpora: `warn` at 30 sits above the p95 of eight of them, `high`
+  at 50 above the p99 of seven. It waits to be asked for because hand reading that range
+  found ordinary explanation throughout, a comment carrying a constraint the reader would
+  otherwise get wrong, and nothing syntactic tells that from narration. Set
+  `[bands] comment_density` to the convention the project keeps.
+- `cyclomatic_modified`, the branch points `cyclomatic` counts with a whole switch charged
+  one decision in place of one per arm. It carries `cyclomatic`'s band so the two read on
+  one scale. It waits to be asked for because the two agree on 98.4% of the 58340
+  definitions measured over fourteen corpora, so running both mostly reports one function
+  twice. Reach for it where wide dispatch is the idiom. [Scoring and metrics](@ref)
+  covers where the two part company.
 
 Opt in with `analyze(path; rules = [BUILTIN_RULES; OPTIONAL_RULES])`, or by name in a
 `.dendro.toml`.

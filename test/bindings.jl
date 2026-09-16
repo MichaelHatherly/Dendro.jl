@@ -65,6 +65,59 @@ end
     end
 end
 
+@testitem "bindings define a C struct at its body, not at a forward declaration" setup = [Fixtures] tags = [:bindings] begin
+    src = """
+    struct client;
+    int f(struct client *c);
+    struct client { int fd; };
+    """
+    index = Fixtures.idx(:c, src)
+
+    # `struct client;` and the parameter type in the prototype name the struct; only the
+    # specifier with a body defines it, so both resolve to line 3.
+    @test Fixtures.definitions(index) == [(:struct, "client", 3)]
+    @test sort(Fixtures.binding_pairs(index)) == [("client", 1) => ("client", 3), ("client", 2) => ("client", 3)]
+    # The scopes are the file and the struct body; a bodiless specifier opens none.
+    @test length(index.scope_captures.scopes) == 2
+end
+
+@testitem "bindings define a C++ class at its body, not at a forward declaration" setup = [Fixtures] tags = [:bindings] begin
+    src = """
+    class Foo;
+    struct Bar;
+    void g(Foo *p, struct Bar *q);
+    class Foo { int x; };
+    struct Bar { int y; };
+    """
+    index = Fixtures.idx(:cpp, src)
+
+    @test Fixtures.definitions(index) == [(:class, "Foo", 4), (:struct, "Bar", 5)]
+    @test sort(Fixtures.binding_pairs(index)) == [
+        ("Bar", 2) => ("Bar", 5), ("Bar", 3) => ("Bar", 5),
+        ("Foo", 1) => ("Foo", 4), ("Foo", 3) => ("Foo", 4),
+    ]
+    @test length(index.scope_captures.scopes) == 3
+end
+
+@testitem "bindings skip a bash assignment prefixed to a command" setup = [Fixtures] tags = [:bindings] begin
+    using TreeSitter
+    src = """
+    f() {
+      x=1
+      IFS= read -r line
+      FOO=1 cmd
+      local y=2
+      echo "\$y"
+    }
+    """
+    index = Fixtures.idx(:bash, src)
+
+    # `IFS= read` and `FOO=1 cmd` set the variable for that one command's environment
+    # and bind nothing in the shell; only the standalone and declared assignments do.
+    @test Fixtures.definitions(index) == [(:function, "f", 1), (:local, "x", 2), (:local, "y", 5)]
+    @test [String(TreeSitter.slice(src, n)) for n in Dendro.unused_locals(index)] == ["x"]
+end
+
 @testitem "resolve_bindings! is type stable" setup = [Fixtures] tags = [:bindings] begin
     bindings = @inferred Fixtures.resolve(:julia, "helper(x) = x\nf(a) = helper(a)\n")
     @test bindings isa Dict{Dendro.NodeId, Dendro.NodeId}

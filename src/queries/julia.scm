@@ -3,6 +3,11 @@
 ; left side resolves to a call signature, possibly through `::T` / `where` wrappers,
 ; so each wrapper combination is an explicit pattern anchored to the assignment's
 ; first child.
+;
+; No @class. A struct's methods are whatever dispatches on it anywhere in the program,
+; so gathering them needs dispatch resolution, which Dendro does not do. A pattern naming
+; `struct` would read a type's fields as a class body holding no methods and score every
+; type as one concern.
 
 ; A `function … end` whose signature is a call delimits its own body, so an empty one is
 ; an empty implementation; @requires_body marks that for `empty_body`. A bare `function f
@@ -130,6 +135,12 @@
 (catch_clause) @catch
 
 [(line_comment) (block_comment)] @comment
+
+; A docstring is the string literal written above a definition, its sibling at file or
+; module scope. Anchoring to those two containers keeps a string inside a function body,
+; which documents nothing, out of the capture.
+[(source_file (string_literal) @doc)
+ (module_definition (block (string_literal) @doc))]
 
 (identifier) @name
 

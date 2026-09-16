@@ -186,3 +186,40 @@ end
     files = [a, b]
     @test "helper" in keys(Dendro.corpus_visibility(files, Dendro.corpus_symbols(files))["b.js"])
 end
+
+@testitem "a Java method with no modifier declares package visibility" setup = [Fixtures] tags = [:linkage] begin
+    # `open` is package-private: reachable across its package, outside the class's API. The
+    # two readers of publicness split on it, which is why it is neither `:public` nor `:private`.
+    src = "public class C {\n    public int api() { return 1; }\n    int open() { return 2; }\n    private int hidden() { return 3; }\n}\n"
+    j = Fixtures.parsedfile(:java, src; file = "C.java")
+    vis = Dict(d.name => d.visibility for d in Dendro.corpus_symbols([j]).defs)
+    @test vis["api"] == :public
+    @test vis["open"] == :package
+    @test vis["hidden"] == :private
+end
+
+@testitem "a Java interface method with no modifier is public" setup = [Fixtures] tags = [:linkage] begin
+    using TreeSitter
+
+    # An interface member is implicitly public, so the missing keyword is not the
+    # package-private reading it is on a class. A `private` one stays private. Read off
+    # the declared names directly: an interface body is no `@module` namespace in the
+    # imports query, so its methods never reach the symbol table.
+    src = "public interface I {\n    int open();\n    default int run() { return 1; }\n    private int hidden() { return 2; }\n}\n"
+    j = Fixtures.parsedfile(:java, src; file = "I.java")
+    vis = Dict(String(TreeSitter.slice(j.source, d)) => Dendro.def_visibility(j, d) for d in j.index.scope_captures.defnodes)
+    @test vis["open"] == :public
+    @test vis["run"] == :public
+    @test vis["hidden"] == :private
+end
+
+@testitem "a Rust restricted pub item declares package visibility" setup = [Fixtures] tags = [:linkage] begin
+    # `pub(crate)` and `pub(super)` reach within the crate and never past it.
+    src = "pub fn api() -> i32 { 1 }\npub(crate) fn open() -> i32 { 2 }\npub(super) fn up() -> i32 { 3 }\nfn hidden() -> i32 { 4 }\n"
+    r = Fixtures.parsedfile(:rust, src; file = "m.rs")
+    vis = Dict(d.name => d.visibility for d in Dendro.corpus_symbols([r]).defs)
+    @test vis["api"] == :public
+    @test vis["open"] == :package
+    @test vis["up"] == :package
+    @test vis["hidden"] == :private
+end

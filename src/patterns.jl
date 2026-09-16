@@ -10,6 +10,11 @@
 # `rules.jl` beside `Rule`, since `Config` holds a vector of them; everything here is what
 # turns one into findings.
 
+# What a `[patterns.<name>]` table starts from when no earlier layer declared the name. The
+# empty `message` is what `apply_pattern!` checks for afterwards: a first declaration has
+# to say what the rule reports.
+const PATTERN_DEFAULTS = PatternSpec(Symbol(""), "", :warn, :flag, nothing, false, :any)
+
 # Coerce a TOML value naming one of a fixed set of symbols. Unlike an unknown key, which
 # warns and is dropped, a bad value here is an error: the author clearly meant to set it,
 # and guessing which of two severities they wanted would be worse than stopping.
@@ -24,13 +29,24 @@ end
 # Apply one `[patterns.<name>]` table. Only `message` is required; `severity`, `kind`, and
 # `guard` default, and `band` is required by a scalar and rejected on a flag. An unknown key
 # warns and is dropped, as a band does.
+#
+# A layer naming a rule an earlier one declared starts from that declaration rather than
+# from the defaults, so promoting a shipped rule to `severity = "high"` sets one key. The
+# alternative is restating the message, kind, band and scope in the repo file, where the
+# copy drifts from the shipped rule it claims to be.
 function apply_pattern!(acc, name::String, table::Dict{String, Any}, source)
-    message = ""
-    severity = :warn
-    kind = :flag
-    band = nothing
-    guard = false
-    scope = :any
+    # Resolved to one concrete `PatternSpec` before any field is read. `acc` is an untyped
+    # accumulator, so reading a field off the `Union{Nothing, PatternSpec}` the lookup
+    # yields costs a sound-mode report per field.
+    specs = acc.patterns
+    prior = get(specs, Symbol(name), nothing)
+    base = prior isa PatternSpec ? prior : PATTERN_DEFAULTS
+    message = base.message
+    severity = base.severity
+    kind = base.kind
+    band = base.band
+    guard = base.guard
+    scope = base.scope
     for (key, value) in table
         if key == "message"
             message = config_string(value, "patterns.$name.$key", source)
@@ -50,7 +66,7 @@ function apply_pattern!(acc, name::String, table::Dict{String, Any}, source)
     end
     isempty(message) && config_error("pattern `$name` in $source needs a `message`")
     validate_pattern_band(name, kind, band, source)
-    acc.patterns[Symbol(name)] = PatternSpec(Symbol(name), message, severity, kind, band, guard, scope)
+    specs[Symbol(name)] = PatternSpec(Symbol(name), message, severity, kind, band, guard, scope)
     return nothing
 end
 
@@ -83,17 +99,32 @@ end
 # The repo-relative default, under the directory holding `.dendro.toml`.
 const DEFAULT_PATTERNS_DIR = joinpath(".dendro", "patterns")
 
+# The rules Dendro ships: `builtin.toml` declares them and one `<lang>.patterns.scm` per
+# grammar realises them. Relocatable for the reason `QUERIES_DIR` is, since a precompiled
+# package that has moved still has to find its own queries.
+#
+# `BUILTIN_RULES` is a Julia constant where this is data on disk, and the difference is
+# what a rule carries. A `Rule` holds a measuring function, which only Julia can write; a
+# `PatternSpec` holds a message and a band, which is what a user writes in TOML. Shipping
+# the pack as TOML is what puts it in the same cascade a project's own rules travel, so
+# overriding one needs no mechanism of its own.
+const BUILTIN_PATTERNS_DIR = RelocatableFolders.@path joinpath(@__DIR__, "patterns")
+
+# The declarations file inside it, layer zero of the config cascade.
+builtin_patterns_file() = joinpath(String(BUILTIN_PATTERNS_DIR), "builtin.toml")
+
 """
     pattern_dirs(config, roots) -> Vector{String}
 
-The directories holding `<lang>.patterns.scm`, in cascade order: the user-global one
-first, then the repo's, so a rule defined in both resolves to the repo's.
+The directories holding `<lang>.patterns.scm`, in cascade order: the pack Dendro ships
+first, then the user-global one, then the repo's, so a rule defined in more than one
+resolves to the last.
 
 A `patterns_dir` set in a config file is resolved against that file's own directory, not
 the process working directory, so running `dendro` from a subdirectory keeps working.
 """
 function pattern_dirs(config::Config, roots)::Vector{String}
-    dirs = String[]
+    dirs = String[String(BUILTIN_PATTERNS_DIR)]
     global_dir = joinpath(dirname(global_config_path()), "patterns")
     isdir(global_dir) && push!(dirs, global_dir)
     repo = isempty(config.patterns_dir) ? repo_pattern_dir(roots) : config.patterns_dir
@@ -302,33 +333,99 @@ capturing `@debug_output` are one rule with two spellings.
 
 `skip` names rules a higher-priority location already declares, whose captures here are
 dropped rather than merged.
+
+The buckets are then attributed to units, since a `.not` capture cancelling a hit can
+arrive after it and only a finished bucket says what a unit holds.
 """
 function index_patterns!(
         index::QueryIndex, tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString;
         skip::Set{Symbol} = Set{Symbol}()
     )
+    matched = false
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)
         is_helper_capture(name) && continue
         rule, negated = capture_rule(name)
         rule in skip && continue
+        matched = true
         bucket = get!(PatternBucket, index.patterns, rule)
         record!(negated ? bucket.excluded : bucket.hits, cap.node)
+    end
+    matched && attribute_patterns!(index)
+    return index
+end
+
+# --- Attributing a hit to the unit holding it ------------------------------------------
+#
+# A scalar rule counts its hits inside one unit, stopping at nested callables. Folding the
+# unit's subtree to read that costs a tree walk per unit per rule to count what is usually
+# nothing, so each hit is credited to its units once instead, as the bucket is finished.
+#
+# The two readings agree node for node. `fold_unit` visits the node a unit folds from and
+# then descends through every child that is not a callable, so a hit lands in the unit
+# rooted at each of its ancestors up to and including the first callable, and in no other.
+# Walking up from the hit names that same set.
+
+# Recount every rule's per-unit totals from the buckets as they stand. Driven off the
+# buckets rather than off the captures the walk just recorded: a file holds orders more
+# captures than the language declares rules, and noting the rule each capture belongs to
+# costs more than recounting a rule that already had its total.
+function attribute_patterns!(index::QueryIndex)
+    roots = Set{NodeId}()
+    counted = Set{NodeId}()
+    filled = false
+    for bucket in values(index.patterns)
+        empty!(bucket.unit_counts)
+        isempty(bucket.hits.nodes) && continue
+        filled || (unit_root_ids!(roots, index); filled = true)
+        attribute_hits!(bucket, index, roots, counted)
     end
     return index
 end
 
-"""
-    pattern_hits(index, name) -> Vector{TreeSitter.Node}
+# The nodes a unit folds from: a callable definition is its own, and a run of top-level
+# statements has one per statement. Units can nest, since a module body is a container of
+# top-level code inside a file that is one too, so a node is credited to every unit that
+# holds it rather than to one.
+function unit_root_ids!(roots::Set{NodeId}, index::QueryIndex)
+    for u in units(index), n in u.nodes
+        push!(roots, nodeid(n))
+    end
+    return roots
+end
 
-The nodes rule `name` reports in this tree: what its query captured, less what its `.not`
-patterns cancelled. Empty when the rule has no query for this language, which is ordinary
-rather than an error.
-"""
-function pattern_hits(index::QueryIndex, name::Symbol)::Vector{TreeSitter.Node}
-    bucket = get(index.patterns, name, nothing)
-    bucket === nothing && return TreeSitter.Node[]
-    return TreeSitter.Node[n for n in bucket.hits.nodes if !(n in bucket.excluded)]
+# Recount one rule's per-unit totals from the hits recorded so far. A node two of the
+# rule's patterns both captured is one hit, as the membership test this replaces made it,
+# which is what `counted` tracks; the caller owns it, so a file's rules share one.
+function attribute_hits!(
+        bucket::PatternBucket, index::QueryIndex, roots::Set{NodeId}, counted::Set{NodeId}
+    )
+    empty!(counted)
+    for n in bucket.hits.nodes
+        n in bucket.excluded && continue
+        nodeid(n) in counted && continue
+        push!(counted, nodeid(n))
+        credit_hit!(bucket.unit_counts, roots, index, n)
+    end
+    return bucket
+end
+
+# Credit one hit to every unit whose fold would have reached it: the hit's own node and
+# each ancestor up to the first callable, which folds from itself and is never descended
+# into from outside.
+function credit_hit!(
+        counts::Dict{NodeId, Int}, roots::Set{NodeId}, index::QueryIndex, node::TreeSitter.Node
+    )
+    n = node
+    while true
+        id = nodeid(n)
+        id in roots && (counts[id] = get(counts, id, 0) + 1)
+        is_function(n, index) && break
+        p = TreeSitter.parent(n)
+        TreeSitter.is_null(p) && break
+        n = p
+    end
+    return nothing
 end
 
 # --- Resolving a language's rules across both locations -------------------------------
@@ -435,29 +532,21 @@ end
 # point: suppression, diff scoping, the report, the gate, and the ratchet then work with
 # no further code, and a house rule sits beside `cyclomatic` under one vocabulary.
 
-# Count a rule's hits within one unit, stopping at nested callables so a closure's matches
-# do not land on the enclosing function. Every built-in scalar stops there, and a pattern
-# scalar that did not would read as a Dendro bug.
-#
-# The bucket travels as `fold_unit`'s context rather than being captured, so the step stays
-# a plain function and the accumulator stays concretely typed for inference and JET. See
-# the note on `fold_unit` in `metrics.jl`. The index goes unread here, unlike every
-# concept-reading step, since the rule's matches are already bucketed by name.
-pattern_step(node::TreeSitter.Node, _index::QueryIndex, bucket::PatternBucket) =
-    count_if(node in bucket.hits && !(node in bucket.excluded), bucket)
-
 """
     pattern_count(unit, index, name) -> Int
 
 How many times rule `name` matched inside `unit`, excluding nested callables. Zero when
 the rule has no query for this language.
+
+Read off the counts `attribute_hits!` credited to the nodes `unit` folds from, so a unit
+holding no match costs a lookup rather than a walk over its subtree.
 """
 function pattern_count(unit::Unit, index::QueryIndex, name::Symbol)
     bucket = get(index.patterns, name, nothing)
     bucket === nothing && return 0
     total = 0
     for n in unit.nodes
-        total += fold_unit(pattern_step, +, n, index, bucket)
+        total += get(bucket.unit_counts, nodeid(n), 0)
     end
     return total
 end

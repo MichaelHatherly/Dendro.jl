@@ -1,0 +1,145 @@
+# The rules Dendro ships. Layer zero of the same cascade a user-global config and a repo
+# `.dendro.toml` are layers of, applied through the same `apply_toml!`, so a project turns
+# one off with `[rules]`, retunes a band with `[bands]`, and replaces a declaration by
+# writing `[patterns.<name>]` of its own. Nothing here is a special case.
+#
+# Each rule is declared once, language-independently: one name, one message, one kind, one
+# band. The shape lives in `src/patterns/<lang>.patterns.scm`, one file per grammar. A
+# language with no query for a rule never fires it, which is ordinary rather than missing:
+# `except Exception: return None` has no Go spelling, and an index loop is the idiom in
+# JavaScript.
+#
+# Every flag here is `severity = "warn"`, which keeps the pack out of `errors`, the
+# `:high`-band floor a package gates its own tests on. An opinion about style that arrives
+# as a build failure in somebody else's repository is an opinion nobody asked for. A
+# project that wants one of these to fail its build promotes it: `[patterns.boolean_return]`
+# with `severity = "high"`, and the layer below supplies the rest of the declaration.
+#
+# Every rule here is also `guard = true`, for an unrelated reason. A guard is exempt from
+# the "matched nothing" report, which exists to catch a query naming a node type the
+# grammar never produces. These rules name shapes a healthy codebase does not contain, so
+# without the declaration a clean scan would print fifteen rules as broken.
+#
+# The three density scalars are the exception to "all warn". `severity` says nothing about
+# a scalar: a scalar gates at its own `high` band, so these three can reach the floor. The
+# bands below are measured rather than chosen, over Dendro's own source and the nine
+# corpora the other measured bands were read from, so a codebase at the practice's own
+# level sits under `high` and only an outlier trips the gate.
+
+# --- Flags ---------------------------------------------------------------------------
+
+[patterns.banner_comment]
+message = "a rule of dashes is decoration; the structure is already in the code"
+guard   = true
+
+[patterns.boolean_return]
+message = "returning a literal from each branch of a test is the test written out"
+guard   = true
+
+[patterns.unreachable_branch]
+message = "a branch repeating an earlier condition can never run"
+guard   = true
+
+[patterns.manual_min_max]
+message = "comparing two values to pick the larger is `max`"
+guard   = true
+
+[patterns.swallowed_error]
+message = "a handler whose body only returns a constant discards the error it caught"
+guard   = true
+
+[patterns.boolean_equality]
+message = "comparing against a boolean literal asks a question the value already answers"
+guard   = true
+
+[patterns.empty_check]
+message = "comparing a length against zero asks a count where emptiness is the question"
+guard   = true
+
+[patterns.redundant_conversion]
+message = "a value converted and immediately converted back"
+guard   = true
+
+[patterns.redundant_keys]
+message = "asking a key view for membership when the container answers directly"
+guard   = true
+
+[patterns.redundant_collect]
+message = "materialising a sequence the surrounding call would have iterated"
+guard   = true
+
+[patterns.length_index_range]
+message = "looping over positions where the container can be iterated"
+guard   = true
+
+[patterns.redundant_default]
+message = "passing the default as an explicit default"
+guard   = true
+
+[patterns.empty_error_type]
+message = "an error type with no fields and no behaviour adds a name and nothing else"
+guard   = true
+
+[patterns.type_equality]
+message = "exact-type comparison is false for every subtype"
+guard   = true
+
+[patterns.nothing_equality]
+message = "`==` against the null literal compares where identity is meant"
+guard   = true
+
+# --- Density scalars -------------------------------------------------------------------
+#
+# Three declarations rather than one `guard_density`, because the three have different
+# messages, different fixes, and different distributions: `try_density` is meaningless in
+# Go and Rust, where the other two still read.
+#
+# The warn edge is 3 in each, which is the count scb-check hard-codes as its verdict. The
+# band keeps the two-score model around that judgement: absolute alone misses an outlier in
+# a uniformly-defensive codebase, and the percentile alone calls such a codebase fine.
+#
+# The high edges are measured, over 22837 callables in nine corpora across five languages:
+# this package, DataFrames.jl, HTTP.jl, CommonMark.jl, flask, requests, fastmcp, ripgrep
+# and guava. Rust and Java have no query for these three yet, so the evidence is the four
+# Julia corpora and the three Python ones, 7127 callables between them.
+#
+# Percentiles cannot site these edges, which is the first thing the measurement says.
+# 97.5% of callables score zero, and the pooled p999 is 1 for two of the three rules, so
+# the warn edge of 3 already sits past every percentile worth quoting. What is left is a
+# tail of named functions, and reading it is the whole method. Across all nine corpora, 36
+# callables reach 3 try blocks, 15 reach 4, and 4 reach 6; one reaches 3 null guards; none
+# reaches 3 type checks. The extremes are HTTP.jl's `_serve_h2_conn!` at 12 tries,
+# DataFrames.jl's `get_stats` at 9, and HTTP.jl's `_parse_http_gmt_datetime` at 12 null
+# guards, a regex-capture chain this rule names correctly and that no reviewer would call
+# a build failure.
+#
+# So each high edge clears the worst function in the nine. A scalar is the only rule in
+# this pack that can reach the error floor, since `severity` says nothing about one, and
+# the pack's whole stance is that it cannot fail somebody's build on an opinion. Reporting
+# at `warn` is what these three are for; the gate is not. A project that disagrees lowers
+# the edge in its own `.dendro.toml`, which is the layer the opinion belongs in.
+
+[patterns.type_check_density]
+message = "runtime type checks that raise, in one definition"
+kind    = "scalar"
+# Nothing in the nine corpora reaches even the warn edge: the highest count is 2. Double
+# the warn edge is as far as an edge can be argued with no evidence above it.
+band    = [3, 6]
+scope   = "callable"
+guard   = true
+
+[patterns.null_guard_density]
+message = "null guards that return null, in one definition"
+kind    = "scalar"
+# One callable in 22837 reaches 3, and it reaches 12.
+band    = [3, 15]
+scope   = "callable"
+guard   = true
+
+[patterns.try_density]
+message = "independent try blocks in one definition"
+kind    = "scalar"
+# 36 callables in 22837 reach 3, 4 reach 6, and the worst reaches 12.
+band    = [3, 15]
+scope   = "callable"
+guard   = true

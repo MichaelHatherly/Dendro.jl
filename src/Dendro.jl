@@ -10,6 +10,7 @@ import TreeSitter
 
 public analyze, active, errors, github_annotations, mermaid
 public Finding, Findings, Location
+public ScanSummary, CorpusScores, LineDelta, GeneratedFile
 public Rule, BUILTIN_RULES, OPTIONAL_RULES, PatternSpec
 public Library
 public check_patterns, PatternTestFailure
@@ -30,6 +31,7 @@ include("suppress.jl")
 include("parsed_file.jl")
 include("baseline.jl")
 include("report.jl")
+include("summary.jl")
 include("scoring.jl")
 include("diff.jl")
 include("git.jl")
@@ -49,8 +51,13 @@ include("distant_definition.jl")
 include("scattered.jl")
 include("incoherent_package.jl")
 include("divisible_package.jl")
+include("directory_size.jl")
 include("unreferenced.jl")
+include("undocumented_public.jl")
 include("cohesion.jl")
+include("file_length.jl")
+include("class_cohesion.jl")
+include("class_size.jl")
 include("split_audience.jl")
 include("hub.jl")
 include("ignore.jl")

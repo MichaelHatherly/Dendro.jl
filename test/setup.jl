@@ -27,6 +27,10 @@
         return Dendro.ParsedFile(profile, String(src), file, tree, index, directives)
     end
 
+    # A parsed Julia file of `n` physical lines, each line a distinct definition. The
+    # file-length items score the count, so what the lines say does not matter.
+    linefile(n) = parsedfile(:julia, join(["f$i(x) = x" for i in 1:n], "\n") * "\n"; file = "f$n.jl")
+
     # The bindings resolved for `src`, the type-stable entry the binding test asserts
     # inference on. Narrows the scopes query past its `nothing` case before the call.
     function resolve(lang, src)
@@ -40,7 +44,8 @@
     # readable form the binding tests assert on.
     function binding_pairs(index)
         info = Dict{Dendro.NodeId, Tuple{String, Int}}()
-        for n in index.name.nodes
+        caps = index.scope_captures
+        for n in Iterators.flatten((caps.defnodes, caps.refnodes))
             info[Dendro.nodeid(n)] = (String(strip(TreeSitter.slice(index.source, n))), Int(TreeSitter.start_point(n).row) + 1)
         end
         pairs = Pair{Tuple{String, Int}, Tuple{String, Int}}[]
@@ -49,6 +54,30 @@
         end
         return pairs
     end
+
+    # Each definition the scopes query captured as `(kind, name, line)`, the readable
+    # form the definition-site tests assert on.
+    function definitions(index)
+        caps = index.scope_captures
+        return [
+            (kind, String(TreeSitter.slice(index.source, n)), Int(TreeSitter.start_point(n).row) + 1)
+                for (n, kind) in zip(caps.defnodes, caps.defkinds)
+        ]
+    end
+
+    # One source written under a scratch directory and parsed, the shape the
+    # generated-signature items share. Empty when the parse boundary turned the file away.
+    function parse_one(name, source)
+        return mktempdir() do dir
+            path = joinpath(dir, name)
+            write(path, source)
+            return Dendro.parse_corpus([path])
+        end
+    end
+
+    # The class-size reading over one corpus, so an item names the band it scores against
+    # rather than spelling the pass out at every call.
+    member_counts(files; band, kwargs...) = Dendro.cluster_class_size(files, band; kwargs...)
 
     # Findings of one relational metric, the filters the clone and corpus items share.
     of_metric(findings, metric) = Dendro.Findings(filter(f -> f.metric == metric, findings))
@@ -59,6 +88,11 @@
     # unreferenced items assert on.
     unref_sites(files) =
         Set((loc.file, loc.unit) for f in Dendro.cluster_unreferenced(files, Dendro.corpus_symbols(files)) for loc in f.locations)
+
+    # What the documentation pass reports over a corpus, and the names alone, the two
+    # readings the undocumented_public items assert on.
+    undocumented(files) = Dendro.cluster_undocumented_public(files, Dendro.corpus_symbols(files))
+    undocumented_names(files) = Set(loc.unit for f in undocumented(files) for loc in f.locations)
 
     # A synthetic directory whose factoring is known because it was generated, the ground
     # truth the layout rules are held to. `sizes` is one entry per cohesive group whose
@@ -194,16 +228,35 @@
         return nothing
     end
 
+    # One parsed tree and its index, with the captures of one pattern `query` bucketed by
+    # rule: the setup every assertion about a pattern rule starts from.
+    function patternindex(lang, src, query::AbstractString)
+        profile = Dendro.PROFILES[Symbol(lang)]
+        tree = Dendro.parse_source(Dendro.parser_for(profile), String(src))
+        index = idx(lang, src)
+        compiled = Dendro.compile_pattern_query(
+            Dendro.language_grammar(profile), query, "$(lang).patterns.scm"
+        )
+        Dendro.index_patterns!(index, tree, compiled, String(src))
+        return tree, index
+    end
+
     # The lines rule `name` reports in `src`, the end-to-end shape a pattern rule test
     # asserts on: compile the query, bucket its captures, subtract the `.not` matches.
     function pattern_lines(lang, src, name::Symbol, query::AbstractString)
-        profile = Dendro.PROFILES[Symbol(lang)]
-        grammar = Dendro.language_grammar(profile)
-        tree = Dendro.parse_source(Dendro.parser_for(profile), String(src))
-        index = idx(lang, src)
-        compiled = Dendro.compile_pattern_query(grammar, query, "$(lang).patterns.scm")
-        Dendro.index_patterns!(index, tree, compiled, String(src))
+        _, index = patternindex(lang, src, query)
         return sort!([Int(TreeSitter.start_point(n).row) + 1 for n in Dendro.pattern_hits(index, name)])
+    end
+
+    # A ParsedFile whose index carries the hits of one pattern `query`, the corpus record a
+    # pass reading declared rules needs. `parsedfile` indexes no patterns, and the config
+    # cascade a scan resolves them through has nothing to say about a pass reading the
+    # index it produced.
+    function patternfile(lang, src, query::AbstractString; file = "f." * string(lang))
+        tree, index = patternindex(lang, src, query)
+        return Dendro.ParsedFile(
+            Dendro.PROFILES[Symbol(lang)], String(src), file, tree, index, Dendro.Directive[]
+        )
     end
 
     # --- Config fixtures ------------------------------------------------------
