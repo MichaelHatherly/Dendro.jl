@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Corpus finding `:member_count`: how many definitions a class declares, reported at the
+  declaration line with the class name. Constructors count here, where `:divisible_class`
+  drops them, since a class with fifteen constructors is what a count is for. One location
+  and not one per member, since the edit the finding names is the class. Covers the same
+  seven languages `:divisible_class` does, and a language tagging no `@class` scores
+  nothing. On by default, banded `[20, 40]`: twenty is the level the God-class
+  detectors are written around and reports 7.6% of the 5478 classes measured across eight
+  corpora, and forty holds the 2.1% nobody argues about.
 - `child_count`, a directory rule over the number of direct children a directory holds, off
   by default and enabled with `[rules] child_count = true`. The other directory rules read
   coupling. Take a directory whose contents belong where they are and divide into no

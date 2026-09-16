@@ -422,12 +422,26 @@
 # here as it bought nothing for `:file_length`. The pass's remaining `band`/`cut`/`min_defs`
 # keywords are what fourteen sibling passes take and what `analyze` calls them by; narrowing
 # those away was not attempted.
+#
+# `:member_count` (`class_size.jl`) raised sound from 1440 to 1445 and left opt at 32. Four
+# are `cluster_class_size`'s keyword-argument lowering, under the five every cluster pass
+# costs because `band` is positional here, and the fifth is one more keyword on the `Config`
+# kwsorter, the rate each of the last five bands recorded. It first measured 1449, and both
+# narrowings landed. Making
+# `band` positional took one off, the `kwcall` wrapper trade `cluster_central_definition`
+# already makes. Declaring `ClassSubject`'s inner constructor took three off, which is worth
+# recording against the note above that a struct's converting outer constructor has nowhere
+# to go: an inner constructor taking the field types keeps Julia from generating that one,
+# and with it the `convert(::Type{...}, ::Any)` match per field. `PatternSpec` carries those
+# reports still, left alone as out of scope. The pass's remaining `cut` and `min_classes`
+# keywords are what fourteen sibling passes take and what `analyze` calls them by; narrowing
+# those away was not attempted.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1440  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1445  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 32      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

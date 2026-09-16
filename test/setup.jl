@@ -64,6 +64,10 @@
         end
     end
 
+    # The class-size reading over one corpus, so an item names the band it scores against
+    # rather than spelling the pass out at every call.
+    member_counts(files; band, kwargs...) = Dendro.cluster_class_size(files, band; kwargs...)
+
     # Findings of one relational metric, the filters the clone and corpus items share.
     of_metric(findings, metric) = Dendro.Findings(filter(f -> f.metric == metric, findings))
     duplicates(findings) = of_metric(findings, :duplicate)

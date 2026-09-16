@@ -190,6 +190,7 @@ const RELATIONAL = (
     incoherent_package = :incoherent_package,
     divisible_package = :divisible_package,
     child_count = :child_count,
+    member_count = :member_count,
 )
 const RELATIONAL_METRICS = values(RELATIONAL)
 

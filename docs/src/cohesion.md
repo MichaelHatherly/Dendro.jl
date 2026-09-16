@@ -106,6 +106,33 @@ divisible_class = true
 divisible_class = [8, 15]
 ```
 
+## Class size
+
+Class cohesion asks whether a class holds several concerns. Class size asks the question a
+reader asks first: does this class hold more than one class should. Both read the same
+member set, and both report at the declaration line with the class name.
+
+Reported as `:member_count`: how many definitions the class declares. Constructors count
+here, where the cohesion rule drops them, since a class with fifteen constructors is what
+the count is for. A nested class takes its own members, and a closure written inside a
+method belongs to that method rather than to the class:
+
+```
+app/models.py:14  Order  member_count 47 (high; p99)
+```
+
+One location, not one per member. The edit the finding names is the class, and a member
+list would report the same class as many times as it has members. Coverage is the seven
+languages [Class cohesion](@ref) covers, for the same reason: a language earns the reading
+by putting a class's methods inside the node declaring it.
+
+The rule runs by default, banded `[20, 40]`. Twenty is the level the God-class detectors
+are written around. Measurement over 5478 classes in eight corpora across six languages
+puts what it costs at 7.6% of them. Forty holds 2.1%, and those are the classes nobody
+argues about: laravel's 259-member `Builder`, rails' 161-member `AbstractAdapter`, guava's
+91-member `LocalCache`. Only `high` reaches the floor
+[`errors`](@ref) gates on, so `warn` reports without gating.
+
 ## Cross-file placement
 
 Reported as `:misplaced`: a unit that couples more to another file than to its own. The

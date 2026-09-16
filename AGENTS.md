@@ -207,7 +207,11 @@ for the ubiquity cut a class is too small a population to compute. A class whose
 name no field is not scored at all: there the component count is the method count, which is
 what a utility class of static methods and an abstract base of throwing stubs both produce,
 and measurement says those shapes dominate the tail. Answer a request to sharpen the rule
-with the band in a project's `.dendro.toml`, not with a smarter model.
+with the band in a project's `.dendro.toml`, not with a smarter model. The class is a
+container the query names, so a count over its members is the one class reading that needs
+no field resolution at all. That is `:member_count`, and it counts constructors: a class
+with fifteen of them is what a count is for, and the exclusion above belongs to cohesion's
+own reading.
 
 Placement asked once more, of a definition against its own file. `:misplaced` asks which
 file a unit belongs in; `:distant_definition` asks where in the file, scoring how many

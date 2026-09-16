@@ -81,6 +81,7 @@ end
             :cut, :bands, :unnatural, :low_cohesion, :file_length, :divisible_class,
             :scattered, :split_audience, :misplaced, :distant_definition, :back_edge,
             :dependency_cycle, :hub, :incoherent_package, :divisible_package, :child_count,
+            :member_count,
             :rules,
             :min_size, :threshold, :radius_factor, :reimpl_threshold, :library_threshold,
             :library_gate_coverage, :library_anchor_grain, :languages, :patterns,
@@ -132,6 +133,7 @@ end
             incoherent_package = [81, 82]
             divisible_package = [86, 87]
             child_count = [91, 92]
+            member_count = [98, 99]
             """
         )
         cfg = mktempdir() do xdg
@@ -153,6 +155,7 @@ end
         @test cfg.incoherent_package == (81, 82)
         @test cfg.divisible_package == (86, 87)
         @test cfg.child_count == (91, 92)
+        @test cfg.member_count == (98, 99)
         # A band added to `RELATIONAL_BANDS` and not to the lines above would leave its
         # field unpinned, which is how this test came to miss one when two rules landed
         # in parallel. Pin the set so the omission fails here rather than going unnoticed.
@@ -162,7 +165,7 @@ end
                 :unnatural, :low_cohesion, :file_length, :divisible_class, :scattered,
                 :split_audience, :misplaced, :distant_definition, :back_edge,
                 :dependency_cycle, :hub, :incoherent_package, :divisible_package,
-                :child_count,
+                :child_count, :member_count,
             ]
         )
     end

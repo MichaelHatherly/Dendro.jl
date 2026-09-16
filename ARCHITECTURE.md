@@ -61,7 +61,8 @@ parameter to take it. Cohesion, placement,
 scattering, reachability, and the opt-in `:incoherent_package` run over the unit graph;
 the opt-in `:distant_definition` needs neither graph, reading one file's bindings against
 the symbol table, and neither does the opt-in `:divisible_class`, reading the fields and
-calls inside one class;
+calls inside one class. `:member_count` needs no graph either, counting what one class
+node holds.
 `:back_edge`, `:dependency_cycle` and `:hub` run over the one file graph, and so do the
 opt-in `:divisible_package` and `:child_count`. That graph is the substrate
 for the rules that read the corpus as files depending on files. It is built before the
@@ -666,8 +667,9 @@ Reporting:
 - `class_cohesion.jl` defines class-level cohesion, the opt-in pass `analyze` gates on
   `cfg.rules`. Where `:low_cohesion` asks whether a file holds several concerns, this asks
   it of a class. `class_nodes` and `class_methods` attribute each callable unit to the
-  innermost `@class` containing it, dropping constructors and anything a callable inside
-  the class already holds; `fields_by_unit` and `bare_fields_by_unit` read the instance
+  innermost `@class` containing it, dropping anything a callable inside the class already
+  holds, and `instance_methods` takes the constructors out of one class's members for this
+  rule alone; `fields_by_unit` and `bare_fields_by_unit` read the instance
   state a method names, the second covering Java's unqualified field reference and gated on
   the query having tagged a `@field_name`; `method_state` folds a nested unit's fields and
   callees into the method holding it; `method_adjacency` links two methods whose fields meet
@@ -675,6 +677,12 @@ Reporting:
   finding per class against `DIVISIBLE_CLASS_BAND` and the corpus percentile. A class with
   no `@field` use at all is not scored, since its component count is its method count.
   Included after `cohesion.jl`.
+- `class_size.jl` defines the size reading of a class, `:member_count`, which runs by
+  default. `class_subjects` pairs each `@class` with its members and the one location
+  standing for it, and `declared_members` counts those members. `cluster_class_size` emits
+  through `scored_findings` against `MEMBER_COUNT_BAND` and the corpus percentile, read once
+  the corpus holds `MIN_CLASS_COUNT` classes. Included after `class_cohesion.jl`, whose
+  member set it reads, and before `config.jl`, which names the band.
 - `hub.jl` defines the Crossing pass over the file graph, the one relational metric read at
   file-graph level. `crossing_scores` counts each file's distinct dependents and
   dependencies and scores `min(fan_in, fan_out)`, the conjunction that separates a crossing
@@ -763,8 +771,8 @@ Reporting:
   calls is defined first. It follows every file defining a pass it calls: `report.jl`,
   `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`, `file_graph.jl`,
   `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
-  `incoherent_package.jl`, `divisible_package.jl`, `directory_size.jl`, `cohesion.jl`,
-  `hub.jl`, `split_audience.jl`.
+  `incoherent_package.jl`, `divisible_package.jl`, `directory_size.jl`, `unreferenced.jl`,
+  `cohesion.jl`, `hub.jl`, `split_audience.jl`.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, the clone clusters, and the file graph's
   movement across two revisions into mermaid `flowchart` text, with `:file` and `:unit`
@@ -1271,7 +1279,7 @@ the extreme, every file a single class. `class_cohesion.jl` is what reads the le
 the fields themselves, which is a separate pass rather than a widening of this one: a class
 is not a `Unit` and its methods are not the file's concerns.
 
-### Class cohesion
+### Classes
 
 `cluster_divisible_class` (`class_cohesion.jl`) asks the same question of a class, the level
 LCOM4 was defined at. Four query captures carry it. `@class` names the declaration owning
@@ -1291,6 +1299,14 @@ emits through `scored_findings` with `min_reported = 2`, so a cohesive class sta
 percentile population without reporting, and it is gated on `cfg.rules` like the other
 opt-in passes. Included after `cohesion.jl`, whose shape it takes, and before `config.jl`,
 which names its band.
+
+`cluster_class_size` (`class_size.jl`) asks how much the same class holds. That question
+needs no field resolution at all: the members are what `class_methods` already attributes,
+and the reading is a count over them. Constructors are in, since the exclusion belongs to
+cohesion's own reading and not to the member set both share. `:member_count` counts the
+members and ships on. It reports one location, the class declaration, since the edit it
+names is the class, and it takes its coverage from `@class` unchanged. The band comment
+carries the measurement behind the default.
 
 ## The file graph
 

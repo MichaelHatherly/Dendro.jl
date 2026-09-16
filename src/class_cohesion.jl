@@ -21,7 +21,9 @@
 # the shape that hides a real split (a `self._lock` makes a divided class read cohesive),
 # and dropping such a field would be the cut for it, but at class scale the population is
 # too small for a share to mean anything. The constructor exclusion is what buys back most
-# of the same ground.
+# of the same ground. The exclusion belongs to this rule and not to the class reading it
+# shares: `:member_count` counts constructors, since a class with fifteen of them is what a
+# size reading is for.
 #
 # A class whose methods name no field at all is not scored. There the count is the method
 # count and the reading is vacuous: a static utility class, a Rust `impl Trait` over a unit
@@ -79,25 +81,44 @@ class_nodes(index::QueryIndex) = sort(index.class.nodes; by = TreeSitter.byte_ra
 inside(inner::Tuple{Int, Int}, outer::Tuple{Int, Int}) =
     outer[1] <= inner[1] && inner[2] <= outer[2]
 
-# Each class's methods, as unit indices, in `class_nodes` order. A unit is a method of
-# the innermost class containing it, so a nested class takes its own; a unit nested inside
-# a callable that is itself inside the class is that callable's business rather than a
-# method of its own, which is what keeps a closure out of the method set. Constructors are
-# dropped here, the one place the rule drops a method.
-function class_methods(index::QueryIndex, classes::Vector{Tuple{Int, Int}}, ranges::Vector{Tuple{Int, Int}})
-    out = [Int[] for _ in classes]
+"""
+    class_methods(index) -> Vector{Tuple{TreeSitter.Node, Vector{Int}}}
+
+Each `@class` node in one file, in source order, paired with the unit indices it holds as
+members. A unit belongs to the innermost class containing it, so a nested class takes its
+own; a unit nested inside a callable that is itself inside the class is that callable's
+business rather than a member of its own, which is what keeps a closure out of the set.
+
+Constructors are members here. `:divisible_class` drops them through
+[`instance_methods`](@ref), since a constructor assigns every field and would link every
+group to every other, and the two class-size rules count them.
+"""
+function class_methods(index::QueryIndex)
+    nodes = class_nodes(index)
+    classes = Tuple{Int, Int}[TreeSitter.byte_range(n) for n in nodes]
+    ranges = unit_ranges(index)
+    members = [Int[] for _ in classes]
     for (i, u) in enumerate(units(index))
         is_callable(u, index) || continue
-        unit_node(u) in index.constructor && continue
         span = ranges[i]
         ci = containing_unit(classes, span[1], span[2])
         ci == 0 && continue
         enclosing = enclosing_unit(ranges, i)
         (enclosing != 0 && inside(ranges[enclosing], classes[ci])) && continue
-        push!(out[ci], i)
+        push!(members[ci], i)
     end
-    return out
+    return Tuple{TreeSitter.Node, Vector{Int}}[(nodes[ci], members[ci]) for ci in eachindex(nodes)]
 end
+
+"""
+    instance_methods(members, index) -> Vector{Int}
+
+`members` without the constructors, the method set `:divisible_class` reads off
+[`class_methods`](@ref). A constructor assigns every field a class has, so counting it
+would link every group to every other and read every class as one concern.
+"""
+instance_methods(members::Vector{Int}, index::QueryIndex) =
+    Int[m for m in members if !(unit_node(units(index)[m]) in index.constructor)]
 
 # The innermost unit strictly containing unit `i`, or 0. `containing_unit` answers with
 # the unit itself, which is the wrong answer when the question is what encloses it.
@@ -268,19 +289,18 @@ function cluster_divisible_class(
     for f in files
         index = f.index
         isempty(index.class.nodes) && continue
-        nodes = class_nodes(index)
-        classes = Tuple{Int, Int}[TreeSitter.byte_range(n) for n in nodes]
         ranges = unit_ranges(index)
         per_unit = (fields_by_unit(index), bare_fields_by_unit(index), callees_by_unit(index))
-        for (ci, methods) in enumerate(class_methods(index, classes, ranges))
+        for (node, members) in class_methods(index)
+            methods = instance_methods(members, index)
             length(methods) >= min_methods || continue
-            mine, calls = method_state(ranges, methods, per_unit, declared_fields(index, classes[ci]))
+            span = TreeSitter.byte_range(node)
+            mine, calls = method_state(ranges, methods, per_unit, declared_fields(index, span))
             any_state(mine) || continue
             names = String[unit_name(units(index)[m], index) for m in methods]
             adj = method_adjacency(mine, calls, names)
             lines = Int[units(index)[m].firstline for m in methods]
             reps = method_reps(lines, components(adj, collect(eachindex(methods))))
-            node = nodes[ci]
             locations = Location[Location(f.file, line_of(node), held_class_name(node, index))]
             for r in reps
                 u = units(index)[methods[r]]
