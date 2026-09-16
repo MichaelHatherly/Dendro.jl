@@ -27,6 +27,28 @@ end
     @test Set(strip(TreeSitter.slice(i.source, n)) for n in i.short_circuit.nodes) == Set(["and", "or"])
 end
 
+@testitem "every capture name reaches its own QueryIndex field" tags = [:query_index] begin
+    using Dendro: CONCEPT_NAMES, QueryIndex
+
+    # Four capture names are Julia reserved words, so their fields are spelled out. The
+    # mapping lives nowhere but the constructor's two parallel literals, the field list
+    # and the `by_name` dictionary, which is what this table writes down.
+    reserved = Dict(
+        :catch => :catch_clause, :return => :return_stmt,
+        :finally => :finally_clause, :try => :try_stmt,
+    )
+    field_for(name) = get(reserved, name, name)
+
+    # A concept is added by editing both literals, and two branches each adding one merge
+    # into code that compiles while filing one concept's captures under another's name.
+    # `Concept()` allocates its own containers, so identity separates two empty concepts.
+    idx = QueryIndex(:julia, "")
+    @test Set(keys(idx.by_name)) == Set(string.(CONCEPT_NAMES))
+    @testset "$name" for name in CONCEPT_NAMES
+        @test idx.by_name[string(name)] === getfield(idx, field_for(name))
+    end
+end
+
 @testitem "every query uses only known capture names" tags = [:query_index] begin
     using TreeSitter
 

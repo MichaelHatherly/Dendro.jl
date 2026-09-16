@@ -352,12 +352,23 @@
 # body counts twice. Typed inner constructors on the three new structs took it to 1403 and
 # were reverted: they leave three result types stricter than every neighbouring one and
 # still do not reach 1390.
+#
+# Constructing `Config` by keyword raised sound from 1412 to 1414 and left opt at 33. The
+# 27 reports on the positional `Config(::Any ×27)` constructor went; 29 arrived on
+# `Core.kwcall(::NamedTuple, ::Type{Config})`, the kwsorter analysed with an unparameterised
+# `NamedTuple`, plus one on the concrete `kwcall` from `override_config`, whose four
+# threshold slots are `Any`. It first measured 1439. Typing every keyword with its field's
+# type took 25 off and stays. A `@NamedTuple` assertion on the merged `scalars`, the move
+# recorded above for `cluster_back_edge`'s floors, changed nothing and was reverted. A
+# `Float64(cut)::Float64` on each of the four thresholds added three, since each assertion
+# is itself a counted report, and was reverted. No call-site annotation reaches the
+# kwsorter, so the two that remain are the price of the keyword form.
 
 using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1412  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1414  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

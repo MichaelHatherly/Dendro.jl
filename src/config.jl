@@ -17,8 +17,8 @@
 const DEFAULT_CUT = 0.95
 
 # The relational metrics whose band a `[bands]` key may set. The rest of a `[bands]`
-# table names scalar rules. Ordered as the `Config` fields are, since the constructor is
-# positional and every band shares a type.
+# table names scalar rules. Ordered as the `Config` fields and the constructor's keywords
+# are, so the three lists read against each other.
 const RELATIONAL_BANDS = (
     :unnatural, :low_cohesion, :divisible_class, :scattered, :split_audience, :misplaced,
     :distant_definition, :back_edge, :dependency_cycle, :hub, :incoherent_package,
@@ -60,7 +60,9 @@ to compare blocks as well as whole functions; `libraries` holds the reference co
 `[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name; and
 `ignore` holds gitignore-style patterns dropping paths from the scan, which
 [`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces.
-Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
+Every field is a keyword taking that field's type and defaulting to its built-in, so
+`Config(; misplaced = (40, 60))` retunes one band and keeps the rest. Immutable: pass one
+to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
     cut::Float64
@@ -90,6 +92,48 @@ struct Config
     patterns_dir::String
     libraries::Vector{Library}
     ignore::Vector{String}
+
+    # Built by keyword, never positionally. Twelve fields in a row are `Tuple{Int, Int}`
+    # bands, so a positional call admits an argument list that compiles, typechecks, and
+    # attaches each band to the wrong metric; two branches each adding a metric merge into
+    # one. Each default is the built-in the cascade starts from, so a caller names only
+    # what it sets, and each keyword takes its field's own type rather than converting to
+    # it: every value arriving here has been coerced by a `config_*` helper already.
+    Config(;
+        cut::Float64 = DEFAULT_CUT,
+        bands::Dict{Symbol, Tuple{Int, Int}} = Dict{Symbol, Tuple{Int, Int}}(),
+        unnatural::Tuple{Int, Int} = UNNATURAL_BAND,
+        low_cohesion::Tuple{Int, Int} = LOW_COHESION_BAND,
+        divisible_class::Tuple{Int, Int} = DIVISIBLE_CLASS_BAND,
+        scattered::Tuple{Int, Int} = SCATTERED_BAND,
+        split_audience::Tuple{Int, Int} = SPLIT_AUDIENCE_BAND,
+        misplaced::Tuple{Int, Int} = MISPLACED_BAND,
+        distant_definition::Tuple{Int, Int} = DISTANT_DEFINITION_BAND,
+        back_edge::Tuple{Int, Int} = BACK_EDGE_BAND,
+        dependency_cycle::Tuple{Int, Int} = DEPENDENCY_CYCLE_BAND,
+        hub::Tuple{Int, Int} = HUB_BAND,
+        incoherent_package::Tuple{Int, Int} = INCOHERENT_PACKAGE_BAND,
+        divisible_package::Tuple{Int, Int} = DIVISIBLE_PACKAGE_BAND,
+        rules::Dict{Symbol, Bool} = Dict{Symbol, Bool}(),
+        min_size::Int = DEFAULT_MIN_SIZE,
+        threshold::Float64 = DEFAULT_THRESHOLD,
+        radius_factor::Float64 = DEFAULT_RADIUS_FACTOR,
+        reimpl_threshold::Float64 = DEFAULT_REIMPL_THRESHOLD,
+        library_threshold::Float64 = DEFAULT_LIBRARY_THRESHOLD,
+        library_gate_coverage::Int = DEFAULT_LIBRARY_GATE_COVERAGE,
+        library_anchor_grain::Bool = false,
+        languages::Dict{Symbol, LanguageProfile} = Dict{Symbol, LanguageProfile}(),
+        patterns::Vector{PatternSpec} = PatternSpec[],
+        patterns_dir::String = "",
+        libraries::Vector{Library} = Library[],
+        ignore::Vector{String} = String[],
+    ) = new(
+        cut, bands, unnatural, low_cohesion, divisible_class, scattered, split_audience,
+        misplaced, distant_definition, back_edge, dependency_cycle, hub,
+        incoherent_package, divisible_package, rules, min_size, threshold, radius_factor,
+        reimpl_threshold, library_threshold, library_gate_coverage, library_anchor_grain,
+        languages, patterns, patterns_dir, libraries, ignore,
+    )
 end
 
 """
@@ -536,26 +580,34 @@ function discover_config(roots; explicit = nothing, use_files = true)
             scalars = apply_toml!(acc, scalars, TOML.parsefile(path), path)
         end
     end
-    return Config(
-        scalars.cut, acc.bands,
-        get(acc.relational, :unnatural, UNNATURAL_BAND),
-        get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
-        get(acc.relational, :divisible_class, DIVISIBLE_CLASS_BAND),
-        get(acc.relational, :scattered, SCATTERED_BAND),
-        get(acc.relational, :split_audience, SPLIT_AUDIENCE_BAND),
-        get(acc.relational, :misplaced, MISPLACED_BAND),
-        get(acc.relational, :distant_definition, DISTANT_DEFINITION_BAND),
-        get(acc.relational, :back_edge, BACK_EDGE_BAND),
-        get(acc.relational, :dependency_cycle, DEPENDENCY_CYCLE_BAND),
-        get(acc.relational, :hub, HUB_BAND),
-        get(acc.relational, :incoherent_package, INCOHERENT_PACKAGE_BAND),
-        get(acc.relational, :divisible_package, DIVISIBLE_PACKAGE_BAND),
-        acc.rules,
-        scalars.min_size, scalars.threshold, scalars.radius_factor,
-        scalars.reimpl_threshold, scalars.library_threshold, scalars.library_gate_coverage,
-        scalars.library_anchor_grain, acc.languages,
-        sort!(collect(values(acc.patterns)); by = s -> s.name), scalars.patterns_dir,
-        sort!(collect(values(acc.libraries)); by = l -> l.name), scalars.ignore,
+    return Config(;
+        cut = scalars.cut,
+        bands = acc.bands,
+        unnatural = get(acc.relational, :unnatural, UNNATURAL_BAND),
+        low_cohesion = get(acc.relational, :low_cohesion, LOW_COHESION_BAND),
+        divisible_class = get(acc.relational, :divisible_class, DIVISIBLE_CLASS_BAND),
+        scattered = get(acc.relational, :scattered, SCATTERED_BAND),
+        split_audience = get(acc.relational, :split_audience, SPLIT_AUDIENCE_BAND),
+        misplaced = get(acc.relational, :misplaced, MISPLACED_BAND),
+        distant_definition = get(acc.relational, :distant_definition, DISTANT_DEFINITION_BAND),
+        back_edge = get(acc.relational, :back_edge, BACK_EDGE_BAND),
+        dependency_cycle = get(acc.relational, :dependency_cycle, DEPENDENCY_CYCLE_BAND),
+        hub = get(acc.relational, :hub, HUB_BAND),
+        incoherent_package = get(acc.relational, :incoherent_package, INCOHERENT_PACKAGE_BAND),
+        divisible_package = get(acc.relational, :divisible_package, DIVISIBLE_PACKAGE_BAND),
+        rules = acc.rules,
+        min_size = scalars.min_size,
+        threshold = scalars.threshold,
+        radius_factor = scalars.radius_factor,
+        reimpl_threshold = scalars.reimpl_threshold,
+        library_threshold = scalars.library_threshold,
+        library_gate_coverage = scalars.library_gate_coverage,
+        library_anchor_grain = scalars.library_anchor_grain,
+        languages = acc.languages,
+        patterns = sort!(collect(values(acc.patterns)); by = s -> s.name),
+        patterns_dir = scalars.patterns_dir,
+        libraries = sort!(collect(values(acc.libraries)); by = l -> l.name),
+        ignore = scalars.ignore,
     )
 end
 
@@ -575,17 +627,33 @@ function override_config(
         config::Config; cut = nothing, min_size = nothing,
         threshold = nothing, radius_factor = nothing, libraries = nothing
     )
-    return Config(
-        cut === nothing ? config.cut : Float64(cut), config.bands,
-        config.unnatural, config.low_cohesion, config.divisible_class, config.scattered,
-        config.split_audience,
-        config.misplaced, config.distant_definition, config.back_edge, config.dependency_cycle,
-        config.hub, config.incoherent_package, config.divisible_package, config.rules,
-        min_size === nothing ? config.min_size : Int(min_size),
-        threshold === nothing ? config.threshold : Float64(threshold),
-        radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
-        config.reimpl_threshold, config.library_threshold, config.library_gate_coverage,
-        config.library_anchor_grain, config.languages, config.patterns, config.patterns_dir,
-        libraries === nothing ? config.libraries : as_libraries(libraries), config.ignore,
+    return Config(;
+        cut = cut === nothing ? config.cut : Float64(cut),
+        bands = config.bands,
+        unnatural = config.unnatural,
+        low_cohesion = config.low_cohesion,
+        divisible_class = config.divisible_class,
+        scattered = config.scattered,
+        split_audience = config.split_audience,
+        misplaced = config.misplaced,
+        distant_definition = config.distant_definition,
+        back_edge = config.back_edge,
+        dependency_cycle = config.dependency_cycle,
+        hub = config.hub,
+        incoherent_package = config.incoherent_package,
+        divisible_package = config.divisible_package,
+        rules = config.rules,
+        min_size = min_size === nothing ? config.min_size : Int(min_size),
+        threshold = threshold === nothing ? config.threshold : Float64(threshold),
+        radius_factor = radius_factor === nothing ? config.radius_factor : Float64(radius_factor),
+        reimpl_threshold = config.reimpl_threshold,
+        library_threshold = config.library_threshold,
+        library_gate_coverage = config.library_gate_coverage,
+        library_anchor_grain = config.library_anchor_grain,
+        languages = config.languages,
+        patterns = config.patterns,
+        patterns_dir = config.patterns_dir,
+        libraries = libraries === nothing ? config.libraries : as_libraries(libraries),
+        ignore = config.ignore,
     )
 end

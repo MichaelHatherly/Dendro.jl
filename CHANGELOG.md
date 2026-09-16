@@ -106,6 +106,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Location` gained a `lastline`, the far end of the region a finding covers, defaulting to
   `line` at the sites that report a point. Diff scoping and the ratchet key still read the
   first line alone.
+- `Config` is built by keyword, each keyword taking its field's type and defaulting to the
+  built-in, so `Config(; misplaced = (40, 60))` retunes one band and keeps the rest. A
+  positional call no longer resolves: twelve fields in a row are `(warn, high)` band tuples,
+  and a positional argument list can attach each band to the wrong metric while compiling
+  and typechecking. Coercion stays at the config boundary, so `Config(; cut = 1)` now wants
+  `1.0`.
 - A scalar's corpus percentile is read only where the distribution supports a rank. A
   metric that is zero across most of a corpus has a rank that stops ranking: once the share
   of units holding nothing passes the cut, every unit sits above it and the rule reports

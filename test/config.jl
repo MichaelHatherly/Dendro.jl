@@ -64,12 +64,26 @@ end
     end
 end
 
+@testitem "Config takes its fields by keyword" tags = [:config] begin
+    using Dendro: Config, MISPLACED_BAND
+
+    # `cut` is the first field and `ignore` the last, so naming them in this order is a
+    # construction no positional call can express. Each value landing on the field its
+    # name picks, rather than on the slot it sits in, is what the keyword form buys.
+    cfg = Config(; ignore = ["vendor/"], hub = (7, 9), cut = 0.5)
+    @test cfg.cut == 0.5
+    @test cfg.hub == (7, 9)
+    @test cfg.ignore == ["vendor/"]
+    @test cfg.misplaced == MISPLACED_BAND   # a field left unnamed keeps its default
+    @test isempty(cfg.bands)
+end
+
 @testitem "each relational band reaches its own Config field" tags = [:config] begin
     using Dendro: RELATIONAL_BANDS, discover_config
 
-    # `Config` is built positionally from a run of same-typed band arguments, so a
-    # reordered argument list would compile, typecheck, and silently attach each band to
-    # the wrong metric. A distinct value per field is what makes that fail loudly.
+    # Every band shares a type, so a `[bands]` key read into the wrong keyword would
+    # compile, typecheck, and silently attach that band to the wrong metric. A distinct
+    # value per field is what makes it fail loudly.
     mktempdir() do dir
         f = joinpath(dir, "c.toml")
         write(

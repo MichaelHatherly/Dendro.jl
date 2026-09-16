@@ -121,10 +121,18 @@ both rely on it, and the benchmark suite pins itself to one thread.
 
 The bands a finding is judged against are tunable, the cascade resolved in
 `config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
-one band field per relational metric, in `RELATIONAL_BANDS` order since the constructor is
-positional and every band shares a type, a rule on/off override dict, the five
+one band field per relational metric, listed in `RELATIONAL_BANDS` order so the two read
+against each other, a rule on/off override dict, the five
 clone-detection thresholds (three within-corpus, two cross-corpus), and the `Library` list
-a `[libraries.<name>]` table declares. `discover_config(roots)` accumulates each layer's
+a `[libraries.<name>]` table declares. A keyword inner constructor is the only way to build
+one, each keyword taking its field's type and defaulting to the built-in the cascade starts
+from: twelve fields in a row
+are `Tuple{Int, Int}` bands, so a positional call would let an argument list that compiles
+and typechecks attach each band to the wrong metric. Coercion stays at the config boundary,
+in the `config_*` helpers, so the keywords narrow rather than convert. A new relational
+metric is one field,
+one keyword default, and one `RELATIONAL_BANDS` entry. `discover_config(roots)` accumulates
+each layer's
 overrides starting from the built-in defaults (the relational band consts, `DEFAULT_CUT`, the
 clone consts, empty override dicts), overlaying a user-global
 `~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`,
