@@ -9,8 +9,11 @@
   (#eq? @_exc "Exception"))
 
 ; `raise` is a call, or a bare identifier when it takes no argument; either way a
-; handler ending in one passes its error on.
-((identifier) @raise (#eq? @raise "raise"))
+; handler ending in one passes its error on. The bare form is only looked for directly
+; under a rescue body, where `broad_catch` reads it: a pattern over every identifier in
+; the file matched each one before the predicate turned it down, and that was most of
+; what a Ruby parse allocated.
+((rescue body: (then (identifier) @raise)) (#eq? @raise "raise"))
 ((call method: (identifier) @_raise) @raise (#eq? @_raise "raise"))
 ; Ruby branch bodies are `then`/inline statements, not block nodes, so the NPath
 ; construct families (@loop/@switch/@ternary/@try/@case) are not wired; npath on Ruby
