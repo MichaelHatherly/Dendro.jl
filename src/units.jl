@@ -51,20 +51,23 @@ detection.
 # typed signatures collide structurally with nothing to extract.
 is_function(node::TreeSitter.Node, index::QueryIndex) = hasid(index.function_ids, node)
 
+# The `@def_name` capture `node` holds as a direct child, or "". Read off the index's
+# parent-keyed map rather than by scanning the node's children. A top-level definition's
+# binder is the file itself, so the scan cost every unit a walk over every other top-level
+# node, which is quadratic in the definitions a file holds and was measured at four fifths
+# of all `unit_name` time.
+function held_def_name(node::TreeSitter.Node, index::QueryIndex)
+    held = get(index.def_name_parents, nodeid(node), nothing)
+    held === nothing && return ""
+    return String(strip(TreeSitter.slice(index.source, held)))
+end
+
 # The defining name tagged on `node`'s binder, a sibling outside its subtree, or "".
 # An anonymous callable bound to a name (a JS arrow `const f = () => ...`) carries its
 # name on the enclosing binder, so a unit holding no name of its own takes the binder's.
-#
-# Read off the index's parent-keyed `@def_name` map rather than by scanning the binder's
-# children. A top-level definition's binder is the file itself, so the scan cost every
-# unit a walk over every other top-level node, which is quadratic in the definitions a
-# file holds and was measured at four fifths of all `unit_name` time.
 function binder_def_name(node::TreeSitter.Node, index::QueryIndex)
     p = TreeSitter.parent(node)
-    TreeSitter.is_null(p) && return ""
-    held = get(index.def_name_parents, nodeid(p), nothing)
-    held === nothing && return ""
-    return String(strip(TreeSitter.slice(index.source, held)))
+    return TreeSitter.is_null(p) ? "" : held_def_name(p, index)
 end
 
 # Label a function node by its name, or "" when no name node is found. A qualified

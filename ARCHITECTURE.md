@@ -30,8 +30,8 @@ file, and appends the corpus-relational findings: cross-file duplicates, natural
 outliers, low-cohesion files, misplaced units, scattered files, unreferenced private
 definitions, files serving disjoint audiences, dependencies running against a directory
 pair's grain, dependency cycles, hub files, and, when the config enables it, incoherent
-packages and definitions distant from their use. The active rule set is a value it
-carries, resolved from a `Config` (see Configuration)
+packages, definitions distant from their use, and classes whose methods share no state.
+The active rule set is a value it carries, resolved from a `Config` (see Configuration)
 unless the `rules` keyword overrides it, and it threads through baseline sampling, per-file
 scoring, and suppression validation, so a caller extends the checks without touching the
 pipeline. The baseline-from-the-corpus step is what makes relative scoring work with no
@@ -60,9 +60,11 @@ travels through the keyword slot the bare visibility map used to occupy, so no p
 parameter to take it. Cohesion, placement,
 scattering, reachability, and the opt-in `:incoherent_package` run over the unit graph;
 the opt-in `:distant_definition` needs neither graph, reading one file's bindings against
-the symbol table;
-`:back_edge`, `:dependency_cycle`, `:hub` and the opt-in `:divisible_package` run over the
-one file graph, the substrate
+the symbol table, and neither does the opt-in `:divisible_class`, reading the fields and
+calls inside one class. `:member_count` needs no graph either, counting what one class
+node holds.
+`:back_edge`, `:dependency_cycle` and `:hub` run over the one file graph, and so do the
+opt-in `:divisible_package` and `:child_count`. That graph is the substrate
 for the rules that read the corpus as files depending on files. It is built before the
 clone passes report, since they rank their clusters by distance in its directory
 contraction.
@@ -71,12 +73,17 @@ The `ignore` keyword (gitignore-style patterns, `ignore.jl`) filters the corpus 
 collection time, inside `source_files`, before any parsing. Excluded files leave
 both the findings and the baseline, so vendored source neither flags nor skews the
 percentile. This is corpus-shaping, distinct from `base` scoping, which restricts an
-already-built corpus to changed lines.
+already-built corpus to changed lines. The `generated` config key shapes the same corpus
+one stage later, by content rather than by path: `parse_chunk!` matches each file's first
+lines against a signature list and turns away what a generator or a bundler wrote.
 
 With `base`, `analyze` scopes to a git diff: it parses the diff of the working tree
-against that ref via `changed_ranges` and restricts each file's findings (and the
+against that ref via `diff_summary` and restricts each file's findings (and the
 duplicate clusters, exact and near, through the shared `scope_clusters`) to the
-touched line ranges. Nothing else branches the flow.
+touched line ranges. The corpus summary is the exception, and deliberately so: a ratio over
+a corpus cannot be narrowed to the files a diff touched, so both halves read past the scope
+(`## Corpus scores`). A `base` ref also adds a second pass over the base tree and reads the
+diff's line tallies, both of which feed the summary alone. Nothing else branches the flow.
 
 ## Parallelism
 
@@ -117,10 +124,18 @@ both rely on it, and the benchmark suite pins itself to one thread.
 
 The bands a finding is judged against are tunable, the cascade resolved in
 `config.jl`. `Config` is immutable: the percentile `cut`, a scalar-band override dict,
-one band field per relational metric, in `RELATIONAL_BANDS` order since the constructor is
-positional and every band shares a type, a rule on/off override dict, the five
+one band field per relational metric, listed in `RELATIONAL_BANDS` order so the two read
+against each other, a rule on/off override dict, the five
 clone-detection thresholds (three within-corpus, two cross-corpus), and the `Library` list
-a `[libraries.<name>]` table declares. `discover_config(roots)` accumulates each layer's
+a `[libraries.<name>]` table declares. A keyword inner constructor is the only way to build
+one, each keyword taking its field's type and defaulting to the built-in the cascade starts
+from: twelve fields in a row
+are `Tuple{Int, Int}` bands, so a positional call would let an argument list that compiles
+and typechecks attach each band to the wrong metric. Coercion stays at the config boundary,
+in the `config_*` helpers, so the keywords narrow rather than convert. A new relational
+metric is one field,
+one keyword default, and one `RELATIONAL_BANDS` entry. `discover_config(roots)` accumulates
+each layer's
 overrides starting from the built-in defaults (the relational band consts, `DEFAULT_CUT`, the
 clone consts, empty override dicts), overlaying a user-global
 `~/.config/dendro/config.toml` and the repo `.dendro.toml` found at `git_toplevel`,
@@ -227,7 +242,9 @@ Resolution and configuration:
   by the whole profile, not the language name, so two projects registering one name
   against different grammars or queries never share a compiled query. `language_for_path`
   resolves an extension through an `extension_map` of the scan's registry, built once per
-  scan rather than per file. The caches are guarded by `CACHE_LOCK`; `warm_languages`
+  scan rather than per file. `HEADER_EXTENSIONS` names the extensions a header carries and
+  `HEADER_LANGUAGES` the languages those resolve to, the ones that declare a name apart from
+  defining it, which `is_header` and `undocumented_public.jl` read. The caches are guarded by `CACHE_LOCK`; `warm_languages`
   fills them for a profile set up front so fan-out tasks find them warm.
 - `parallel.jl` defines the threading primitives the corpus fan-outs share:
   `PARALLEL_MIN` and `parallel_enabled`, `chunk_indices` (round-robin partition
@@ -298,12 +315,30 @@ Measurement:
   `cognitive_complexity`, `function_length`, `nesting_depth`, `parameter_count`,
   `boolean_complexity`, `return_count`, and `npath` (NPath complexity, a recursion
   that dispatches on construct family from the query and saturates at `NPATH_CAP`).
-  `severity` classifies a value against a `(warn, high)` band.
+  `severity` classifies a value against a `(warn, high)` band. The opt-in
+  `comment_density` reads the one thing here that is not about control flow, the share of
+  a definition's lines given over to comment, folding `comment_lines` over the unit
+  against `function_length`. The fold stops at a nested callable where the denominator
+  does not, so a closure's narration scores on the closure and the enclosing definition's
+  length keeps the one meaning `function_length` gives it. Below
+  `MIN_COMMENT_DENSITY_LINES` the metric reads zero, since a one-line body with a
+  trailing comment is 100%. Its band is the one per-function band drawn from a corpus
+  measurement, for want of any guidance that sets a comment-percentage target.
+  The opt-in `cyclomatic_modified` is a second reading of `cyclomatic`:
+  `modified_step` drops a switch's arms from the branch points and adds the switch, so a
+  dispatch costs one decision and every other construct counts as before. The two
+  readings share their base path through `independent_paths` and nothing else. Its band
+  is a const here beside the function, since the measurement behind it has nowhere to
+  hang in the rule table, and it holds `cyclomatic`'s numbers, so a project running both
+  reads the two on one scale.
 - `flags.jl` defines the presence metrics: `empty_body`/`empty_bodies`,
   `empty_catches`, `stub_markers`, `returns_in_finally`, `trivial_wrappers`,
   `unreachable_statements`, `identical_operands`, `duplicate_branches`,
   `unused_parameters`, `unused_locals`, `broad_catches` (the `@broad_catch`
-  concept's nodes verbatim: the query decides which handlers are broad), and
+  concept's clauses, less any whose body ends in a `@raise` node: the query decides
+  which handlers are broad and which statements throw, and the rule reads the last
+  statement of the clause's last named child, which is Ruby's `then` where every other
+  language's is a `@body`), and
   `shadowed_variables` (a fresh
   `:local`-kind binding whose name an enclosing scope already binds; Julia's
   `:assign`-kind statement assignments rebind rather than shadow and never
@@ -358,15 +393,31 @@ Reporting:
   `show` method) that emits GitHub Actions workflow commands for inline PR
   annotations. Both share `score_suffix`. A finding renderer takes `Findings`; a
   graph renderer (`mermaid`, `mermaid.jl`) takes the corpus, since a graph is not
-  recoverable from findings.
+  recoverable from findings. It also holds the result types the corpus summary fills,
+  `CorpusScores`, `LineDelta` and `ScanSummary`, plus `GeneratedFile`, which the parse
+  boundary fills. They sit beside `Findings` because
+  `Findings` carries one as a field and so needs it declared first, and because every other
+  result type already lives here.
+- `summary.jl` is the corpus summary pass: `corpus_scores` and the two halves behind it,
+  `erosion_score` and `covered_lines`. It reads a parsed corpus, the unscoped clone
+  findings, and the declared `PatternSpec`s, and returns a `CorpusScores`. `base_scores` and
+  `scan_delta` sit in `analyze.jl` instead: collecting and parsing a second corpus is what
+  that file does, and reaching the config cascade from here would put the pass in the same
+  dependency cycle. Included after `report.jl`, whose types it fills, and read by
+  `analyze.jl`.
 - `diff.jl` defines the line-range vocabulary a scope is expressed in: `coalesce_lines`
   merges added line numbers into ranges, and `inrange`/`intersects` test a span against
   them. The line numbers themselves come from `git.jl`.
 - `git.jl` is everything Dendro asks of a git repository, and the only file that knows
   libgit2 exists. `git_toplevel` resolves the repo root for the ratchet base, the spatial
   `base` scope, the `:change` diagram, and the discovered `.dendro.toml`.
-  `changed_ranges` reads a revision against the working tree into per-file line ranges,
-  pulling each hunk's lines out of a `git_patch` rather than parsing diff text.
+  `diff_summary` reads a revision against the working tree in one walk over the patches,
+  returning a `DiffSummary` of both readings: the per-file added-line `ranges` a scope tests
+  against, pulled hunk by hunk out of a `git_patch` rather than parsed from diff text, and
+  the per-file `stats` from `git_patch_line_stats`, libgit2's own tally. The tally comes
+  from that call rather than off the per-line walk, so the two cannot drift apart on a shape
+  the walk treats specially. They key different path sets: a pure deletion adds no line and
+  so has no `ranges` entry, while its `stats` entry is what lets a net count go negative.
   `with_base_corpus` materialises a revision into a tempdir by walking its tree and
   writing each blob (`checkout_tree`, `write_entry`), with `base_tree` resolving the ref.
   The `LibGit2` stdlib owns repository and object lifetimes; raw `ccall` covers only the
@@ -457,7 +508,11 @@ Reporting:
   `capitalized_public`, `modifier_public`) decide public-API membership; the convention
   predicates read a `CorpusDef`'s name, `modifier_public` reads its `visibility`, set by
   `def_visibility` from a grammar-specific modifier (Rust `pub`, a C/C++ `static` function,
-  a Ruby/Java/PHP `private` method, a package-private Java class). It also holds what each
+  a Ruby/Java/PHP `private` method, a package-private Java class). Beside `:public`,
+  `:private` and `:unknown` sits `:package`: a Java method with no modifier or a Rust
+  `pub(crate)` item, reachable within the package and outside the API. `def_public`
+  reads `:package` as public, so reachability roots from it; `def_api`, what
+  `undocumented_public` asks, leaves it out. It also holds what each
   model makes visible for one file, `file_visible` over `member_visible`, `import_visible`,
   `package_visible` and `merge_visible`, where the `:package` model (Java) unions import
   visibility with the same-directory types a package resolves without an import, so a
@@ -585,14 +640,51 @@ Reporting:
   percentile. Groups are extracted rather than partitioned: what no folder claims stays at
   the top level, and the anchor location's label says how much the proposal places. Included
   after `incoherent_package.jl`.
+- `directory_size.jl` asks how wide a directory is, the third opt-in pass `analyze` gates on
+  `cfg.rules`. It reads the node set `:divisible_package` reads, a directory's direct
+  children, so the two make a matched pair: this one says a directory holds too many
+  children and that one says how those children group. `direct_children` walks `fg.files`
+  through `child_of`, counting a child file and a child subdirectory one each. The same walk
+  sums the lines under the directory and picks the earliest file it holds, the site the
+  finding is reported at. `cluster_child_count` emits a `:child_count` finding per directory
+  against `CHILD_COUNT_BAND` and the corpus percentile, read once the corpus declares
+  `MIN_CHILD_COUNT_DIRS` directories. The lines and the split between files and
+  subdirectories ride in the anchor's label, since neither says whether anything in the
+  directory can be found. Included after `divisible_package.jl`, whose `corpus_directories`
+  and `child_of` it reads.
 - `unreferenced.jl` defines dead-code detection by reachability, not the corpus graph but
   a dedicated reference graph over `table.defs` that keeps non-unit targets and discounts
-  no cross-cutting utility. `reach_graph` builds the forward edges (within-file bindings
-  and `corpus_references`, each attributed to its enclosing top-level definition by
-  `enclosing_def`) and the root set (declared-public definitions and those referenced from
-  top-level code); `reachable` walks it breadth-first. `cluster_unreferenced` emits an
-  `:unreferenced` finding per unreached definition, suppressible inline. Reads `linkage.jl`
-  for `corpus_references` and the public surface. Included after `scattered.jl`.
+  no cross-cutting utility. `reference_edges` walks the references once and returns a
+  `(source, target)` pair per reference (within-file bindings and `corpus_references`, each
+  attributed to its enclosing top-level definition by `enclosing_def`) along with the
+  targets top-level code names. `reach_graph` reads those as adjacency, joins the top-level
+  targets to the declared-public definitions for the root set, and `reachable` walks it
+  breadth-first. `cluster_unreferenced` emits an `:unreferenced` finding per unreached
+  definition, suppressible inline. Reads `linkage.jl` for `corpus_references` and the public
+  surface. Included after `scattered.jl`.
+- `undocumented_public.jl` defines the documentation reading over that same public surface,
+  with one default inverted. A language with no `LINKAGES` entry reads as private here and
+  public there, so the rule stays silent on a corpus whose surface Dendro cannot read.
+  `documented_span` gives each definition the construct its documentation attaches to, the
+  callable unit holding its name, the class declaring it, or the name itself. `doc_candidates`
+  widens that set to every unit and class in the file, which keeps a method's docstring on the
+  method where the symbol table holds only the class. `documented_spans` marks a construct documented when a `@doc`
+  node sits on the line above it, a doc comment stepping over the lines `@attribute` and
+  plain `@comment` nodes cover, or, for a doc node that is not a `@comment`, when one sits
+  inside it (`doc_targets` reads one node's targets). It also returns the constructs a
+  docstring documented. A docstring documents a name where a doc comment documents one form,
+  so a definition sharing a name with one of those in its file reads as documented.
+  A construct inside an `@inherits_doc` node reads as documented, since its doc
+  tool shows the overridden definition's docs there, and so does a `@constructor` inside a
+  class, whose class carries the finding. `prototype_facts` gathers the corpus-wide reading
+  of the `@prototype` captures, the names a documented prototype declares and the names a
+  header declares, and a definition in a `HEADER_LANGUAGES` file (`resolve.jl`) is documented
+  by the first and API only under the second. `nodoc_lines` and `nodoc_excluded` read the
+  `@nodoc` markers, RDoc's `:nodoc:`, and a definition on a marked line or under a class
+  whose line carries the `all` form is dropped. `cluster_undocumented_public` emits
+  a `:warn` finding per undocumented definition of a `DOCUMENTED_KINDS` kind, suppressible
+  inline. Off by default, gated in `analyze` through `[rules]`. Included after
+  `unreferenced.jl`, whose public surface it reads.
 - `cohesion.jl` defines within-file cohesion. `cluster_low_cohesion` reads the within
   view of the corpus graph, `components(adjacency(graph; within = true), file_nodes)`:
   cross-file edges never join one file's nodes, so the components restricted to a file are
@@ -603,6 +695,33 @@ Reporting:
   percentile. The LCOM4 reading of independent concerns cohabiting. Binding-keyed but
   still syntactic, within one file. Included after `scattered.jl`, since its signature
   names `CorpusGraph`.
+- `file_length.jl` defines the one scalar whose subject is a file. `cluster_file_length`
+  scores each `ParsedFile` by `physical_lines`, the count `corpus_scores` already divides
+  verbosity by, and emits through `scored_findings` against the absolute
+  `FILE_LENGTH_BAND` and the corpus percentile, which is read once the corpus holds
+  `MIN_FILE_LENGTH_FILES` files. Its one location is line 1, since a file carries no site
+  inside it that stands for the whole, and that is what makes the finding coarse under a
+  spatial `base` scope. Included after `cohesion.jl`, whose shape it takes, and before
+  `config.jl`, which reads its band.
+- `class_cohesion.jl` defines class-level cohesion, the opt-in pass `analyze` gates on
+  `cfg.rules`. Where `:low_cohesion` asks whether a file holds several concerns, this asks
+  it of a class. `class_nodes` and `class_methods` attribute each callable unit to the
+  innermost `@class` containing it, dropping anything a callable inside the class already
+  holds, and `instance_methods` takes the constructors out of one class's members for this
+  rule alone; `fields_by_unit` and `bare_fields_by_unit` read the instance
+  state a method names, the second covering Java's unqualified field reference and gated on
+  the query having tagged a `@field_name`; `method_state` folds a nested unit's fields and
+  callees into the method holding it; `method_adjacency` links two methods whose fields meet
+  or one of which names the other; and `cluster_divisible_class` emits a `:divisible_class`
+  finding per class against `DIVISIBLE_CLASS_BAND` and the corpus percentile. A class with
+  no `@field` use at all is not scored, since its component count is its method count.
+  Included after `cohesion.jl`.
+- `class_size.jl` defines the size reading of a class, `:member_count`, which runs by
+  default. `class_subjects` pairs each `@class` with its members and the one location
+  standing for it, and `declared_members` counts those members. `cluster_class_size` emits
+  through `scored_findings` against `MEMBER_COUNT_BAND` and the corpus percentile, read once
+  the corpus holds `MIN_CLASS_COUNT` classes. Included after `class_cohesion.jl`, whose
+  member set it reads, and before `config.jl`, which names the band.
 - `hub.jl` defines the Crossing pass over the file graph, the one relational metric read at
   file-graph level. `crossing_scores` counts each file's distinct dependents and
   dependencies and scores `min(fan_in, fan_out)`, the conjunction that separates a crossing
@@ -645,15 +764,27 @@ Reporting:
   the unique set of file paths to parse, the shared front of `analyze` and `mermaid`),
   `parse_corpus` (parse each path once and build its query index into a
   `Vector{ParsedFile}`), and `parse_chunk!` (one chunk of that fan-out, with its own
-  parser pool). `ParseOptions` carries what a parse does beyond the query index, the
-  rules, the pattern queries, whether to resolve bindings and whether to read directives,
-  so a reference corpus opts out of every optional walk and `parse_chunk!` takes one value
-  rather than four more parameters. Parsing is the one boundary that turns a file away:
+  parser pool). `ParseOptions` carries what a parse does beyond the query index: the
+  rules, the pattern queries, whether to resolve bindings, whether to read directives, and
+  the generated-file signatures. A reference corpus opts out of every optional walk that
+  way, and `parse_chunk!` takes one value rather than five more parameters.
+  Parsing is the boundary that turns a file away:
   tree-sitter takes the source as a C string, so a file carrying an embedded NUL cannot be
   parsed at all.
   `parse_chunk!` warns with the path and leaves the slot unassigned, and `parse_corpus`
   compacts in index order, so one such file, a fuzzer test case checked in beside real
-  source, is reported rather than taking the scan down. Gathering and driving are separate
+  source, is reported rather than taking the scan down.
+  The second turn-away at that boundary reads the first `GENERATED_HEAD_LINES` lines of
+  each source for a `GENERATED_SIGNATURES` entry, a generator's header or a bundler's
+  module runtime, and leaves the slot unassigned the same way, writing the matched
+  signature into a parallel array instead. `parse_corpus` reads that array in index order
+  into the caller's `excluded` sink and warns once for the whole scan. `analyze` carries
+  the sink onto `Findings.generated`, which is what prints the trailing report line. The
+  match is plain text rather than a query, the one place Dendro reads a file as text: the
+  bargain governs what it measures, and this decides what it reads at all, the same reading
+  `ignore.jl` takes over a path. `generated_signatures` resolves the config's additions
+  over the built-in list, or empties it when a project sets `generated = false`, and every
+  route into a parse reads that one list. Gathering and driving are separate
   files because one file holding both
   has its units pulled toward every pass it calls as well as the parsing primitives,
   which is what `:scattered` measures; splitting on that seam is the fix the rule asks
@@ -664,19 +795,23 @@ Reporting:
   the symbol table, the `ResolvedLinkage` over it, and both graphs, built once),
   `clone_clusters`
   (exact and near duplicates plus the config-gated reimplementation pass, each ranked
-  against the `ModulePlacement`), `library_clusters` (the two cross-corpus passes, beside
+  against the `ModulePlacement`, returning both the scoped findings and the unscoped
+  structural pair the summary reads), `structural_clones` (the two structural passes
+  unranked, shared by that and by the base pass), `base_scores` and `scan_delta` (what a
+  `base` ref adds to the summary, both covered in `## Corpus scores`),
+  `library_clusters` (the two cross-corpus passes, beside
   the clone family rather than inside it, since a one-location finding has no module
   distance for `rank_clones!` to read), `relational_clusters` (naturalness, low cohesion,
   cross-file placement, scattering, unreferenced definitions, the audience pass over the
-  symbol table, the two config-gated directory passes, and the three passes over the
+  symbol table, the three config-gated directory passes, and the three passes over the
   file graph, in the order a report reads them), and the diff scope, `Scope` and
   `scope_clusters`, which live here because they are `analyze`'s framing of the question
-  rather than a property of the corpus. It is included after `corpus.jl` and after
-  `report.jl`, `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`,
-  `file_graph.jl`, `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
-  `incoherent_package.jl`, `divisible_package.jl`, `cohesion.jl`, `hub.jl`, and
-  `split_audience.jl` so everything
-  it calls is defined first.
+  rather than a property of the corpus. It is included after `corpus.jl`, so everything it
+  calls is defined first. It follows every file defining a pass it calls: `report.jl`,
+  `diff.jl`, `naturalness.jl`, `linkage.jl`, `corpus_graph.jl`, `file_graph.jl`,
+  `clones.jl`, `reimplementation.jl`, `placement.jl`, `scattered.jl`,
+  `incoherent_package.jl`, `divisible_package.jl`, `directory_size.jl`, `unreferenced.jl`,
+  `undocumented_public.jl`, `cohesion.jl`, `hub.jl`, `split_audience.jl`.
 - `mermaid.jl` defines `mermaid`, the graph renderers that turn the corpus coupling
   graph, the dead-code reachability graph, the clone clusters, and the file graph's
   movement across two revisions into mermaid `flowchart` text, with `:file` and `:unit`
@@ -712,18 +847,27 @@ in its query, not here.
 and `function_ids` (the no-descend boundary), plus one `Concept` per measured
 construct (decision points, short-circuit operators, nesting, parameters, parameter
 names, bodies,
-catches, broad catches, comments, names, trivial statements, returns, finally clauses, calls,
+catches, broad catches, throws, comments, names, trivial statements, returns, finally clauses, calls,
 callee names,
 binary expressions, binary operators, conditionals, terminals, short-form
-definitions, and the NPath construct families: loops, switches, ternaries, tries,
+definitions, classes, instance-field uses, declared field names, constructors,
+the decision count's switch arms, its switch statements,
+and the NPath construct families: loops, switches, ternaries, tries,
 cases). A `Concept`
 holds the tagged nodes in source order and a `Set{NodeId}` for membership. Built
 once per file by `build_index`: the constructor starts every concept empty and
 builds a `by_name` table mapping each capture to its concept, then `dispatch!` files
-each capture through that table and throws on a name outside `CONCEPT_NAMES`.
+each capture through that table and throws on a name outside `CONCEPT_NAMES`. A capture
+whose name starts with `_` is dropped instead: it anchors a predicate on a node the pattern
+tests but does not report, which is how `self.x` tests the object while capturing the field.
 The suite checks every query's capture names against that set. This is the only
 place a language's concrete grammar leaks in: a construct a language lacks has no
-pattern, so its concept is empty and a rule reading it finds nothing. `QueryIndex`
+pattern, so its concept is empty and a rule reading it finds nothing. Two concepts read
+convention where the others read structure. `@doc` names whatever a language's own readers
+and doc tools take as documentation, a docstring in Python and Julia, `///` in Rust, every
+`//` line in Go. `@attribute` names a declaration modifier written as a sibling above what
+it modifies, which is Rust's `#[...]` alone; every other language nests its annotations
+inside the declaration node. `QueryIndex`
 also carries `bindings`, a `Dict{NodeId, NodeId}` from each reference to the in-file
 definition it resolves to, empty unless `build_index` was given a scopes query.
 
@@ -820,13 +964,22 @@ so the parallel pass shares it with no lock. The gate's `fkey` and the `:change`
 `edges_by_path` memoize the same resolution per keying pass, through `relative_to`
 (`analyze.jl`), where the corpus is not to hand.
 
-`Location` (`report.jl`). A code site: file, 1-based line, enclosing unit name, and an
-optional label. A `Finding` carries one or more. A finding about something larger than a unit
+`Location` (`report.jl`). A code site: file, 1-based line, enclosing unit name, an optional
+label, and the last line the site runs to. That span is what `corpus_scores` measures
+verbosity over; `in_scope` and the gate's `fkey` still read the first line alone, so
+widening a diff scope to a whole span stays a separate decision from recording one. Four
+sites set a real span: `unit_findings!` and the near-duplicate emitter read it off the unit,
+`flag_findings!` and `cluster_duplicates` off the node. Every other site takes the default,
+the first line again.
+A `Finding` carries one or more. A finding about something larger than a unit
 points at a representative real site rather than inventing one: `:scattered` names one
 unit per community, and `:incoherent_package`, whose subject is a directory, names a
 representative unit in it. `:divisible_package` does the same for a directory and for each
 folder it proposes, naming the earliest file the group holds, so a proposed folder made of
-subdirectories still points at code. Both `scope_clusters` and the gate's `fkey` resolve a
+subdirectories still points at code. `:child_count` takes that anchor and nothing else,
+since its whole reading is a count of a directory's children: one location, the earliest
+file the directory holds, with the lines and the file-to-subdirectory split in its label.
+Both `scope_clusters` and the gate's `fkey` resolve a
 location's path and line, so a synthetic path or line would throw in the ratchet and
 misbehave under `base`.
 
@@ -856,7 +1009,25 @@ are kept in the vector, not dropped, so they can be counted.
 `Findings` (`report.jl`). What `analyze` returns: an `AbstractVector{Finding}`, so
 it filters, iterates, and indexes like any vector, with a `show` method that
 renders the report. The wrapper exists so display lives on a Dendro-owned type
-rather than pirating `show` for `Vector{Finding}`.
+rather than pirating `show` for `Vector{Finding}`. Beside the findings it carries what the
+scan measured about the run: `unmatched`, the declared rules that matched nothing,
+`summary`, the corpus scores, and `generated`, the files the parse boundary turned away.
+`active` preserves all three, since a directive accepts one finding and says nothing about
+any of them. `high_floor` and `ratchet` rebuild from a finding set alone, so `errors`
+returns all three empty.
+
+`GeneratedFile` (`report.jl`). One file a scan read the head of and did not parse: its
+`path` and the `signature` that named it. The scan carries these rather than dropping them,
+the stance a suppressed finding takes: a report would otherwise read as a clean codebase
+over a corpus that had lost half its files.
+
+`ScanSummary` (`report.jl`). What a scan measured about its corpus as a whole: the
+`CorpusScores` `now`, the same `base` scores at the ref, and the `LineDelta` between them.
+`CorpusScores` holds the two ratios plus the sizes they divided by, `lines` and `callables`.
+`lines` is also the signal that a summary was measured at all. The renderer reads it before
+printing anything, and `has_base` reads the base copy of it to decide whether there is a
+comparison to draw. Without a base ref the last two fields are empty. None of the three is a
+`Finding` and none reaches the gate: see `## Corpus scores`.
 
 `Scan` (`report.jl`). The fixed context for analysing one file: the query index,
 path, the active `rules`, optional baseline, cut percentile, optional diff line
@@ -882,12 +1053,54 @@ either trips.
   lands at or above the cut (default 0.95). `nothing` when the corpus holds no
   sample for that metric to rank against.
 
+`:file_length` reads both scores over a subject that is not a function. A file has no site
+inside it standing for the whole, so the finding sits on line 1, and `in_scope` tests that
+one line like any other. A spatial `base` scope therefore keeps the finding only where the
+change reaches line 1. What carries this rule over a change is the `--since` ratchet, whose
+`fkey` reads the location set.
+
 Flag metrics have no distribution. Presence is the finding, reported at `:high` by
 default. That default is not an invariant: `flag_findings!` takes a `severity`, so a
 user-authored pattern rule may declare `:warn`, and `:library_duplicate` and
 `:library_near_duplicate` decide their band per finding, since only a match against a
 public whole library function names an import to make. The gate reads the band, not the
 kind.
+
+## Corpus scores
+
+Two ratios over the whole corpus, computed by `corpus_scores` (`summary.jl`) and carried on
+`Findings.summary`. Neither is a `Finding`, so neither has a band, a percentile, or a
+location, and neither reaches the gate. The text renderer prints them after the last finding;
+`github_annotations` prints nothing, since an annotation anchors on a line.
+
+Erosion is `erosion_score`: each callable's `erosion_mass`, complexity times the square root
+of its length, summed over the definitions past `EROSION_COMPLEXITY` and divided by the sum
+over all of them. Verbosity is `covered_lines` over `physical_lines`: the distinct
+`(file, line)` pairs a declared flag rule or a clone finding covers, over the corpus's
+lines. A line two findings both reach counts once.
+
+Three decisions shape what the numerator holds. Only declared pattern rules count, which is
+the population SlopCodeBench measures and what `PatternSpec.kind === :flag` selects; a
+built-in flag would shift the shape and `empty_catch` would double-count the pack's
+`swallowed_error`. Suppressed matches count, because a directive accepts a finding where
+this measures the source. The flagged half reads `f.index.patterns` directly rather than the
+findings, which is one of two ways the pass gets past the diff scope.
+
+The other is `clone_clusters` (`analyze.jl`), which returns both the scoped findings and the
+unscoped structural pair. `structural_clones` builds that pair, and both the report and the
+summary read it: the report after `rank_clones!`, the summary as it comes, since a cluster's
+rank orders a report and no ratio reads it. A `base` ref adds `base_scores` (`analyze.jl`),
+a second pass through `with_base_corpus` running only `collect_corpus`, `parse_corpus`
+without bindings or directives, and `structural_clones`. No linkage, no graphs, no
+naturalness, no libraries: none of them moves a ratio, and each is a large share of a scan.
+It costs about 1.5x a `--base` scan.
+
+`scan_delta` (`analyze.jl`) sums the diff's per-path tallies over the source the scan
+covers. Which paths count is decided there rather than in `git.jl`, since it is a question
+about the scan: a path under one of `roots`, with an extension `profiles` claims, that
+`walks_to` (`ignore.jl`) says the corpus walk would reach. Those are the paths the scan
+*would have* parsed. A deleted file is in no corpus, and its lines still have to land in
+`removed` or a net could never go negative.
 
 ## Duplicate detection
 
@@ -1107,7 +1320,38 @@ resolution gives def-site linkage, never dispatch resolution, so an edge is "the
 functions reference this file-local name," not "these two dispatch to the same
 method." With no field resolution, the edge is call linkage, not shared-field
 cohesion, so a file that is one class reads only its method-to-method calls. Java is
-the extreme, every file a single class. Most cohesion signal lives below that line.
+the extreme, every file a single class. `class_cohesion.jl` is what reads the level below,
+the fields themselves, which is a separate pass rather than a widening of this one: a class
+is not a `Unit` and its methods are not the file's concerns.
+
+### Classes
+
+`cluster_divisible_class` (`class_cohesion.jl`) asks the same question of a class, the level
+LCOM4 was defined at. Four query captures carry it. `@class` names the declaration owning
+methods, `@field` a use of the enclosing instance's state (`self.x`, `this.x`, `@x`,
+`$this->x`), `@field_name` a declared field for the one language where a method may name one
+bare, and `@constructor` the one method the rule drops. A unit is a method of the innermost
+`@class` containing it unless a callable inside that class contains it first, which is what
+gives a nested class its own methods and keeps a closure out of the set. Two methods link
+when their field sets meet or one names the other through `callees_by_unit`, and the score
+is `components` over that local adjacency, the same flood fill `cluster_low_cohesion` runs.
+
+Two gates decide whether the question applies. A class below `MIN_CLASS_METHODS` is too
+small to read as several concerns, and a class whose methods name no field at all has no
+state to divide: there the component count is the method count, which is what a static
+utility class, an abstract base and a Rust `impl Trait` over a unit struct all produce. It
+emits through `scored_findings` with `min_reported = 2`, so a cohesive class stays in the
+percentile population without reporting, and it is gated on `cfg.rules` like the other
+opt-in passes. Included after `cohesion.jl`, whose shape it takes, and before `config.jl`,
+which names its band.
+
+`cluster_class_size` (`class_size.jl`) asks how much the same class holds. That question
+needs no field resolution at all: the members are what `class_methods` already attributes,
+and the reading is a count over them. Constructors are in, since the exclusion belongs to
+cohesion's own reading and not to the member set both share. `:member_count` counts the
+members and ships on. It reports one location, the class declaration, since the edit it
+names is the class, and it takes its coverage from `@class` unchanged. The band comment
+carries the measurement behind the default.
 
 ## The file graph
 
@@ -1308,6 +1552,13 @@ unsuppressed findings for gating.
   never what the fixed band says. Measured across eight corpora: `cyclomatic` and
   `function_length` do not move, `cognitive_complexity` moves by four findings in 450, and
   `boolean_complexity` falls 97.8%, having reported every unit in one corpus.
+- Two concepts can tag the same node and still mean different things. `@switch` and
+  `@case` belong to npath, which sums a body per arm. Java's `@case` therefore names the
+  statement group holding the body, and Ruby and Bash wire neither. `@switch_arm` and
+  `@switch_stmt` belong to the decision count, where an arm is whatever `@decision`
+  charges one for and the statement is what `cyclomatic_modified` charges in its place.
+  Widening either family to serve the other moves the metric that was already right, so a
+  language with a switch declares both.
 - There are two query families and they never merge. `<lang>.scm` captures name
   concepts: the set is closed (`CONCEPT_NAMES`), `dispatch!` throws on anything outside
   it, and the suite guards every query against it. That closure is what keeps metric code
@@ -1321,6 +1572,35 @@ unsuppressed findings for gating.
   scoping, the report, the gate, and the ratchet work for it with no further code.
   Negation is a `.not` capture subtracting by node identity; a `_`-prefixed capture is a
   predicate helper and never a rule; a capture naming no declared rule is a load error.
+- A scalar rule's per-unit count comes off `PatternBucket.unit_counts`, which
+  `attribute_patterns!` (`patterns.jl`) fills once a file's captures are in. Walking up
+  from a hit to the first enclosing callable names every unit `fold_unit` would have
+  counted it under, so `pattern_count` reads a lookup and a unit holding no match pays
+  nothing for the rule.
+- The rules Dendro ships are a tier of that family and nothing more. `src/patterns/` holds
+  `builtin.toml` and one `<lang>.patterns.scm` per grammar, reached through
+  `BUILTIN_PATTERNS_DIR` (`patterns.jl`), a `RelocatableFolders` path for the reason
+  `QUERIES_DIR` is. `discover_config` applies the TOML before the file layers, and
+  `pattern_dirs` prepends the directory. Declarations cascade from the pack through the
+  global config to the repo's. Queries shadow on that same order, per rule per language.
+  Nothing about the tier is
+  special-cased: `[rules]` disables one of its rules, `[bands]` retunes one, and a repo
+  `[patterns.<name>]` replaces a declaration, all through the code a project's own rules
+  already travel. The pack is TOML where `BUILTIN_RULES` is a Julia constant because a
+  `Rule` carries a measuring function and a `PatternSpec` carries a message and a band,
+  which is what a user writes in a config file.
+- Layer inheritance is what lets one line override a shipped rule. `apply_pattern!` seeds
+  its defaults from the spec already in the accumulator, so a later layer naming an
+  existing rule sets the keys it names and inherits the rest. A name no layer has declared
+  still needs a `message`.
+- A shipped rule's fixtures live under `test/patterns/tests/`, not beside its query.
+  Fixtures are deliberately bad source and `src/` is what `test/dogfood.jl` scans, so
+  `check_patterns` takes a `fixtures` keyword that moves the fixture search and leaves the
+  query cascade alone. Every shipped rule declares `guard = true`, so the zero-match report
+  exempts it, and those fixtures are the only thing that would catch one going quiet after
+  a grammar bump. Only Dendro's own CI runs them. A fixture marker trailing code names its
+  own line; one with the line to itself names the line under it, which is how
+  `banner_comment` is pinned at all, a comment carrying no trailing comment.
 - Adding a language is data only: a query in `src/queries/<lang>.scm`, a
   `LanguageProfile` entry in `profiles.jl`, and an extension entry in `resolve.jl`.
   No metric code changes. If a metric needs a language special case, the query is
@@ -1360,6 +1640,13 @@ change that makes Dendro trip its own metrics is a signal to fix the code. The t
 `parameter_count` sites the floor surfaces (the `Finding` constructor, `mermaid_coupling`)
 carry inline `dendro-ignore: parameter_count` with a reason, suppressed rather than
 omitted from the gate, so the count stays honest.
+
+The same file checks both sets of pattern fixtures, `test/patterns/` for the shipped pack
+and `.dendro/patterns/` for the repo's own rules, naming each directory through
+`check_patterns`'s `fixtures` keyword. Six rule names are declared in both places, the
+repo's query shadowing the shipped one. `test/patterns/tests/julia.jl` is read under both
+cascades, which keeps the two spellings from drifting while the migration in `TODO.md` is
+outstanding.
 
 JET has an environment of its own in `jet/` and runs by `just jet`, outside the suite:
 basic mode is a zero-tolerance gate, sound mode and the optimization analyzer are

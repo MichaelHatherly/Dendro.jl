@@ -231,8 +231,31 @@ BaseException`, Java `catch (Throwable)`, C++ `catch (...)`, Ruby `rescue
 Exception`, PHP `catch (Throwable)`. The query decides broadness, so a language
 whose only catch form is untyped (JavaScript, Julia) reports nothing, and the
 merely-wide tier (`except Exception`, `catch (Exception)`) is left alone.
+
+A handler whose last statement throws is not reported: a bare rethrow or a
+wrap-and-rethrow passes the error on, so it swallows nothing. A handler that throws
+only on a branch, or returns, still does.
 """
-broad_catches(index::QueryIndex) = index.broad_catch.nodes
+broad_catches(index::QueryIndex) =
+    [n for n in index.broad_catch.nodes if !rethrows(n, index)]
+
+# A handler's body is its last named child: the block a brace or indent language
+# nests in the clause, or Ruby's `then`, which is not a `@body`.
+function rethrows(clause::TreeSitter.Node, index::QueryIndex)
+    body = last_named_child(clause)
+    body === nothing && return false
+    stmt = last_statement(body, index)
+    return stmt !== nothing && stmt in index.raise
+end
+
+# Last named child of `node` that is not a comment, or `nothing`.
+function last_statement(node::TreeSitter.Node, index::QueryIndex)
+    last = nothing
+    for c in TreeSitter.children(node)
+        TreeSitter.is_named(c) && !(c in index.comment) && (last = c)
+    end
+    return last
+end
 
 """
     stub_markers(index) -> Vector{TreeSitter.Node}

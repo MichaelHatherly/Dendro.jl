@@ -6,7 +6,11 @@
         @test cfg.cut == 0.95
         @test isempty(cfg.bands)
         @test isempty(cfg.rules)
-        @test [r.name for r in resolve_rules(cfg)] == [r.name for r in BUILTIN_RULES]
+        # The pattern pack Dendro ships is among the defaults too, so the built-ins are the
+        # front of the active set rather than the whole of it.
+        active = [r.name for r in resolve_rules(cfg)]
+        @test active[1:length(BUILTIN_RULES)] == [r.name for r in BUILTIN_RULES]
+        @test Set(active[(length(BUILTIN_RULES) + 1):end]) == Set(s.name for s in cfg.patterns)
     end
 end
 
@@ -60,12 +64,55 @@ end
     end
 end
 
+@testitem "Config takes its fields by keyword" tags = [:config] begin
+    using Dendro: Config, MISPLACED_BAND
+
+    # `cut` is the first field and `ignore` the last, so naming them in this order is a
+    # construction no positional call can express. Each value landing on the field its
+    # name picks, rather than on the slot it sits in, is what the keyword form buys.
+    cfg = Config(; ignore = ["vendor/"], hub = (7, 9), cut = 0.5)
+    @test cfg.cut == 0.5
+    @test cfg.hub == (7, 9)
+    @test cfg.ignore == ["vendor/"]
+    @test cfg.misplaced == MISPLACED_BAND   # a field left unnamed keeps its default
+    @test isempty(cfg.bands)
+    @test Set(fieldnames(Config)) == Set(
+        [
+            :cut, :bands, :unnatural, :low_cohesion, :file_length, :divisible_class,
+            :scattered, :split_audience, :misplaced, :distant_definition, :back_edge,
+            :dependency_cycle, :hub, :incoherent_package, :divisible_package, :child_count,
+            :member_count,
+            :rules,
+            :min_size, :threshold, :radius_factor, :reimpl_threshold, :library_threshold,
+            :library_gate_coverage, :library_anchor_grain, :languages, :patterns,
+            :patterns_dir, :libraries, :ignore, :generated, :generated_enabled,
+            :base_summary,
+        ]
+    )
+end
+
+@testitem "report config controls base summaries" setup = [Fixtures] tags = [:config] begin
+    using Dendro: discover_config
+
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        @test discover_config([dir]; use_files = false).base_summary
+
+        write(f, "[report]\nbase_summary = false\n")
+        cfg = Fixtures.isolated_config(dir, f)
+        @test !cfg.base_summary
+
+        write(f, "[report]\nunknown = false\n")
+        @test_logs (:warn,) Fixtures.isolated_config(dir, f)
+    end
+end
+
 @testitem "each relational band reaches its own Config field" tags = [:config] begin
     using Dendro: RELATIONAL_BANDS, discover_config
 
-    # `Config` is built positionally from a run of same-typed band arguments, so a
-    # reordered argument list would compile, typecheck, and silently attach each band to
-    # the wrong metric. A distinct value per field is what makes that fail loudly.
+    # Every band shares a type, so a `[bands]` key read into the wrong keyword would
+    # compile, typecheck, and silently attach that band to the wrong metric. A distinct
+    # value per field is what makes it fail loudly.
     mktempdir() do dir
         f = joinpath(dir, "c.toml")
         write(
@@ -74,6 +121,8 @@ end
             [bands]
             unnatural = [11, 12]
             low_cohesion = [21, 22]
+            file_length = [23, 24]
+            divisible_class = [26, 27]
             scattered = [31, 32]
             split_audience = [36, 37]
             misplaced = [41, 42]
@@ -83,6 +132,8 @@ end
             hub = [71, 72]
             incoherent_package = [81, 82]
             divisible_package = [86, 87]
+            child_count = [91, 92]
+            member_count = [98, 99]
             """
         )
         cfg = mktempdir() do xdg
@@ -92,6 +143,8 @@ end
         end
         @test cfg.unnatural == (11, 12)
         @test cfg.low_cohesion == (21, 22)
+        @test cfg.file_length == (23, 24)
+        @test cfg.divisible_class == (26, 27)
         @test cfg.scattered == (31, 32)
         @test cfg.split_audience == (36, 37)
         @test cfg.misplaced == (41, 42)
@@ -101,15 +154,18 @@ end
         @test cfg.hub == (71, 72)
         @test cfg.incoherent_package == (81, 82)
         @test cfg.divisible_package == (86, 87)
+        @test cfg.child_count == (91, 92)
+        @test cfg.member_count == (98, 99)
         # A band added to `RELATIONAL_BANDS` and not to the lines above would leave its
         # field unpinned, which is how this test came to miss one when two rules landed
         # in parallel. Pin the set so the omission fails here rather than going unnoticed.
         @test Set(RELATIONAL_BANDS) ==
             Set(
             [
-                :unnatural, :low_cohesion, :scattered, :split_audience, :misplaced,
-                :distant_definition, :back_edge, :dependency_cycle, :hub,
-                :incoherent_package, :divisible_package,
+                :unnatural, :low_cohesion, :file_length, :divisible_class, :scattered,
+                :split_audience, :misplaced, :distant_definition, :back_edge,
+                :dependency_cycle, :hub, :incoherent_package, :divisible_package,
+                :child_count, :member_count,
             ]
         )
     end
@@ -318,6 +374,82 @@ end
             withenv("XDG_CONFIG_HOME" => xdg) do
                 @test_throws ConfigError discover_config([dir]; explicit = f)
             end
+        end
+    end
+end
+
+# `generated` is the content filter beside the path filter `ignore` is. A project names the
+# header its own generator writes, or turns the reading off.
+
+@testitem "config: generated signatures add to the built-in list" setup = [Fixtures] tags = [:config] begin
+    using Dendro
+
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        write(f, "generated = [\"# Code generated by protoc\"]\n")
+        cfg = Fixtures.isolated_config(dir, f)
+        @test cfg.generated == ["# Code generated by protoc"]
+        @test cfg.generated_enabled
+
+        write(joinpath(dir, "pb.py"), "# Code generated by protoc. Edit at your peril.\ndef f(x):\n    return x\n")
+        write(joinpath(dir, "b.js"), "var f = __webpack_require__(1);\n")
+        write(joinpath(dir, "app.py"), "def g(x):\n    return x + 1\n")
+
+        # The configured signature and the built-ins both apply, so only the hand-written
+        # file is left to parse.
+        findings = @test_logs (:warn,) match_mode = :any Dendro.analyze(dir; config = cfg)
+        @test Set(g.signature for g in findings.generated) ==
+            Set(["# Code generated by protoc", "__webpack_require__"])
+    end
+end
+
+@testitem "config: generated false turns the filter off" setup = [Fixtures] tags = [:config] begin
+    using Dendro
+
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        write(f, "generated = false\n")
+        cfg = Fixtures.isolated_config(dir, f)
+        @test !cfg.generated_enabled
+        @test isempty(Dendro.generated_signatures(cfg))
+
+        write(joinpath(dir, "b.js"), "var f = __webpack_require__(1);\nfunction g(x) { return f(x); }\n")
+        findings = Dendro.analyze(dir; config = cfg)
+        @test isempty(findings.generated)
+    end
+end
+
+@testitem "config: a malformed generated is a config error" tags = [:config] begin
+    using Dendro: discover_config, ConfigError
+
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        write(f, "generated = 3\n")   # neither a list of signatures nor a toggle
+        mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                @test_throws ConfigError discover_config([dir]; explicit = f)
+            end
+        end
+    end
+end
+
+@testitem "config: ignore and generated each exclude a file once" setup = [Fixtures] tags = [:config] begin
+    using Dendro
+
+    root, srcdir = Fixtures.gitrepo()
+    mkpath(joinpath(srcdir, "vendor"))
+    # The vendored file is both ignored by path and generated by content. `ignore` drops it
+    # at collection, before its head is ever read, so it is excluded once and the report
+    # names the one file the content filter turned away.
+    write(joinpath(srcdir, "vendor", "v.js"), "var f = __webpack_require__(1);\n")
+    write(joinpath(srcdir, "b.js"), "/* @generated */\nfunction g(x) { return x; }\n")
+    write(joinpath(srcdir, "app.js"), "function add(a, b) {\n  return a + b;\n}\n")
+    write(joinpath(root, ".dendro.toml"), "ignore = [\"vendor/\"]\n")
+
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            findings = @test_logs (:warn,) match_mode = :any Dendro.analyze(srcdir)
+            @test [basename(g.path) for g in findings.generated] == ["b.js"]
         end
     end
 end

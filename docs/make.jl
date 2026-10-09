@@ -13,6 +13,7 @@ makedocs(;
             "Suppressing findings" => "suppression.md",
             "Comparing against a library" => "libraries-howto.md",
             "Pattern rules" => "patterns.md",
+            "Rules Dendro ships" => "builtin-patterns.md",
             "Custom rules" => "rules.md",
             "Adding a language" => "languages-add.md",
             "Diagrams" => "diagrams.md",

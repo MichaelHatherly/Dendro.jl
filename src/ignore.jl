@@ -93,3 +93,21 @@ function is_ignored(patterns::Vector{IgnorePattern}, path::AbstractString, isdir
     end
     return ignored
 end
+
+"""
+    walks_to(patterns, path) -> Bool
+
+Whether the corpus walk reaches the file at `path`, relative to the scanned root.
+
+`source_files` prunes an ignored directory before descending into it, so a directory-only
+pattern decides for everything beneath it and no file under an excluded directory can be
+re-included. A caller holding a flat list of paths rather than walking a tree gets the same
+answer here, by asking about each ancestor in turn.
+"""
+function walks_to(patterns::Vector{IgnorePattern}, path::AbstractString)
+    parts = split(replace(path, '\\' => '/'), '/')
+    for k in 1:(length(parts) - 1)
+        is_ignored(patterns, join(view(parts, 1:k), '/'), true) && return false
+    end
+    return !is_ignored(patterns, path, false)
+end

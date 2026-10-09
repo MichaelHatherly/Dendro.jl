@@ -7,6 +7,11 @@
  (while_statement) (do_statement) (case_statement) (conditional_expression)
  (catch_clause)] @decision
 
+; The decision count's reading of a switch: the arms @decision charges one apiece, and the
+; switch that replaces them. default_statement is no decision, so it is no arm either.
+(case_statement) @switch_arm
+(switch_statement) @switch_stmt
+
 (else_if_clause) @continuation
 
 [(if_statement) (for_statement) (foreach_statement) (while_statement)
@@ -32,13 +37,23 @@
 (catch_clause) @catch
 
 ; `catch (Throwable)` swallows errors as well as exceptions, plain or
-; namespace-qualified. `catch (Exception)` is merely wide and not tagged.
-(catch_clause type: (type_list (named_type (name) @broad_catch))
-  (#eq? @broad_catch "Throwable"))
-(catch_clause type: (type_list (named_type (qualified_name (name) @broad_catch)))
-  (#eq? @broad_catch "Throwable"))
+; namespace-qualified. `catch (Exception)` is merely wide and not tagged. The clause is
+; what is tagged, so `broad_catches` can read its body; `@_type` anchors the text test
+; and names no concept.
+((catch_clause type: (type_list (named_type (name) @_type))) @broad_catch
+  (#eq? @_type "Throwable"))
+((catch_clause type: (type_list (named_type (qualified_name (name) @_type)))) @broad_catch
+  (#eq? @_type "Throwable"))
 
 (comment) @comment
+
+; A docblock opens with `/**`. An ordinary comment is an aside, not documentation.
+((comment) @doc (#match? @doc "^/\\*\\*"))
+
+; A `#[\Override]` method inherits the overridden method's docblock. The attribute is a
+; bare `name` or, with the leading backslash, a `qualified_name` holding one.
+((method_declaration (attribute_list (attribute_group (attribute [(name) @_n (qualified_name (name) @_n)]))))
+  @inherits_doc (#eq? @_n "Override"))
 
 (name) @name
 
@@ -68,5 +83,24 @@
 [(return_statement) (break_statement) (continue_statement)] @terminal
 
 ; `throw` is an expression wrapped in a statement; tag the statement so code after
-; it in the same block reads as unreachable.
-(expression_statement (throw_expression)) @terminal
+; it in the same block reads as unreachable, and so a handler ending in one reads as
+; passing its error on.
+(expression_statement (throw_expression)) @terminal @raise
+
+; --- Class-level cohesion -------------------------------------------------
+; The containers owning methods and the state they share. A trait is one: it declares
+; properties and the methods that use them. So is an enum, whose cases are instance state.
+[(class_declaration) (trait_declaration) (enum_declaration)] @class
+
+; The declared name, so a finding about the class names the class.
+(class_declaration name: (name) @def_name)
+(trait_declaration name: (name) @def_name)
+(enum_declaration name: (name) @def_name)
+
+; A field use through the instance. `@_this` anchors the text test and names no concept.
+(member_access_expression object: (variable_name (name) @_this) name: (name) @field
+  (#eq? @_this "this"))
+
+; A constructor assigns every field a class has, so leaving it among the methods would
+; read every class as one concern.
+((method_declaration name: (name) @_ctor) @constructor (#eq? @_ctor "__construct"))

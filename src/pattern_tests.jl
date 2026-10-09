@@ -9,6 +9,11 @@
 # A fixture pins both directions. A line marked `dendro-expect: <rule>` must be reported by
 # that rule; a line not marked must not be. Checking for false positives is the point:
 # asserting only that a rule matched something would pass for a rule matching everything.
+#
+# For the rules Dendro ships this is the only check left. Every one of them declares
+# `guard = true`, so the zero-match report exempts them, and a shipped rule that stops
+# matching after a grammar bump would read as a clean codebase everywhere. The fixtures
+# under `test/patterns/tests/` are what catches that, and only Dendro's own CI runs them.
 
 # An expectation marker in a fixture comment: `dendro-expect: rule[, rule]`. Parallels
 # `DIRECTIVE_RE` in `suppress.jl`, which is the same idea pointed the other way, and read
@@ -48,16 +53,34 @@ function expectations(index::QueryIndex)
         listed = capture_text(m, 1)
         names = listed === nothing ? Set{Symbol}() :
             Set(Symbol(strip(t)) for t in split(listed, r"[,\s]+"; keepempty = false))
-        # A marker sits on the line it describes, or on the line above it, matching how a
-        # `dendro-ignore` covers a finding.
-        line = line_of(node)
+        line = marked_line(index.source, node)
         out[line] = union(get(out, line, Set{Symbol}()), names)
     end
     return out
 end
 
+# The line a marker describes: its own when it trails code, the one under it when it has
+# the line to itself. A rule whose match is a comment forces the second reading, since a
+# comment carries no trailing comment: `banner_comment` could be pinned no other way.
+function marked_line(source::String, node::TreeSitter.Node)
+    from, _ = TreeSitter.byte_range(node)
+    return line_of(node) + (starts_its_line(source, from) ? 1 : 0)
+end
+
+# True when nothing but whitespace precedes byte `from` on its line.
+function starts_its_line(source::String, from::Int)
+    i = prevind(source, from)
+    while i >= firstindex(source)
+        c = source[i]
+        c == '\n' && return true
+        isspace(c) || return false
+        i = prevind(source, i)
+    end
+    return true
+end
+
 """
-    check_patterns(paths; config=nothing) -> Vector{PatternTestFailure}
+    check_patterns(paths; config=nothing, fixtures=nothing) -> Vector{PatternTestFailure}
 
 Run every declared pattern rule against the fixtures in its pattern directories and report
 where a fixture and the rule disagree.
@@ -66,23 +89,30 @@ Fixtures live in a `tests/` folder beside the queries, one file per language, an
 lines a rule must match with a `dendro-expect: <rule>` comment. A marked line the rule did
 not match is a miss; an unmarked line it did match is a false positive. Both fail.
 
+A marker trailing code names that line. A marker with the line to itself names the line
+under it, which is the only way to pin a rule whose match is a comment.
+
 What a fixture pins is what the *query* matched, for either kind of rule. A scalar rule's
 band and percentile are Dendro's own scoring and are tested elsewhere, so a scalar fixture
 marks the lines its occurrences sit on exactly as a flag fixture does.
+
+`fixtures` names the directories to search for those `tests/` folders instead of the
+pattern directories. The queries still come from the cascade, so this moves where the
+fixtures live and nothing else. A rule shipped inside the package needs it: a fixture is
+deliberately bad source, and source under `src/` is what `errors` scans.
 
 A rule with no fixture is not a failure. Requiring one would be friction on writing a
 two-line house rule, and the zero-match report already catches the rule that never fires at
 all.
 """
-function check_patterns(paths; config = nothing)
+function check_patterns(paths; config = nothing, fixtures = nothing)
     roots::Vector{String} = paths isa AbstractString ? [paths] : collect(String, paths)
     cfg::Config = config === nothing ? discover_config(roots) : config
-    isempty(cfg.patterns) && return PatternTestFailure[]
-
     out = PatternTestFailure[]
     profiles = resolve_profiles(cfg)
     dirs = pattern_dirs(cfg, roots)
-    for dir in dirs, (lang, profile) in profiles
+    fixture_dirs::Vector{String} = fixtures === nothing ? dirs : collect(String, fixtures)
+    for dir in fixture_dirs, (lang, profile) in profiles
         fixture = fixture_file(dir, lang, profiles)
         fixture === nothing && continue
         append!(out, check_fixture(fixture, profile, dirs, cfg.patterns))

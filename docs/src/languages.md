@@ -25,7 +25,9 @@ package and 304 across Laravel's `Database`, so `:back_edge`, `:dependency_cycle
 cross-file edge at all, because a class definition is not a function unit, which leaves
 `:misplaced`, `:scattered` and `:incoherent_package` silent on a Java or PHP corpus. That is
 the type-and-dispatch line holding, not a gap to close: following a method call to its
-definition is exactly the resolution Dendro does not do.
+definition is exactly the resolution Dendro does not do. The opt-in `:divisible_class` reads
+inside one class rather than across files, so it says something about a Java or PHP corpus
+where those three say nothing.
 
 **JavaScript resolves ES modules only.** The linkage query reads `import ... from` and
 `export`. A corpus written in CommonJS, `require()` and `module.exports`, resolves nothing

@@ -57,17 +57,26 @@ uses.
 Negation is by node identity, not by containment: a `.not` pattern is the same pattern
 made more specific, so it lands on the same anchor node as the hit it cancels. That keeps
 a rule's meaning independent of where inside a match the exclusion happened to sit.
+
+`unit_counts` is how many of those hits each unit holds, keyed by the node a unit folds
+from and filled by `attribute_hits!` once the captures are in. A scalar rule reads it per
+unit, where reading the hits themselves would walk the unit's whole subtree to count what
+is usually nothing.
 """
 struct PatternBucket
     hits::Concept
     excluded::Concept
+    unit_counts::Dict{NodeId, Int}
 end
-PatternBucket() = PatternBucket(Concept(), Concept())
+PatternBucket() = PatternBucket(Concept(), Concept(), Dict{NodeId, Int}())
 
 # The capture names a query may use, the contract between a `.scm` and this index.
 # A capture outside this set has no field to record into; `dispatch!` throws on one,
 # and the suite guards every query's captures against this set. The reserved-word
 # concepts (`catch`, `return`, `finally`) map to the `_clause`/`_stmt` fields below.
+# A capture whose name starts with `_` names no concept and is dropped: it anchors a
+# predicate on a node the pattern does not report, which is how `self.x` tests the object
+# while capturing the field.
 # The query-capture contract: src builds `by_name` as a literal, so only the suite reads
 # this set.
 # dendro-ignore: unreferenced
@@ -77,6 +86,8 @@ const CONCEPT_NAMES = (
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
     :parameter_name, :broad_catch, :callee, :toplevel, :declaration,
+    :class, :field, :field_name, :constructor, :doc, :attribute, :inherits_doc,
+    :prototype, :nodoc, :switch_arm, :switch_stmt, :raise,
 )
 
 """
@@ -134,11 +145,14 @@ struct QueryIndex
     # site's arguments never match. Empty for a language whose parameters carry no
     # names (bash).
     parameter_name::Concept
-    # A handler broad enough to swallow interrupts and exits: a bare `except:`,
+    # A handler clause broad enough to swallow interrupts and exits: a bare `except:`,
     # `except BaseException`, Java `catch (Throwable)`, C++ `catch (...)`, Ruby
     # `rescue Exception`, PHP `catch (Throwable)`. The query decides broadness, so a
     # language whose only catch form is untyped (JavaScript, Julia) tags nothing.
     broad_catch::Concept
+    # A statement that throws: `raise`, `throw`, Ruby's `raise` call. Tagged only where
+    # the query tags `@broad_catch`, since a handler ending in one is what it exempts.
+    raise::Concept
     # A call's target name: the called identifier, or a member/qualified call's
     # final name, so `x.push` and `Base.push!` count by what they invoke. Feeds the
     # `fan_out` scalar.
@@ -151,6 +165,65 @@ struct QueryIndex
     # A run of top-level code breaks at one, the way it breaks at a callable definition,
     # so a declaration is never folded into the code around it.
     declaration::Concept
+    # A declaration node owning methods: a class, a trait, a Rust `impl` block. Empty for
+    # a language whose methods are file-scope siblings (Go, C) or defined out of line
+    # (C++), and for Julia, where a type's methods are whatever dispatches on it anywhere.
+    class::Concept
+    # A use site naming a field of the enclosing instance: `self.x`, `this.x`, `@x`,
+    # `$this->x`. The use sites are the whole of what a class's cohesion reading needs,
+    # so no declaration is captured.
+    field::Concept
+    # A field declaration's name, captured only where a method may name a field bare
+    # without an instance qualifier, which is Java alone. Empty elsewhere, and the pass
+    # reads bare references only for a class that captured one.
+    field_name::Concept
+    # The declaration node of a class's constructor. A constructor assigns every field by
+    # definition, so leaving it in the method set would read every class as one concern.
+    constructor::Concept
+    # The node a language's readers and doc tools take as a definition's documentation:
+    # Python's and Julia's docstring, a `///` or `/** */` comment, Go's and Ruby's plain
+    # comment above the definition. Convention decides, so Go tags every `//` line where
+    # Rust tags only `///`, and a language with no documentation form (bash) tags nothing.
+    # What the node says is never read, only where it sits.
+    doc::Concept
+    # A declaration modifier written as a sibling above what it modifies, which among the
+    # languages Dendro reads is Rust's `#[...]` alone: every other one nests its
+    # attributes, annotations and decorators inside the declaration node, where the
+    # declaration's own first line already covers them. `:undocumented_public` steps over
+    # the lines one covers, so a doc comment above an attribute still documents the
+    # definition below it. Empty elsewhere.
+    attribute::Concept
+    # A node whose definitions inherit their documentation from what they override, so a
+    # language's doc tool shows the overridden method's docs on one with none of its own:
+    # a Java `@Override` or TypeScript `override` method, a Python `@override` decorated
+    # definition, a PHP `#[\\Override]` method, a C++ `override` member, a Rust `impl Trait
+    # for` block, where every method inherits the trait's. `:undocumented_public` reads a
+    # definition inside one as documented. Empty for a language with no such marker.
+    inherits_doc::Concept
+    # A declaration of a callable defined elsewhere, a C or C++ function prototype, named
+    # through its declarator the way a definition is. `:undocumented_public` reads
+    # documentation against one as documenting the definition it declares, and a header
+    # holding one as what makes that definition API. Empty for a language that never
+    # declares a callable apart from defining it.
+    prototype::Concept
+    # A marker declaring a definition out of the documented surface, RDoc's `:nodoc:`. On a
+    # definition's line it covers that definition; as `:nodoc: all` on a class line it
+    # covers the members too. `:undocumented_public` reports nothing on either. Empty for a
+    # language with no such marker.
+    nodoc::Concept
+    # One arm of a switch: the nodes `@decision` counts one apiece for, so
+    # `cyclomatic_modified` can take them back out and charge the switch once. Shaped by
+    # `@decision`'s membership, which is why a language whose default branch has its own
+    # node type leaves that branch out of both. Python is the exception the other way: its
+    # `case_clause` is no decision point, so tagging it here is arithmetic python's
+    # cyclomatic count does not have. Empty for a language with no switch (julia).
+    switch_arm::Concept
+    # The switch a `@switch_arm` belongs to, the one decision `cyclomatic_modified` charges
+    # a dispatch. It names the same node as `@switch` in the nine languages that have both,
+    # and is a concept of its own because `@switch` carries npath's semantics: `@case` is
+    # the arm npath sums bodies over, and widening either to reach ruby and bash would move
+    # npath instead.
+    switch_stmt::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -188,6 +261,9 @@ struct QueryIndex
         def_name, init, requires_body, parameter_name = Concept(), Concept(), Concept(), Concept()
         broad_catch, callee = Concept(), Concept()
         toplevel, declaration = Concept(), Concept()
+        class, field, field_name, constructor = Concept(), Concept(), Concept(), Concept()
+        doc, attribute, inherits_doc, prototype = Concept(), Concept(), Concept(), Concept()
+        nodoc, switch_arm, switch_stmt, raise = Concept(), Concept(), Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "nesting" => nesting,
@@ -201,6 +277,10 @@ struct QueryIndex
             "requires_body" => requires_body, "parameter_name" => parameter_name,
             "broad_catch" => broad_catch, "callee" => callee,
             "toplevel" => toplevel, "declaration" => declaration,
+            "class" => class, "field" => field, "field_name" => field_name,
+            "constructor" => constructor, "doc" => doc, "attribute" => attribute,
+            "inherits_doc" => inherits_doc, "prototype" => prototype, "nodoc" => nodoc,
+            "switch_arm" => switch_arm, "switch_stmt" => switch_stmt, "raise" => raise,
         )
         return new(
             language, source, Unit[], Set{NodeId}(),
@@ -208,11 +288,26 @@ struct QueryIndex
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
-            callee, toplevel, declaration, by_name, Dict{NodeId, TreeSitter.Node}(),
+            raise, callee, toplevel, declaration, class, field, field_name, constructor,
+            doc, attribute, inherits_doc, prototype, nodoc, switch_arm, switch_stmt,
+            by_name, Dict{NodeId, TreeSitter.Node}(),
             Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,
         )
     end
+end
+
+"""
+    pattern_hits(index, name) -> Vector{TreeSitter.Node}
+
+The nodes rule `name` reports in this tree: what its query captured, less what its `.not`
+patterns cancelled. Empty when the rule has no query for this language, which is ordinary
+rather than an error.
+"""
+function pattern_hits(index::QueryIndex, name::Symbol)::Vector{TreeSitter.Node}
+    bucket = get(index.patterns, name, nothing)
+    bucket === nothing && return TreeSitter.Node[]
+    return TreeSitter.Node[n for n in bucket.hits.nodes if !(n in bucket.excluded)]
 end
 
 # Route one capture to its concept by name. A name with no concept is a query bug,
@@ -244,6 +339,9 @@ reference to its in-file definition into `index.bindings`.
 `bindings = false` collects the scope captures but skips that resolution, for a corpus
 read and never scored: nothing asks a reference corpus what it binds, and the resolution
 is the expensive half of the scopes pass.
+
+A capture whose name starts with `_` is dropped rather than filed: it anchors a
+predicate on a node the pattern tests but does not report.
 """
 function build_index(
         tree::TreeSitter.Tree, language::Symbol, source::String, query::TreeSitter.Query,
@@ -263,7 +361,7 @@ function build_index(
         name = TreeSitter.capture_name(query, cap)
         if name == "function"
             push_function!(funcs, idx.function_ids, cap.node)
-        else
+        elseif !startswith(name, "_")
             dispatch!(idx, name, cap.node)
         end
     end

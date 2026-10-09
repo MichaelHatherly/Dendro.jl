@@ -34,14 +34,35 @@ toward rather than only its own median to match. They are opinions, and opinions
 can be retuned, but they are never derived from the corpus. The corpus is what the
 percentile score is for. A project retunes them in a `.dendro.toml` at its root,
 the cascade resolved in `config.jl`: built-in defaults, then a user-global config,
-then the repo file, then explicit `analyze` keywords, merged key by key. Only the
-flagging opinions are configurable: the bands, the percentile cut, the clone-detection
-thresholds, which rules are active, and which libraries a scan compares against. The corpus
-floors and the model internals are
+then the repo file, then explicit `analyze` keywords, merged key by key. Two kinds of
+key are configurable and nothing else. The flagging opinions: the bands, the percentile
+cut, the clone-detection thresholds, which rules are active, and which libraries a scan
+compares against. And what a scan reads and pays for: `ignore` and `generated` decide
+which files enter the corpus. `base_summary` decides whether a base ref is scored for the
+movement. The corpus floors and the model internals are
 not. An unknown key warns rather than failing, the same honest-over-silent stance as a
 typo'd `dendro-ignore`. A configured library path that matches nothing is the one
 exception and errors instead, since a library resolving to nothing would silently turn its
 gate off, which is the failure that whole reading exists to prevent.
+
+Comment density is where that rule bends, and the exception is narrow enough to name.
+`comment_density` is the first per-function scalar whose band is measured, because no
+complexity guidance anywhere sets a target for what share of a function should be
+comment. No standard exists to draw the opinion from, so the corpus is what is left.
+`:distant_definition` set the precedent one level up, where the relational bands are
+calibrated the same way and for the same reason. Every other per-function band stays an
+opinion about what good code looks like; this one reports where nine hand-maintained
+corpora sit. That is also why the rule ships off by default. A measured band says where a
+corpus is, never where the code should be. At 40% a function has as often been explained
+carefully as narrated line by line. The project supplies the opinion in its
+`.dendro.toml`, the layer it belongs in.
+
+A variant reading ships beside the original and never replaces it.
+`cyclomatic_modified` charges a switch one decision where `cyclomatic` charges one per
+arm, and it is a rule of its own because a band, a suppression and a ratchet key all
+read a metric name as the identity of what was measured. A mode flag on the existing
+name would move all three at once, the mistake this file already names for the graph
+constructors.
 
 Syntactic and shallow, on purpose. Dendro reads tree shape and resolves names
 lexically, never types. It matches a reference to the definition it lexically names,
@@ -67,6 +88,19 @@ is missing a capture.
 The diff is the question. Whole-file analysis asks whether code is bad.
 Diff-scoping asks whether an edit made it worse, which is what review actually
 wants to know. That is why `analyze` takes a `base` git ref.
+
+A file is a measured subject with no site inside it. Every other scalar reads something an
+author drew a boundary around, a definition with a first line and a name; `file_length`
+reads the file, and nothing inside it stands for the whole. So the finding sits on line 1,
+its value is the physical line count `corpus_scores` already divides verbosity by, and the
+edit it names is a split. A spatial `base` scope then keeps the finding only when the change
+reaches line 1, so editing the middle of a long file does not re-report its length. That is
+coarse, and saying so is the whole of the treatment. `--base` asks a spatial question and
+this rule has no answer to one, so the `--since` ratchet is the surface that reads it on a
+change.
+Both edges of the band come from published file-size limits, the stance every band takes,
+and `high` sits where the gate stays satisfiable. Nobody can pass a gate whose floor takes a
+tenth of an ordinary corpus, which is what `:scattered`'s own band settled first.
 
 Duplicates are structure, not meaning. Dendro flags code duplicated across the
 corpus, exact clones and near-misses both, a whole function or one block copied
@@ -167,6 +201,26 @@ the graph, read them folded in for scattering and as components
 within one file for cohesion, keep the score the count of communities a file's units
 occupy that are anchored elsewhere, and keep it name-based and lexical like the rest of
 placement.
+
+Cohesion asked at the level it was defined for. `:low_cohesion` reads a file's units
+against the definitions they share, which is LCOM4 applied one level above LCOM4; a class
+is the level the metric was written for, and `:divisible_class` reads it. Methods and
+fields both come out of one syntactic container and are matched by name, never by type or
+dispatch, which is what settles the coverage: a language earns the reading by putting a
+class's methods inside the node declaring it, so Julia gets none (a struct's methods are
+whatever dispatches on it anywhere), Go and C get none (receiver functions are file-scope
+siblings), and C++ gets none (the bodies live out of line, so the count would read the
+header split). The constructor exclusion is the one place the rule drops a method, because
+a constructor touches every field by definition rather than by evidence, and it stands in
+for the ubiquity cut a class is too small a population to compute. A class whose methods
+name no field is not scored at all: there the component count is the method count, which is
+what a utility class of static methods and an abstract base of throwing stubs both produce,
+and measurement says those shapes dominate the tail. Answer a request to sharpen the rule
+with the band in a project's `.dendro.toml`, not with a smarter model. The class is a
+container the query names, so a count over its members is the one class reading that needs
+no field resolution at all. That is `:member_count`, and it counts constructors: a class
+with fifteen of them is what a count is for, and the exclusion above belongs to cohesion's
+own reading.
 
 Placement asked once more, of a definition against its own file. `:misplaced` asks which
 file a unit belongs in; `:distant_definition` asks where in the file, scoring how many
@@ -286,6 +340,65 @@ gate floor. A chain of directories each holding one child is a real layout defec
 see, because that is not about coupling at all and no reading of the graph finds it; answer
 that with a separate structural check, not by making this rule cleverer.
 
+Width is one such check, and it is the question no reading of the graph asks.
+`:incoherent_package`, `:divisible_package` and `:back_edge` all read coupling, and a
+directory can satisfy every one of them and still be unreadable: its contents belong where
+they are, they divide into no independent groups, and it holds ninety files.
+`:child_count` scores the number of direct children, the node set `:divisible_package`
+induces its graph on, so the two make a pair. One says a directory holds too many children
+and the other says how those children group, and the measured overlap between them is five
+directories out of 29. The count is the whole score. Lines under the directory and the
+imbalance between its children both describe it without saying whether a reader can find
+anything. So the lines ride in the label, and imbalance ships as nothing at all: read as a
+Gini coefficient, 13 of the 14 unbalanced directories in the nine corpora already hold a
+file at `file_length`'s warn edge. Nobody publishes a limit on how wide a directory should
+be either, so both band edges come from the corpus. That is the second reason the rule
+ships off by default. This package's own
+`src` holds 40 children and lands on the high edge. That is the reason for opt-in and never
+a reason to raise the band.
+
+A score is not a finding, and that is the line the two corpus ratios sit on. Erosion and
+verbosity are single numbers over a whole corpus, so neither names a site and neither names
+an edit. The gate reads findings, and no one commit can satisfy a ratio, so putting one in
+`errors` would make the gate unsatisfiable by construction. The two-score model has nothing
+to apply either. A band would need a target the corpus cannot supply, and a percentile needs
+a population where here there is one reading. What the pair leaves is the trend against
+yourself. That is why the paper's own numbers go in the docs and stay out of the report: a
+population is a population, never a threshold. The line delta sits on the same side. It
+says how large a change was beside what the scores say it made worse, and the size of a diff
+is a fact about it rather than a judgement on it. Answer a request to gate on any of the
+three by pointing at the finding that names the site.
+
+An input filter is not a metric. Every reading above is syntax; the generated-file filter
+reads the first 40 lines of a file as plain text and turns away one carrying a generator's
+header or a bundler's module runtime. That is the one non-syntactic reading Dendro admits,
+and what the reading decides is where the line sits. The bargain governs what Dendro
+measures. This decides what it reads at all, the question `ignore` already answers over a
+path. A checked-in bundle left in the corpus does three things, none of them announced. It
+poisons the percentile its language is ranked against. It repeats its minified helpers as
+`:duplicate` at the error band until the gate cannot be satisfied. It gives the file graph
+one node reaching everything. The measurement above `GENERATED_HEAD_LINES` sets the window,
+and a signature earns its place beside it the way a band does, by measurement over the
+corpora. A project adds its own generator's header through the `generated` config key, or
+sets that key to `false` when its own source discusses generated code near the top of a
+file. Dendro's own `.dendro.toml` sets `false`, since `src/corpus.jl` declares the
+signature list and so names a bundler in its first lines. Answer a request to make the
+filter read syntax with that config key: the file it would parse is the file it has decided
+not to read.
+
+Documentation is adjacency, never content. `:undocumented_public` asks whether a
+declared-public definition has a doc node against it and never what the node says, because
+nothing syntactic separates a docstring stating a contract from one restating the name above
+it. The `@doc` capture takes each language at its own word: a docstring in Python and Julia,
+`///` in Rust, every `//` line in Go because that is what godoc takes. A language with no
+`LINKAGES` entry reads as private here, the inverse of `:unreferenced`'s default. For
+`:unreferenced` an unknown visibility read as private would hide dead code. Here it would
+put a finding on every definition of a surface Dendro cannot read, and silence is the safe
+failure when the subject is what a project chose to declare. The measurement carries the rest. Over fourteen
+corpora the undocumented share of the public surface runs from 6.7% to 93.8%, which is what
+each community documents and where, so the rule ships off, reports at `:warn`, and never
+reaches the gate.
+
 Honest over silent. Inline `dendro-ignore` directives let an author accept one
 finding without muting the whole tool. A suppressed finding is marked, never
 dropped, so the count stays visible and a typo'd metric name warns. The moment
@@ -301,6 +414,25 @@ rule is. A guard is never reported as unmatched and is an ordinary rule in every
 way: write the shape and the finding arrives at its severity. Nothing in a query separates
 the broken rule from the working one, so the declaration has to come from the author, and
 Dendro's own `.dendro.toml` is mostly guards for that reason.
+
+The pack Dendro ships is that stance applied to somebody else's repository. Eighteen rules
+in `src/patterns/` enter the cascade below the user-global config, and every one of them
+declares `guard = true` for the reason above: they name shapes a healthy codebase does not
+contain, so without the declaration a clean scan would print fifteen rules as broken.
+Every flag also ships at `severity = "warn"`, which is a separate decision and the one the
+pack lives or dies by. Nobody asked Dendro for a style opinion that arrives as a build
+failure in their own repository, and `errors` is what a downstream package gates its tests
+on, so the pack reports and never gates. A project that disagrees promotes a rule in one
+line, since a layer inherits the declaration below it.
+
+The three density scalars are the exception, and the measurement is what makes it
+defensible. `severity` says nothing about a scalar: a scalar gates at its own `high` band,
+so these three can reach the floor. Over 22837 callables in nine corpora, 97.5% score zero
+on all three, which means percentiles cannot site the edge, and the tail is a handful of
+named functions instead. Each `high` clears the worst of them, so tripping one takes an
+outlier well past anything nine real codebases contain. Retune those edges against new
+measurement, never against intuition, and answer a request to make the pack gate harder
+with the same evidence the near-duplicate pass had to produce.
 
 Dendro eats its own cooking. `test/dogfood.jl` asserts `isempty(Dendro.errors(src))`,
 the deterministic error floor: every finding at the `:high` absolute band, high-band

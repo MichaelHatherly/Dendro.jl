@@ -239,8 +239,13 @@ end
     # The repo's own rules, so the pattern-rule names in its `dendro-ignore` directives
     # resolve. Parsing with the built-in set alone reports each of them as an unknown
     # metric, which is correct of the parser and only noise here.
-    rules = Dendro.resolve_rules(Dendro.discover_config([src]))
-    files = Dendro.parse_corpus(Dendro.source_files(src); rules)
+    # Its generated signatures too: the repo turns that filter off, and without reading the
+    # config this parse would drop `corpus.jl`, which declares the signature list.
+    cfg = Dendro.discover_config([src])
+    rules = Dendro.resolve_rules(cfg)
+    files = Dendro.parse_corpus(
+        Dendro.source_files(src); rules, generated = Dendro.generated_signatures(cfg)
+    )
     table = Dendro.corpus_symbols(files)
     graph = Dendro.build_corpus_graph(files, table)
 

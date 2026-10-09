@@ -36,6 +36,60 @@ says more about the directory's size than about its coupling. Reading the direct
 the path rather than from a declared module keeps the rule the same across languages that
 have modules and languages that do not.
 
+## Directories that grew too wide
+
+Reported as `:child_count`: a directory holding more direct children than a reader can take
+in at once. Every other rule on this page reads coupling, and a directory can satisfy all of
+them and still be unreadable. Its contents belong where they are, they divide into no
+independent groups, and it holds ninety files. `:divisible_package` names that as its own
+blind spot, since no reading of the graph finds it.
+
+Both rules read one node set, a directory's direct children. A child file counts one and a
+child subdirectory counts one. So the two answer in sequence: this one says a directory
+holds too many children, and `:divisible_package` says how those children group. The score
+is the count and nothing else is. What the score leaves out rides in the label, the split
+between files and subdirectories and the lines under the directory in all:
+
+```
+src/parser/cursor.jl:1  [src/parser, 31 files, 4 subdirectories, 9204 lines]  child_count 35 (warn)
+```
+
+The location is the earliest file the directory holds, at that file's first unit, since a
+finding points at code and never at a path. The rule reads the corpus paths, so it
+contributes on every language a scan parses and asks no linkage query. It also counts only
+the files a scan parses, so a directory of assets reads as though it held nothing.
+
+A finding here asks for a rearrangement. The pass is off by default for that reason, and a
+project opts in through a `.dendro.toml`:
+
+```toml
+[rules]
+child_count = true
+```
+
+Both edges come from the corpus, where most of Dendro's bands take a standard from published
+guidance. Nobody publishes a limit on how wide a directory should be. The one number in
+circulation is Valknut's Gaussian about seven, a scoring curve over working memory and not a
+limit anybody holds a repository to. Over 2310 directories in 37 corpora the pooled p95 is
+17 children and the p99 is 40, so warn at 25 reports 2.4% of directories and high at 40
+reports 1.1%. A measured band says where codebases sit and never where a directory should,
+which is the second reason the rule ships off. Retune both edges under `[bands]`. Below
+them the percentile still reports the widest directory in a corpus whose worst is a 12, the
+half of the two-score model that reads a corpus against itself.
+
+Lines and imbalance both describe a directory without saying whether anything in it can be
+found, so the score reads neither. Lines ride in the label. A Gini coefficient over the
+children's line counts separates almost nothing: of 107 multi-child directories in the nine
+measurement corpora, 14 score above 0.6, and 13 of those already hold a file long enough for
+`file_length` to report.
+
+The two rules overlap on five directories. Across the nine corpora and a wider Julia and
+Python set, `:child_count` reports 29 directories, and `:divisible_package` reports five of
+them too. So they are a pair: turn both on, and a wide directory carries this finding, plus
+`:divisible_package` in the few cases where its children also divide cleanly. Accept a
+directory deliberately kept flat with `dendro-ignore: child_count` in the file the finding
+reports it at.
+
 ## Directories that outgrew one folder
 
 Reported as `:divisible_package`: a directory holding groups of children that could become

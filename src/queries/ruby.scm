@@ -3,9 +3,18 @@
 ; @catch has no pattern. The default `when` branch is excluded from @decision.
 
 ; `rescue Exception` swallows interrupts and exits; a bare `rescue` catches
-; StandardError, the idiomatic default, and is not tagged.
-(rescue exceptions: (exceptions (constant) @broad_catch)
-  (#eq? @broad_catch "Exception"))
+; StandardError, the idiomatic default, and is not tagged. The rescue is what is tagged,
+; so `broad_catches` can read its body; `@_exc` anchors the text test and names no concept.
+((rescue exceptions: (exceptions (constant) @_exc)) @broad_catch
+  (#eq? @_exc "Exception"))
+
+; `raise` is a call, or a bare identifier when it takes no argument; either way a
+; handler ending in one passes its error on. The bare form is only looked for directly
+; under a rescue body, where `broad_catch` reads it: a pattern over every identifier in
+; the file matched each one before the predicate turned it down, and that was most of
+; what a Ruby parse allocated.
+((rescue body: (then (identifier) @raise)) (#eq? @raise "raise"))
+((call method: (identifier) @_raise) @raise (#eq? @_raise "raise"))
 ; Ruby branch bodies are `then`/inline statements, not block nodes, so the NPath
 ; construct families (@loop/@switch/@ternary/@try/@case) are not wired; npath on Ruby
 ; reduces to a sequence count.
@@ -16,6 +25,14 @@
 
 [(if) (elsif) (unless) (while) (until) (for) (when) (rescue)
  (conditional)] @decision
+
+; The decision count's reading of a case: the arms @decision charges one apiece, and the
+; case that replaces them. Ruby wires no npath switch family, so these two are the only
+; place the grammar's case nodes are named; `else` is no decision, so it is no arm either.
+; A `case ... in` pattern match is a case_match, which @decision never counts, so it is
+; left alone here too.
+(when) @switch_arm
+(case) @switch_stmt
 
 (elsif) @continuation
 
@@ -41,6 +58,14 @@
 
 (comment) @comment
 
+; RDoc takes whatever `#` lines precede a definition, so every comment is documentation,
+; the same reading Go gets for the same reason.
+(comment) @doc
+
+; RDoc's `:nodoc:` declares the definition on its line out of the documented surface, and
+; `:nodoc: all` on a class line covers the members too.
+((comment) @nodoc (#match? @nodoc ":nodoc:"))
+
 (identifier) @name
 
 (return) @return
@@ -58,3 +83,19 @@
 [(if) (unless) (case)] @conditional
 
 [(return) (break) (next)] @terminal
+
+; --- Class-level cohesion -------------------------------------------------
+; The container owning methods and the state they share. A module holds no instance
+; state, so it is not one.
+(class) @class
+
+; The declared name, so a finding about the class names the class. Ruby's `@name` tags
+; identifiers and a class name is a constant, so without this the class goes unnamed.
+(class name: (constant) @def_name)
+
+; A field use: an instance variable is the whole of Ruby's instance state.
+(instance_variable) @field
+
+; `initialize` assigns every field a class has, so leaving it among the methods would read
+; every class as one concern. `@_ctor` anchors the text test and names no concept.
+((method name: (identifier) @_ctor) @constructor (#eq? @_ctor "initialize"))

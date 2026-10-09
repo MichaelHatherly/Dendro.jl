@@ -13,6 +13,11 @@
 [(if_statement) (for_statement) (for_in_statement) (while_statement)
  (do_statement) (switch_case) (ternary_expression) (catch_clause)] @decision
 
+; The decision count's reading of a switch: the arms @decision charges one apiece, and the
+; switch that replaces them. switch_default is no decision, so it is no arm either.
+(switch_case) @switch_arm
+(switch_statement) @switch_stmt
+
 [(if_statement) (for_statement) (for_in_statement) (while_statement)
  (do_statement) (switch_statement) (try_statement)] @nesting
 
@@ -35,6 +40,9 @@
 (catch_clause) @catch
 
 (comment) @comment
+
+; JSDoc opens with `/**`. An ordinary comment is an aside, not documentation.
+((comment) @doc (#match? @doc "^/\\*\\*"))
 
 (identifier) @name
 
@@ -67,3 +75,23 @@
 (try_statement) @try
 
 [(return_statement) (break_statement) (continue_statement) (throw_statement)] @terminal
+
+; --- Class-level cohesion -------------------------------------------------
+; The container owning methods and the state they share, in declaration and expression
+; form.
+[(class_declaration) (class)] @class
+
+; The class's declared name, so a finding about the class names the class rather than the
+; first method the lexical scan reaches. An anonymous class expression takes the name it
+; is bound to, as a bound anonymous callable does.
+(class_declaration name: (identifier) @def_name)
+(class name: (identifier) @def_name)
+(variable_declarator name: (identifier) @def_name value: (class))
+
+; A field use through the instance. `@_ctor` anchors a text test and names no concept.
+(member_expression object: (this) property: (property_identifier) @field)
+
+; A constructor assigns every field a class has, so leaving it among the methods would
+; read every class as one concern.
+((method_definition name: (property_identifier) @_ctor) @constructor
+  (#eq? @_ctor "constructor"))

@@ -269,7 +269,12 @@ end
     function unranked(dir, cfg)
         profiles = Dendro.resolve_profiles(cfg)
         corpus = Dendro.collect_corpus([dir], String[], nothing; profiles)
-        files = Dendro.parse_corpus(corpus; rules = Dendro.resolve_rules(cfg), profiles)
+        # The config's generated signatures too, or this parses a different corpus from the
+        # `errors` call it is compared against.
+        files = Dendro.parse_corpus(
+            corpus; rules = Dendro.resolve_rules(cfg), profiles,
+            generated = Dendro.generated_signatures(cfg)
+        )
         return [
             Dendro.cluster_duplicates(files; min_size = cfg.min_size);
             Dendro.cluster_near_duplicates(

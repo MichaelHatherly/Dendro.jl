@@ -50,6 +50,82 @@ Number of source lines the unit spans, inclusive.
 """
 function_length(unit::Unit) = unit.lastline - unit.firstline + 1
 
+# Shortest definition whose comment ratio is read. Below it the arithmetic decides the
+# reading rather than the code: at three lines one comment is 33% and at two it is 50%, so
+# a short definition reaches only a handful of ratios and they sit far apart. Sweeping the
+# floor over 1, 3, 5 and 10 across the nine corpora measured below, 150 of the 16545
+# definitions under ten lines score 30 or more, every one of them a count over a
+# single-digit denominator. Ten lines is where one comment line is worth ten points, which
+# is the grain a percentage can be read at.
+#
+# The floor returns zero rather than skipping the unit, so the definition stays in the
+# corpus distribution the percentile is taken over, the shape `MIN_COHESION_UNITS` takes.
+const MIN_COMMENT_DENSITY_LINES = 10
+
+# Absolute band on the percentage of a definition's lines given over to comment.
+#
+# Measured over 22838 definitions in nine corpora across five languages: this package,
+# DataFrames.jl, HTTP.jl, CommonMark.jl, flask, requests, fastmcp, ripgrep and guava.
+# Above the length floor the median is zero in seven of the nine and the tail is short.
+# The per-corpus p95 runs from 18 to 39 and the p99 from 27 to 64, so `warn` at 30 sits
+# above the p95 of eight of the nine and `high` at 50 above the p99 of seven, the shape
+# `:distant_definition` takes.
+#
+# The rule ships off by default, and the measurement is the argument rather than caution.
+# Hand reading every definition this package scores between 30 and 50 found two,
+# `pair_similarity` and `git_toplevel`, and each comment there carries a constraint the
+# reader would otherwise get wrong: a floating-point comparison that reads the wrong way,
+# and the difference between two libgit2 repository constructors. Reading the same band in
+# the other corpora reads the same, a ripgrep test naming which literals its heuristic
+# should prefer, a requests helper naming the browser bug it works around. Nothing
+# syntactic separates that from narration restating the statement below it, so the opinion
+# belongs in the project's `.dendro.toml`, turned on with `[rules] comment_density = true`.
+#
+# guava is the one corpus the band reports in quantity, 8.7% of its definitions above 30
+# and 3.0% above 50, which is a documentation culture rather than a defect. This package
+# tops out at 48, so the gate floor stays empty with the rule switched on.
+#
+# The percentile informs at the default cut, but narrowly: a definition scoring 1 ranks
+# above 65% to 94% of its corpus, since most score zero. A corpus where more than 95% do
+# falls the other side of `percentile_informs` and is read on the absolute band alone.
+const COMMENT_DENSITY_BAND = (30, 50)
+
+# Source lines a node spans, inclusive.
+node_lines(node::TreeSitter.Node) =
+    Int(TreeSitter.end_point(node).row - TreeSitter.start_point(node).row) + 1
+
+"""
+    comment_density(unit, index) -> Int
+
+Percentage of the unit's lines given over to comment, the comment lines inside a
+definition against the lines the definition spans. A definition shorter than
+`MIN_COMMENT_DENSITY_LINES` reads zero, since a one-line body with a trailing comment
+is 100% and says nothing.
+
+The numerator stops at a nested callable, so a closure's narration is scored on the
+closure, while the denominator counts the closure's lines along with the rest of what
+the definition spans. That understates an outer definition wrapping a large closure,
+and is the reading to keep: `function_length` is what a definition's length means here,
+and two definitions of it would be worse than one understated ratio.
+
+Two comment nodes sharing one line each count their span, so `#= a =# x #= b =#`
+contributes two. The shape is rare enough that spotting it would cost a second walk to
+no end.
+"""
+function comment_density(u::Unit, index::QueryIndex)
+    len = function_length(u)
+    len < MIN_COMMENT_DENSITY_LINES && return 0
+    return round(Int, 100 * fold_run(comment_lines, +, u, index) / len)
+end
+
+comment_lines(node::TreeSitter.Node, index::QueryIndex) =
+    sum_over(comment_line_step, node, index)
+
+# A comment contributes every line it spans, so a block comment counts as what it costs
+# a reader rather than as one node.
+comment_line_step(node::TreeSitter.Node, index::QueryIndex, ctx) =
+    (node in index.comment ? node_lines(node) : 0), ctx
+
 # Node types that open a function's keyword-argument region, the boundary past which a
 # parameter is named at the call site and so is a different concern than the positional
 # count: Julia's `;` separator, and Python's `*args`, `**kwargs`, and bare-`*`
@@ -143,12 +219,17 @@ McCabe cyclomatic complexity: one plus the number of branch points in `node`'s
 subtree. Branch points are the query's decision points plus short-circuit operators
 (`&&`, `||`), which each add an independent path.
 """
-cyclomatic(node::TreeSitter.Node, index::QueryIndex) =
-    1 + branch_points(node, index)
+cyclomatic(node::TreeSitter.Node, index::QueryIndex) = independent_paths(branch_points, node, index)
+cyclomatic(u::Unit, index::QueryIndex) = independent_paths(branch_points, u, index)
 
-# Over a run the base path is the unit's, not each node's, so the branch points fold
-# and the one is added once.
-cyclomatic(u::Unit, index::QueryIndex) = 1 + fold_run(branch_points, +, u, index)
+# The base path, plus the branch points `count` finds. The two cyclomatic readings differ
+# only in which branch points they count, so both take their arithmetic from here. Over a
+# run the base path is the unit's, not each node's, so the counts fold and the one is
+# added once.
+independent_paths(count::C, node::TreeSitter.Node, index::QueryIndex) where {C} =
+    1 + count(node, index)
+independent_paths(count::C, u::Unit, index::QueryIndex) where {C} =
+    1 + fold_run(count, +, u, index)
 
 branch_points(node::TreeSitter.Node, index::QueryIndex) = sum_over(branch_step, node, index)
 
@@ -157,6 +238,58 @@ branch_points(node::TreeSitter.Node, index::QueryIndex) = sum_over(branch_step, 
 # dendro-ignore: duplicate
 branch_step(node::TreeSitter.Node, index::QueryIndex, ctx) =
     count_if(is_branch_point(node, index), ctx)
+
+# Absolute band on the modified cyclomatic count, held on `cyclomatic`'s scale so a project
+# reading both compares one number straight against the other.
+#
+# Measured over 58340 definitions in fourteen corpora across eleven languages: the nine the
+# other bands are measured over, plus go-sdk, curl, laravel-framework, rails and the MCP
+# TypeScript SDK. The two readings agree on 98.4% of definitions, pooled Spearman 0.9983 and
+# 0.9743 to 1.0 per corpus, and they agree exactly on Julia, which has no switch. Where they
+# part the gap is wide: 204 definitions differ by more than five, and laravel's 334-branch
+# `getPluralIndex` reads 55.
+#
+# So the band stays where `cyclomatic`'s is. At (11, 21) the pooled corpus reports 2.5% of
+# its definitions at `warn` and 0.6% at `high`, against 2.7% and 0.7% for `cyclomatic`. The
+# 71 definitions the switch reading takes out of the gate are what the rule is for, and 66
+# of them are curl: one `switch` over an error enum apiece, the widest a 90-branch
+# `curl_easy_strerror` that reads 3.
+#
+# Nothing moves the other way into the gate. Four definitions in 58340 read higher than
+# `cyclomatic`, all of them python `match` statements in fastmcp, and the largest of those
+# reads 19 against 18.
+const CYCLOMATIC_MODIFIED_BAND = (11, 21)
+
+"""
+    cyclomatic_modified(node, index) -> Int
+
+Cyclomatic complexity with a switch read as one decision: one plus the branch points in
+`node`'s subtree, each switch charged once in place of its arms. Everything else counts
+as it does for [`cyclomatic`](@ref).
+
+A dispatch over twenty cases has twenty paths and one idea, so the plain count reads it
+as the most complex function in most files while a reviewer opening it finds a table.
+Reading the dispatch as one decision is the standard modified count, and the other
+constructs are left alone, so the two numbers differ only where a switch does the work.
+
+Python is the one language where this reads the higher of the two. Its `case_clause` is
+no decision point, so a match's arms take nothing back out and the switch's own charge
+is arithmetic the plain count does not have.
+"""
+cyclomatic_modified(node::TreeSitter.Node, index::QueryIndex) =
+    independent_paths(modified_branch_points, node, index)
+cyclomatic_modified(u::Unit, index::QueryIndex) =
+    independent_paths(modified_branch_points, u, index)
+
+modified_branch_points(node::TreeSitter.Node, index::QueryIndex) =
+    sum_over(modified_step, node, index)
+
+# The arms come out of the branch points and the switch goes in. No node is both, which a
+# guard test asserts over every shipped query, so the two terms never fire on one node.
+modified_step(node::TreeSitter.Node, index::QueryIndex, ctx) = count_if(
+    (is_branch_point(node, index) && !(node in index.switch_arm)) || node in index.switch_stmt,
+    ctx,
+)
 
 """
     return_count(node, index) -> Int

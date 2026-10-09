@@ -30,6 +30,8 @@ Scored against the band and the corpus percentile, and flagged when either fires
 | `npath` | 200, 1000 | opt-in | acyclic execution paths |
 | `local_count`[^1] | 10, 15 | opt-in | distinct local names bound |
 | `fan_out` | 12, 20 | opt-in | distinct callables invoked |
+| `comment_density`[^1] | 30, 50 | opt-in | percentage of a definition's lines given over to comment |
+| `cyclomatic_modified` | 11, 21 | opt-in | decision points, a whole switch counted as one |
 
 [^1]: Measures a definition only. Top-level code has no signature and no author-drawn
     boundary, so these stay quiet there.
@@ -48,7 +50,7 @@ Presence is the finding. Every one reports `:high`, so every one reaches the gat
 | `return_in_finally` | on | a `return` inside a finally clause |
 | `unused_parameter` | on | a parameter nothing in the unit references |
 | `unused_local` | on | a local binding nothing in the unit references |
-| `broad_catch` | on | a handler that swallows interrupts and exits |
+| `broad_catch` | on | a handler that swallows interrupts and exits, unless its last statement throws |
 | `trivial_wrapper` | opt-in | a body that is one delegating call |
 | `unreachable_after_jump` | opt-in | code after an unconditional `return`, `break`, or `throw` |
 | `shadowed_variable` | opt-in | a local binding hiding an enclosing one |
@@ -64,22 +66,34 @@ The band column is empty where the metric is a flag and always reports `:high`.
 | `reimplementation` | | opt-in | shared rare vocabulary, percent | [Duplicate detection](@ref) |
 | `unnatural` | 400, 500 | on | cross-entropy in centibits[^2] | [Scoring and metrics](@ref) |
 | `low_cohesion` | 4, 6 | on | independent concerns sharing a file | [Cohesion and placement](@ref) |
+| `file_length` | 500, 2000 | on | physical lines in a file | [Scoring and metrics](@ref) |
+| `divisible_class` | 13, 22 | opt-in | independent concerns sharing a class | [Cohesion and placement](@ref) |
+| `member_count` | 20, 40 | on | definitions a class declares | [Cohesion and placement](@ref) |
 | `scattered` | 7, 10 | on | modules the file's units are pulled toward | [Cohesion and placement](@ref) |
 | `split_audience` | 3, 5 | on | consumer groups the file serves | [Cohesion and placement](@ref) |
 | `misplaced` | 60, 80 | on | coupling landing in one other file, percent | [Cohesion and placement](@ref) |
 | `distant_definition` | 25, 50 | opt-in | definitions between it and its nearest use | [Cohesion and placement](@ref) |
 | `unreferenced` | | on | nothing; the definition is the finding | [Cohesion and placement](@ref) |
+| `undocumented_public` | | opt-in | nothing; the definition is the finding | [Cohesion and placement](@ref) |
 | `back_edge` | 85, 95 | on | dominance of the directory pair, percent | [Dependencies and layout](@ref) |
 | `dependency_cycle` | 5, 10 | on | files in the cyclic group | [Dependencies and layout](@ref) |
 | `hub` | 15, 30 | on | `min(fan_in, fan_out)` over distinct files | [Dependencies and layout](@ref) |
 | `incoherent_package` | 50, 75 | opt-in | the directory anchored elsewhere, percent | [Dependencies and layout](@ref) |
 | `divisible_package` | 60, 85 | opt-in | the best group's internal ratio, percent | [Dependencies and layout](@ref) |
+| `child_count` | 25, 40 | opt-in | direct children of the directory | [Dependencies and layout](@ref) |
 
 [^2]: Hundredths of a bit per token, so the default band is 4.00 and 5.00 bits. The
     value is rounded for reporting; the percentile ranks on the unrounded score.
 
-The eleven with a band are the relational names `[bands]` accepts. The rest carry no band
+The fifteen with a band are the relational names `[bands]` accepts. The rest carry no band
 to retune.
+
+### Not metrics
+
+A report closes with `erosion` and `verbosity`, and under `--base` with a count of the lines
+the change moved. None of the three is a metric, which is why none appears above. Each is a
+single ratio or count over the whole corpus, so it names no site, carries no band and no
+percentile, and never reaches the gate. [Scoring and metrics](@ref) covers them.
 
 ## Against a library
 
@@ -90,6 +104,27 @@ Both are opt-in and both need a library to compare against. See
 | --- | --- | --- | --- |
 | `library_duplicate` | opt-in | coverage of your function, percent | `:high` for a public whole-function match at or above `library_gate_coverage`, else `:warn` |
 | `library_near_duplicate` | opt-in | coverage of your function, percent | always `:warn`, so it never gates |
+
+## Names Dendro ships as pattern rules
+
+Eighteen further names come from the pattern pack in `src/patterns/`, on in every scan.
+Fifteen are flags at `warn`, so they report and never gate. Three are per-callable scalars
+that do gate, at a `high` edge measured to clear every function in nine corpora.
+
+| metric | band | value is | see |
+| --- | --- | --- | --- |
+| `type_check_density` | 3, 6 | runtime type checks that raise, in one definition | [Rules Dendro ships](@ref) |
+| `null_guard_density` | 3, 15 | null guards that return null, in one definition | [Rules Dendro ships](@ref) |
+| `try_density` | 3, 15 | independent try blocks in one definition | [Rules Dendro ships](@ref) |
+
+The fifteen flags:
+
+- `banner_comment`, `boolean_return`, `unreachable_branch`, `manual_min_max`
+- `swallowed_error`, `boolean_equality`, `empty_check`, `redundant_conversion`
+- `redundant_keys`, `redundant_collect`, `length_index_range`, `redundant_default`
+- `empty_error_type`, `type_equality`, `nothing_equality`
+
+All eighteen names take a `[bands]` or `[rules]` entry the way a built-in does.
 
 ## Names a project adds
 

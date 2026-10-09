@@ -108,7 +108,7 @@ end
 # path with a space, a binary file, a file with no trailing newline, and added content
 # that reads like diff syntax. A wrong `DiffLine` layout reads plausible-looking numbers
 # rather than failing, so the numbers here are what catches it.
-@testitem "changed_ranges reads the new-side lines a change adds" tags = [:git] setup = [Fixtures] begin
+@testitem "a diff summary reads the lines a change adds and removes" tags = [:git] setup = [Fixtures] begin
     root, src = Fixtures.gitrepo()
     write(joinpath(src, "many.jl"), join('a':'j', "\n") * "\n")
     write(joinpath(src, "m.jl"), "keep\ngone\nalso gone\n")
@@ -136,9 +136,10 @@ end
     run(pipeline(`git -C $root add src/staged.jl`; stdout = devnull, stderr = devnull))
     write(joinpath(src, "untracked.jl"), "u() = 1\n")
 
-    got = withenv("PATH" => "/nonexistent") do
-        Dendro.changed_ranges(realpath(root), "HEAD")
+    summary = withenv("PATH" => "/nonexistent") do
+        Dendro.diff_summary(realpath(root), "HEAD")
     end
+    got = summary.ranges
 
     @test got["src/many.jl"] == [2:2, 10:10]
     @test got["src/m.jl"] == [2:2]
@@ -150,17 +151,33 @@ end
     @test !haskey(got, "src/dropped.jl")
     @test !haskey(got, "src/bin.dat")
     @test !haskey(got, "src/untracked.jl")
+
+    # The same walk's line tallies, against what `git diff --numstat` reports for this
+    # fixture. A deletion has to reach the stats even though it reaches no range, or a net
+    # count can never go negative.
+    stats = summary.stats
+    @test stats["src/many.jl"] == Dendro.LineDelta(2, 0)
+    @test stats["src/m.jl"] == Dendro.LineDelta(1, 2)
+    @test stats["src/a name.jl"] == Dendro.LineDelta(1, 0)
+    @test stats["src/dropped.jl"] == Dendro.LineDelta(0, 1)
+    @test stats["src/tricky.txt"] == Dendro.LineDelta(3, 0)
+    @test stats["src/trailing.txt"] == Dendro.LineDelta(1, 0)
+    @test stats["src/staged.jl"] == Dendro.LineDelta(2, 0)
+    # A binary file has no lines to count, and an untracked one is not in the diff.
+    @test stats["src/bin.dat"] == Dendro.LineDelta(0, 0)
+    @test !haskey(stats, "src/untracked.jl")
 end
 
 # A working tree matching the ref has nothing to report, and an empty result must be an
 # empty Dict rather than an error or a phantom entry.
-@testitem "changed_ranges is empty for an unchanged tree" tags = [:git] setup = [Fixtures] begin
+@testitem "a diff summary is empty for an unchanged tree" tags = [:git] setup = [Fixtures] begin
     root, src = Fixtures.gitrepo()
     write(joinpath(src, "a.jl"), "f() = 1\n")
     Fixtures.commit!(root, "init")
 
     got = withenv("PATH" => "/nonexistent") do
-        Dendro.changed_ranges(realpath(root), "HEAD")
+        Dendro.diff_summary(realpath(root), "HEAD")
     end
-    @test isempty(got)
+    @test isempty(got.ranges)
+    @test isempty(got.stats)
 end

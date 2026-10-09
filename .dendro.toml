@@ -6,6 +6,14 @@
 # are the ones with nothing to say about it. `guard = true` declares that silence is the
 # result wanted, keeping the zero-match report for the rule that is merely broken.
 
+# The generated-file filter is off here because this package declares the signatures it
+# matches heads against, so `src/corpus.jl` names a bundler's module runtime in its own
+# first lines and the filter turns that file away. That is the filter working rather than
+# failing: a file about generated code reads as generated, and the config is the layer that
+# answers it. Nothing under `src/` is generated, so reading every file is the honest setting
+# as well as the one that keeps the dogfood gate over the whole package.
+generated = false
+
 [patterns.empty_catch_binding]
 message  = "`catch` with no exception binding discards the error"
 severity = "high"

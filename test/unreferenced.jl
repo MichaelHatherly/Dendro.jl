@@ -260,6 +260,21 @@ end
     @test Fixtures.unref_sites([j]) == Set([("C.java", "dead")])
 end
 
+@testitem ":unreferenced keeps a Java package-private method as a root" setup = [Fixtures] tags = [:unreferenced] begin
+    # Nothing in the file names `open`, but a same-package caller reaches it through a
+    # receiver the resolver does not follow, so it stays a root. Only the private `dead` is
+    # flagged.
+    src = "public class C {\n  int open() { return 1; }\n  private int dead() { return 2; }\n}\n"
+    j = Fixtures.parsedfile(:java, src; file = "C.java")
+    @test Fixtures.unref_sites([j]) == Set([("C.java", "dead")])
+end
+
+@testitem ":unreferenced keeps a Rust pub(crate) item as a root" setup = [Fixtures] tags = [:unreferenced] begin
+    src = "pub(crate) fn open() -> i32 { 1 }\nfn dead() -> i32 { 2 }\n"
+    r = Fixtures.parsedfile(:rust, src; file = "m.rs")
+    @test Fixtures.unref_sites([r]) == Set([("m.rs", "dead")])
+end
+
 @testitem ":unreferenced reads a PHP private method as private" setup = [Fixtures] tags = [:unreferenced] begin
     src = "<?php\nclass C {\n  public function e() { return \$this->used(); }\n  private function used() { return 1; }\n  private function dead() { return 2; }\n}\n"
     p = Fixtures.parsedfile(:php, src; file = "C.php")
