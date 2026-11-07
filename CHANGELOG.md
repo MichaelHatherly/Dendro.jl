@@ -72,6 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A TypeScript constructor whose parameters are parameter properties
+  (`constructor(private readonly x: T) {}`) is no longer an `:empty_body`. A parameter
+  property declares and assigns a field, so the constructor does its work in the
+  signature, the same treatment a PHP promoted parameter already had. The property's name
+  is no longer reported `:unused_parameter` when the body is not empty. A constructor with
+  plain parameters and an empty body is still flagged.
 - `:unused_parameter` reads a function's parameters from its own signature alone. Every
   parameter name inside a function's span counted, so the names in a function type
   (`exists: (uri: string) => boolean`, a C function pointer, a Rust `fn` type), an object

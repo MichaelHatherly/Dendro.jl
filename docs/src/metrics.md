@@ -45,7 +45,8 @@ is by name over the whole unit, the conservative reading, so a same-named refere
 in a nested closure counts as a use. A leading underscore opts a name out, the
 cross-language deliberate-unused convention. Only a function's own signature holds its
 parameters, so a name inside a function type (`cb: (x: number) => void`, a C function
-pointer) or a closure that is not a unit (a PHP arrow function) is never reported. A
+pointer) or a closure that is not a unit (a PHP arrow function) is never reported, and a
+TypeScript parameter property (`private readonly x: T`) is a field and used by existing. A
 bodyless declaration keeps its parameters (they are its signature), an empty or stub
 body is already the `empty_body` finding, and a top-level binding belongs to
 `:unreferenced`, so none of those double-report. A language whose parameters carry no names (bash) or whose

@@ -30,6 +30,18 @@
 ])
 (arrow_function parameter: (identifier) @parameter_name)
 
+; A parameter property (`private readonly x: T`) declares and assigns a field by
+; existing. A constructor holding one does its work in the signature, so an empty
+; body is not an empty implementation, and the name is never an unused parameter.
+[
+  (required_parameter (accessibility_modifier))
+  (required_parameter (override_modifier))
+  (required_parameter "readonly")
+  (optional_parameter (accessibility_modifier))
+  (optional_parameter (override_modifier))
+  (optional_parameter "readonly")
+] @init
+
 (statement_block) @body
 
 (catch_clause) @catch

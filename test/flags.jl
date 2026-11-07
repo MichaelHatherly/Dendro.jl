@@ -148,9 +148,13 @@ end
     @test empties(:typescript, "const f = (m: string) => m.toLowerCase();\n") == 0
 
     # A constructor whose work is signature-level initialization is not empty: a PHP
-    # promoted parameter, a C++ member-initializer list.
+    # promoted parameter, a C++ member-initializer list, a TypeScript parameter property.
     @test empties(:php, "<?php class A { public function __construct(public \$x) {} }\n") == 0
     @test empties(:cpp, "struct S { int v_; S(int v) : v_(v) {} };\n") == 0
+    @test empties(:typescript, "class A { constructor(private readonly x: number) {} }\n") == 0
+    @test empties(:typescript, "class A { constructor(readonly x: number) {} }\n") == 0
+    @test empties(:typescript, "class A { constructor(override x: number) {} }\n") == 0
+    @test empties(:typescript, "class A {\n  constructor(\n    protected readonly a: A,\n    protected readonly b: B,\n  ) {}\n}\n") == 0
 
     # A present but genuinely empty body is still flagged, the signal worth keeping: a
     # keyword-delimited `def … end`, a brace-bodied no-op method, an empty block arrow,
@@ -160,6 +164,7 @@ end
     @test empties(:go, "func (s *T) Record() {}\n") == 1
     @test empties(:javascript, "const f = () => {};\n") == 1
     @test empties(:php, "<?php class A { public function __construct(\$x) {} }\n") == 1
+    @test empties(:typescript, "class A { constructor(x: number) {} }\n") == 1
 end
 
 @testitem "returns_in_finally (javascript)" setup = [Fixtures] tags = [:flags] begin
@@ -246,6 +251,10 @@ end
     @test unused(:rust, "fn f(cb: fn(x: i32) -> i32) -> i32 { cb(1) }") == 0
     @test unused(:go, "func f(cb func(x int) int) int { return cb(1) }") == 0
     @test unused(:php, "<?php function f(\$a) { return fn(\$b) => \$a; }") == 0
+
+    # A parameter property declares and assigns a field by existing, so it is never unused.
+    @test unused(:typescript, "class A extends B { constructor(private x: number) { super(); } }") == 0
+    @test unused(:typescript, "class A extends B { constructor(x: number) { super(); } }") == 1
 
     # An arrow's bare parameter has no list around it and still belongs to the arrow.
     @test unused(:typescript, "const f = x => 1;") == 1

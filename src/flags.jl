@@ -61,8 +61,9 @@ function function_body(node::TreeSitter.Node, index::QueryIndex)
 end
 
 # True when `node`'s signature carries initialization that does a constructor's work:
-# a PHP promoted parameter, a C++ member-initializer list. Stops at a nested callable
-# so an inner constructor's init never counts for the outer unit.
+# a PHP promoted parameter, a C++ member-initializer list, a TypeScript parameter
+# property. Stops at a nested callable so an inner constructor's init never counts for
+# the outer unit.
 function has_init(node::TreeSitter.Node, index::QueryIndex)
     isempty(index.init.ids) && return false
     for c in TreeSitter.children(node)
@@ -84,8 +85,8 @@ is itself the empty body, except a bare `function f end`, a forward declaration 
 zero-method generic function whose signature is a name rather than a call, a contract
 left unflagged like a brace-bodied declaration. A short-form `f(x) = expr` has an
 expression body, which always does work. A constructor whose work is signature-level
-initialization, a PHP promoted parameter or a C++ member-initializer list, is not empty
-though its block is.
+initialization, a PHP promoted parameter, a C++ member-initializer list or a TypeScript
+parameter property, is not empty though its block is.
 """
 function empty_body(node::TreeSitter.Node, index::QueryIndex)
     body = function_body(node, index)
@@ -319,8 +320,10 @@ in the unit counts as a use, including inside a nested callable, the conservativ
 reading. Underscore-prefixed names opt out. Only the unit's own signature holds its
 parameters, so a name in a function type (`cb: (x: number) => void`, a C function
 pointer) or in a closure that is not a unit (a PHP arrow function) is never reported. A
-bodyless declaration keeps its parameters (they are its signature), and an empty or stub
-body is already the `empty_body` finding, so its parameters are not additionally dead.
+parameter whose declaration initializes a field (a TypeScript parameter property) is used
+by existing. A bodyless declaration keeps its parameters (they are its signature), and an
+empty or stub body is already the `empty_body` finding, so its parameters are not
+additionally dead.
 Empty for a language whose parameters carry no names (bash), and for one that ships no
 scopes query, since uses are read from its references.
 """
@@ -340,6 +343,7 @@ function unused_parameters(index::QueryIndex)
         ui == 0 && continue
         node = unit_node(units[ui])
         own_parameter(p, node, index) || continue
+        TreeSitter.parent(p) in index.init && continue
         (function_body(node, index) === nothing || empty_body(node, index)) && continue
         name = String(strip(TreeSitter.slice(index.source, p)))
         deliberately_unused(name) && continue
