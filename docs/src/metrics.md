@@ -43,10 +43,12 @@ Unused parameters and locals read the lexical bindings: a parameter or local
 binding whose name nothing in its function references is dead weight. The use-test
 is by name over the whole unit, the conservative reading, so a same-named reference
 in a nested closure counts as a use. A leading underscore opts a name out, the
-cross-language deliberate-unused convention. A bodyless declaration keeps its
-parameters (they are its signature), an empty or stub body is already the
-`empty_body` finding, and a top-level binding belongs to `:unreferenced`, so none
-of those double-report. A language whose parameters carry no names (bash) or whose
+cross-language deliberate-unused convention. Only a function's own signature holds its
+parameters, so a name inside a function type (`cb: (x: number) => void`, a C function
+pointer) or a closure that is not a unit (a PHP arrow function) is never reported. A
+bodyless declaration keeps its parameters (they are its signature), an empty or stub
+body is already the `empty_body` finding, and a top-level binding belongs to
+`:unreferenced`, so none of those double-report. A language whose parameters carry no names (bash) or whose
 scopes query captures no locals (php) reports nothing for that half.
 
 Three more coupling and binding readings are optional rules: `local_count`

@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `:unused_parameter` reads a function's parameters from its own signature alone. Every
+  parameter name inside a function's span counted, so the names in a function type
+  (`exists: (uri: string) => boolean`, a C function pointer, a Rust `fn` type), an object
+  type's method signature, or a closure that is not a unit (a PHP arrow function) were
+  reported as unused parameters of the function around them.
 - A JavaScript or TypeScript shorthand property (`send({ name, args })`) is now a use of
   the variable it names. The scopes query captured identifiers and property names but not
   the shorthand node, so a parameter or local read only that way was reported

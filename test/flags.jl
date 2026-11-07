@@ -235,7 +235,25 @@ end
     @test unused(:javascript, "function f(name, args) { return send({ name, args }); }") == 0
     @test unused(:typescript, "function f(name: string, args: unknown) { return send({ name, args }); }") == 0
 
+    # A parameter list nested in the signature or body belongs to a type or to a closure
+    # that is not a unit, never to the function being defined: a function type's names, an
+    # object type's method signature, a C function pointer, a PHP arrow function.
+    @test unused(:typescript, "function f(exists: (uri: string) => boolean) { return exists; }") == 0
+    @test unused(:typescript, "function f(o: { cb(x: number): void }) { return o; }") == 0
+    @test unused(:typescript, "function f(a: number) { interface I { m(z: number): void } return a; }") == 0
+    @test unused(:c, "int f(int (*cb)(int x)) { return cb(1); }") == 0
+    @test unused(:cpp, "int f(int (*cb)(int x)) { return cb(1); }") == 0
+    @test unused(:rust, "fn f(cb: fn(x: i32) -> i32) -> i32 { cb(1) }") == 0
+    @test unused(:go, "func f(cb func(x int) int) int { return cb(1) }") == 0
+    @test unused(:php, "<?php function f(\$a) { return fn(\$b) => \$a; }") == 0
+
+    # An arrow's bare parameter has no list around it and still belongs to the arrow.
+    @test unused(:typescript, "const f = x => 1;") == 1
+
     # A bodyless declaration is a contract; its parameters are its signature.
+    @test unused(:typescript, "interface I { m(a: number): void; }\n") == 0
+    @test unused(:typescript, "abstract class B { abstract m(a: number): void; }\n") == 0
+    @test unused(:typescript, "function o(a: number): void;\nfunction o(a: any) { return a; }\n") == 0
     @test unused(:java, "interface I { void accept(Object o); }\n") == 0
     @test unused(:c, "int f(int a, int b);\n") == 0
     @test unused(:rust, "trait T { fn f(a: i32); }\n") == 0
