@@ -7,6 +7,16 @@ bash, c, cpp, go, java, javascript, julia, php, python, ruby, rust, typescript.
 JSON and HTML are out of scope: with no functions or control flow, these metrics
 do not apply.
 
+TSX is skipped. The TypeScript grammar Dendro ships parses no JSX, and no TSX grammar is
+available to load, so a `.tsx` file would read as one error tree: units scoped wrongly,
+cohesion and reachability driven by the parse failure, every finding on it noise. A scan
+leaves `.tsx` files out of the corpus, so nothing on them is flagged or counted in the
+baseline. One warning per scan gives the reason and names every file skipped, so a
+skipped file never passes for a clean one. A `.jsx` file is unaffected, since the
+JavaScript grammar parses JSX. A project with a grammar that can parse TSX registers it
+under `[languages.<name>]` with `extensions = ["tsx"]`, and the skip lifts; see
+[Adding a language](@ref).
+
 ## What cross-file resolution reaches per language
 
 Every rule past a single file rests on matching a reference to the definition it names

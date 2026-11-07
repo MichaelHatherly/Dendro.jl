@@ -76,6 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `.tsx` file is skipped with a warning instead of scanned. It mapped to TypeScript, and
+  the TypeScript grammar parses no JSX, so the file read as one error tree and every
+  finding on it, from mis-scoped units to cohesion and reachability, came from the parse
+  failure. No TSX grammar is available to load. The warning gives the reason and names
+  each file skipped, and a skipped file is neither flagged nor counted in the baseline. A
+  `.jsx` file still parses as JavaScript, whose grammar reads JSX.
 - `errors(; since)` identifies a finding by what it is about rather than by every site it
   names. The ratchet matched a finding's exact location set, so a change to its supporting
   sites read as a new violation. Deleting one copy of a three-way clone failed the gate,

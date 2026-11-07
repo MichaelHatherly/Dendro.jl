@@ -312,6 +312,13 @@
 # 1412 down to 1394. Marking it `@inline` came next, moved nothing, and was reverted. The
 # ratchet rewrite in `gate.jl` that landed beside it measured 1379 and 33 on its own.
 #
+# Skipping `.tsx` files with a warning raised sound from 1394 to 1400, opt unchanged. Five
+# reports sit in `warn_unparseable`, four `UnsoundBuiltinErrorReport`s and one
+# `NonBooleanCondErrorReport`, and the sixth is `source_files` lowering one more keyword.
+# The five belong to the `@warn` lowering rather than to the helper's shape: a version
+# grouping the paths through a `Dict` and the one shipped, which walks the extension table,
+# both measured five.
+#
 # The count is stable under the order this file runs, basic mode then sound. Repeated runs
 # over an identical tree return 1379 every time, and dumping every report gives a
 # byte-identical file each run. An earlier note here recorded about one report of
@@ -324,7 +331,7 @@ using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1394  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1400  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 34      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin
