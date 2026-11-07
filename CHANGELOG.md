@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `:misplaced` finding keeps its gate key when the definition it leans toward in the
+  suggested home changes. That definition was the second location's unit, which `fkey`
+  reads, so an edit that only shifted which of the home file's functions the unit reached
+  for most re-reported the finding as new. Its name now sits in the label, and the key is
+  the unit and the home file.
 - A Julia module's `__init__` is no longer reported `:unreferenced`. The runtime calls it
   as it loads the module, a package extension included, so nothing in the source names
   it, and everything it called was reported dead with it. It now roots reachability the

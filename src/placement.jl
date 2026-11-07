@@ -88,7 +88,9 @@ label_path(target::AbstractString, from::AbstractString) =
 
 # The location to point at in the target file: the unit there the source unit references
 # most, or, when its envy is toward a type or const rather than a unit, the first
-# definition the symbol table holds for that file.
+# definition the symbol table holds for that file. The file is the suggested home and the
+# finding's identity; which definition there leads is evidence that shifts with unrelated
+# edits, so its name goes in the label, which the gate's `fkey` never reads.
 function target_location(graph::CorpusGraph, table::SymbolTable, src::Int, file::String)
     best_w, best = 0.0, 0
     for ((s, d), w) in graph.edges
@@ -98,10 +100,10 @@ function target_location(graph::CorpusGraph, table::SymbolTable, src::Int, file:
     end
     if best != 0
         u = graph.units[best]
-        return Location(file, u.line, u.name)
+        return Location(file, u.line, "", string("most referenced: ", u.name))
     end
     for d in table.defs
-        d.file == file && return Location(file, d.line, d.name)
+        d.file == file && return Location(file, d.line, "", string("most referenced: ", d.name))
     end
     return Location(file, 0, "")
 end
