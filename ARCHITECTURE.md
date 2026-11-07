@@ -161,12 +161,20 @@ so a retune never reads as a regression on its own.
 With `since`, a git ref, `errors` becomes a ratchet: the floor at the working tree
 minus the floor at that ref. `base_floor_counts` materialises the base by `git
 archive`ing only the scanned paths at `since` into a tempdir (no worktree or index
-mutation), analyzing that, and counting each finding's `fkey`, the metric paired with
-its location set as `(repo-relative file, unit)`. `ratchet` then walks the HEAD floor
-and emits a finding only when the base multiset has no remaining count for its key, so
-a new violation emits while a pre-existing one, even on a touched line, is matched and
-dropped. Keys are line-independent, so unrelated edits that move code do not
-manufacture deltas; renames key as new, the safe direction for a gate. This is the
+mutation), analyzing that, and keying each finding with `fkey`: the metric, its location
+set as `(repo-relative file, unit)`, its home, and its value. `ratchet` then walks the
+HEAD floor and emits a finding only when no unspent base finding accounts for it, so a
+new violation emits while a pre-existing one, even on a touched line, is matched and
+dropped. What accounts for a finding depends on what its locations are, which
+`FLOOR_HOMES` declares per metric. A per-unit finding, and one whose sites are the
+proposed edit (`:back_edge`, `:dependency_cycle`, `:divisible_package`), needs the same
+site set. A clone cluster's members are interchangeable, so a cluster that lost members
+is matched against the one it shrank from. A finding about a file (`:low_cohesion`,
+`:scattered`, `:split_audience`, `:hub`), a directory (`:incoherent_package`) or one
+owning unit (`:misplaced`, `:distant_definition`) is that home, and is new only when its
+value rose: its representatives are evidence, so a changed representative or a fallen
+count never fails the gate. Keys are line-independent, so unrelated edits that move code
+do not manufacture deltas; renames key as new, the safe direction for a gate. This is the
 regression measure the spatial diff is not.
 
 This is distinct from the spatial diff. `analyze(; base)` filters findings to
@@ -1268,10 +1276,10 @@ better than a split that does not hold. The consumer index comes off the corpus 
 the scan already shares, so the proposal costs this rule the grouping of a firing file's
 definitions and nothing more.
 
-That puts consumer structure in the location set, which the ratchet keys on. A change that
-merges or splits a hub's audiences rewrites `fkey` and the gate reports the finding as new,
-the trade `:back_edge` makes for the same reason: the proposal the earlier finding carried
-no longer holds, so re-reporting is the behaviour, not a defect in the key.
+That puts consumer structure in the location set, but the ratchet identifies a hub by its
+file and value, not by its representatives. A change that merges or splits a hub's
+audiences is not new to the gate unless the hub's score rises; the report still shows the
+current split.
 
 ## Suppression
 

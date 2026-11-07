@@ -114,9 +114,9 @@ Failure modes:
   - The directory comes from the path, not from a declared module, so a language that
     declares modules independently of its layout is judged on the layout.
   - The locations grow as a directory gains an elsewhere-anchored community. `errors(;
-    since)` keys a finding by its location set, so that growth moves the key and the
-    ratchet re-reports the directory, the same behaviour `:back_edge` carries and for the
-    same reason: more of the directory belonging elsewhere is worsening.
+    since)` identifies the finding by its directory and reports it again when the
+    percentage rises: more of the directory belonging elsewhere is worsening. A changed
+    representative at the same percentage is not.
 """
 function cluster_incoherent_packages(
         files::Vector{ParsedFile}, graph::CorpusGraph;

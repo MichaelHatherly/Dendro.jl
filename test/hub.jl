@@ -120,13 +120,12 @@ end
     @test !isempty(Dendro.cluster_hub(files, fg, table; linkage, band = (2, 3), min_files = 5))
 end
 
-@testitem ":hub re-reports through the ratchet when its audiences change" setup = [Fixtures] tags = [:hub] begin
+@testitem ":hub keeps its ratchet identity when its audiences change" setup = [Fixtures] tags = [:hub] begin
     using Dendro
 
     # A hub's locations carry its audience representatives, so they move when its consumers
-    # do, and `fkey` covers every location. A consumer change that merges two audiences
-    # rewrites the key and the ratchet calls the finding new. That is the intent: the
-    # proposal the finding carried no longer holds.
+    # do. They are evidence: the ratchet identifies a hub by its file and reports it again
+    # only when its score rises, so a consumer change that merges two audiences is not new.
     root, src = Fixtures.gitrepo()
     write(joinpath(root, ".dendro.toml"), "[bands]\nhub = [2, 3]\n")
     sources = Dict(
@@ -152,11 +151,11 @@ end
             @test length(hubs(Dendro.errors(src))) == 1
             @test isempty(hubs(Dendro.errors(src; since = "HEAD")))
 
-            # x1 now reaches `hc` too, so the two audiences share a consumer and merge:
-            # the finding loses its representatives and keys differently.
+            # x1 now reaches `hc` too, so the two audiences share a consumer and merge: the
+            # finding loses its representatives, its score holds, and it is not new.
             write(joinpath(src, "x1.jl"), "x1a(x) = ha(x) + hb(x) + hc(x)\n")
             @test length(hubs(Dendro.errors(src))) == 1
-            @test length(hubs(Dendro.errors(src; since = "HEAD"))) == 1
+            @test isempty(hubs(Dendro.errors(src; since = "HEAD")))
         end
     end
 end

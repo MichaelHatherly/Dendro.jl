@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `errors(; since)` identifies a finding by what it is about rather than by every site it
+  names. The ratchet matched a finding's exact location set, so a change to its supporting
+  sites read as a new violation. Deleting one copy of a three-way clone failed the gate,
+  and so did moving a function out of a `:low_cohesion` file, whose count fell while a
+  different function came to represent a component. A clone cluster now matches the
+  cluster it shrank from. A finding about a file, a directory or one owning unit matches by
+  that home and is new only when its value rises. A finding whose sites are the proposed
+  edit (`:back_edge`, `:dependency_cycle`, `:divisible_package`) still keys on them all.
 - An anonymous callback no longer takes the name of the first variable its body reads. A
   unit with no defining name fell back to the first identifier anywhere in it, body
   included, so Dendro labelled `onFrame(() => { if (!box.current) ... })` as `box`, and a
