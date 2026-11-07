@@ -215,7 +215,8 @@ only over a whole module, so a private definition called from a same-module file
 the scan is falsely flagged. Runtime-only entry points (a test function, a dispatch-table
 callback, a string-dispatched name) carry no syntactic reference, so they are flagged
 unless declared public or referenced from top level; accept one with
-`dendro-ignore: unreferenced`. Java resolves a same-package reference through its `:package`
+`dendro-ignore: unreferenced`. The language runtime calls some hooks by name, and those
+root: a Julia module's `__init__` is always live, along with everything it calls. Java resolves a same-package reference through its `:package`
 linkage, so a package-private class with no user in its package is flagged alongside a
 `private` method. A package-private *member* stays public, reached same-package through a
 receiver the resolver does not follow. PHP checks only a `private` method; its classes

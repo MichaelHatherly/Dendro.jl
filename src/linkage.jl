@@ -286,9 +286,10 @@ end
 # another file and membership of the public API are different questions: a Julia name is
 # visible across an `include` splice without being exported, so `:unreferenced` reads
 # `is_public`, not `is_exported`. `external_root(def_node, source)` decides whether a
-# definition is consumed by a wrapping construct the analyzer cannot expand (a macro,
-# decorator, annotation, attribute), a second source of reachability roots alongside
-# `is_public`; a language without such a construct uses `no_external_root`.
+# definition is consumed by something the source never shows calling it: a wrapping
+# construct the analyzer cannot expand (a macro, decorator, annotation, attribute) or a
+# hook the language runtime calls by name. It is a second source of reachability roots
+# alongside `is_public`; a language with neither uses `no_external_root`.
 #
 # The callables stay abstractly typed, so each is a pointer load and each call through one
 # is a dynamic dispatch. A type parameter per callable would make every language's linkage a
@@ -509,7 +510,8 @@ capitalized_public(def::CorpusDef, ::Set{String}) = !isempty(def.name) && isuppe
 # the safe direction, so `:unreferenced` never fires on a guess.
 modifier_public(def::CorpusDef, ::Set{String}) = def.visibility !== :private
 
-# A language with no wrapping construct that consumes a definition never roots this way.
+# A language with no wrapping construct or runtime hook that consumes a definition never
+# roots this way.
 no_external_root(::TreeSitter.Node, ::AbstractString) = false
 
 # Base and stdlib macros that wrap an ordinary definition without handing it to external
@@ -529,11 +531,14 @@ const JULIA_TRANSPARENT_MACROS = Set{String}(
 macrocall_name(node::TreeSitter.Node, source::AbstractString) =
     String(strip(TreeSitter.slice(source, TreeSitter.child(node, 1))))
 
-# A Julia definition roots when a macro consumes it directly: walking out from the name
-# node reaches a `macrocall_expression` without crossing a body scope (`block`/
-# `compound_statement`), so `@GET function h(req) ... end` roots `h` while a helper nested
-# in `@testitem begin ... end` does not. A transparent wrapper does not root.
+# A Julia definition roots when the runtime calls it or a macro consumes it directly. The
+# runtime calls a module's `__init__` as it loads the module. A macro consumes a
+# definition when walking out from the name node reaches a `macrocall_expression` without
+# crossing a body scope (`block`/`compound_statement`), so `@GET function h(req) ... end`
+# roots `h` while a helper nested in `@testitem begin ... end` does not. A transparent
+# wrapper does not root.
 function julia_external_root(node::TreeSitter.Node, source::AbstractString)
+    strip(TreeSitter.slice(source, node)) == "__init__" && return true
     n = TreeSitter.parent(node)
     while !TreeSitter.is_null(n)
         t = TreeSitter.node_type(n)

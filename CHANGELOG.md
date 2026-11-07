@@ -72,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A Julia module's `__init__` is no longer reported `:unreferenced`. The runtime calls it
+  as it loads the module, a package extension included, so nothing in the source names
+  it, and everything it called was reported dead with it. It now roots reachability the
+  way a definition a macro consumes does.
 - A TypeScript constructor whose parameters are parameter properties
   (`constructor(private readonly x: T) {}`) is no longer an `:empty_body`. A parameter
   property declares and assigns a field, so the constructor does its work in the

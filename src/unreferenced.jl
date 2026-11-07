@@ -16,7 +16,8 @@
 # The model is sound only over a whole module: a private def called from a same-module
 # file outside the scan is falsely flagged. Runtime-only entry points (a test function, a
 # dispatch-table callback, a string-dispatched name) are flagged too, since no syntactic
-# reference reaches them; accept one with `dendro-ignore: unreferenced`.
+# reference reaches them; accept one with `dendro-ignore: unreferenced`. `external_root`
+# roots a hook the language runtime calls by name, Julia's `__init__`.
 
 # The graph node for a reference's source: the top-level definition whose function body
 # contains it by byte range, or 0 (ROOT) for a reference in top-level code. Attribution is

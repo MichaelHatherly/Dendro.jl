@@ -282,3 +282,16 @@ end
     dead = Fixtures.parsedfile(:java, "package p;\nclass Dead { public int work() { return 1; } }\n"; file = "p/Dead.java")
     @test Fixtures.unref_sites([main, dead]) == Set([("p/Dead.java", "Dead")])
 end
+
+@testitem ":unreferenced roots a module's __init__" setup = [Fixtures] tags = [:unreferenced] begin
+    # Julia's runtime calls `__init__` when it loads a module, a package extension's
+    # included, so nothing in the source names it. What it calls stays live through it.
+    a = Fixtures.parsedfile(:julia, "module M\nfunction __init__()\n    setup()\nend\nsetup() = 1\nend\n"; file = "a.jl")
+    ext = Fixtures.parsedfile(:julia, "module FooExt\n__init__() = nothing\nend\n"; file = "ext.jl")
+    @test isempty(Fixtures.unref_sites([a]))
+    @test isempty(Fixtures.unref_sites([ext]))
+
+    # Only that exact name is the runtime's; a lookalike is an ordinary private function.
+    b = Fixtures.parsedfile(:julia, "module M\ninit() = 1\nend\n"; file = "b.jl")
+    @test Fixtures.unref_sites([b]) == Set([("b.jl", "init")])
+end
