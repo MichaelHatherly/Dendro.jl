@@ -78,6 +78,11 @@ end
     # An anonymous arrow callback carries no name; it stays labelled by the first
     # identifier the lexical scan reaches, its parameter.
     @test name(:javascript, "arr.map(key => key.x);\n") == "key"
+
+    # A name never comes from the body, where every identifier is a use: a callback with
+    # no parameter is unnamed rather than labelled by the first variable it reads.
+    @test name(:typescript, "onFrame(() => {\n    if (!box.current) { return; }\n    draw(box.current);\n});\n") == ""
+    @test name(:javascript, "onFrame(function () { draw(box); });\n") == ""
 end
 
 @testitem "nested short-form def is its own unit (julia)" setup = [Fixtures] tags = [:units] begin

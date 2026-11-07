@@ -108,10 +108,11 @@ end
 # `.git` and keeping only files whose extension resolves to a language profile.
 # `ignore` patterns, matched against each path relative to `dir`, prune directories
 # and drop files before they reach the corpus, so vendored source never feeds the
-# baseline.
+# baseline. A file whose extension no shipped grammar parses goes to `skipped` instead,
+# for the caller to report.
 function source_files(
         dir::AbstractString, ignore = String[];
-        profiles::Dict{Symbol, LanguageProfile} = PROFILES
+        profiles::Dict{Symbol, LanguageProfile} = PROFILES, skipped::Vector{String} = String[]
     )
     patterns = compile_ignores(ignore)
     extensions = extension_map(profiles)
@@ -122,9 +123,10 @@ function source_files(
         end
         for name in names
             lang = language_for_path(name, extensions)
-            (lang === nothing || !haskey(profiles, lang)) && continue
+            lang === nothing && unparseable_reason(name, extensions) === nothing && continue
+            lang === nothing || haskey(profiles, lang) || continue
             is_ignored(patterns, relpath(joinpath(root, name), dir), false) && continue
-            push!(files, joinpath(root, name))
+            push!(lang === nothing ? skipped : files, joinpath(root, name))
         end
     end
     return files
@@ -132,7 +134,9 @@ end
 
 # Resolve a list of roots into the unique set of file paths to parse. A directory is
 # walked for analyzable source under `ignore`; a named file is taken as-is, but only
-# when its language can be inferred or `language` forces one. The shared front of
+# when its language can be inferred or `language` forces one. A file no shipped grammar
+# can parse is left out with one warning per extension saying why and naming the files,
+# since a skipped file and a clean one otherwise look the same. The shared front of
 # `analyze` and `mermaid`, so both see the same corpus from the same roots.
 function collect_corpus(
         roots::Vector{String}, ignore, language;
@@ -141,16 +145,31 @@ function collect_corpus(
     isempty(roots) && error("Dendro: no paths given")
     extensions = extension_map(profiles)
     corpus = String[]
+    skipped = String[]
     for path in roots
         ispath(path) || error("Dendro: no such path $path")
         if isdir(path)
-            append!(corpus, source_files(path, ignore; profiles))
+            append!(corpus, source_files(path, ignore; profiles, skipped))
+        elseif language === nothing && unparseable_reason(path, extensions) !== nothing
+            push!(skipped, path)
         else
             language === nothing && language_for_path(path, extensions) === nothing &&
                 error("Dendro: cannot infer language for $path; pass `language=`.")
             push!(corpus, path)
         end
     end
+    warn_unparseable(unique!(skipped))
     unique!(corpus)
     return corpus
+end
+
+# One warning per extension the scan skipped, with the reason and every file it left out.
+function warn_unparseable(skipped::Vector{String})
+    isempty(skipped) && return nothing
+    for ext in sort!(collect(keys(UNPARSEABLE_EXTENSIONS)))
+        paths = String[p for p in skipped if path_extension(p) == ext]
+        isempty(paths) && continue
+        @warn string("Dendro: skipping .", ext, " files: ", UNPARSEABLE_EXTENSIONS[ext]) paths
+    end
+    return nothing
 end

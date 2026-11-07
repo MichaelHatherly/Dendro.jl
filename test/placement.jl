@@ -18,6 +18,13 @@
     @test first(f.locations).line == 3
     @test f.value == 100
     @test any(loc -> loc.file == "b.jl", f.locations)
+
+    # The suggested home is a file. The unit there the source reaches for most is evidence,
+    # so it sits in the label and a shift between `baz` and `qux` never moves the gate key.
+    home = f.locations[2]
+    @test home.file == "b.jl"
+    @test home.unit == ""
+    @test home.label in ("most referenced: baz", "most referenced: qux")
 end
 
 @testitem ":misplaced respects dendro-ignore-file" setup = [Fixtures] tags = [:placement] begin

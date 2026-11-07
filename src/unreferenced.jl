@@ -16,7 +16,8 @@
 # The model is sound only over a whole module: a private def called from a same-module
 # file outside the scan is falsely flagged. Runtime-only entry points (a test function, a
 # dispatch-table callback, a string-dispatched name) are flagged too, since no syntactic
-# reference reaches them; accept one with `dendro-ignore: unreferenced`.
+# reference reaches them; accept one with `dendro-ignore: unreferenced`. `external_root`
+# roots a hook the language runtime calls by name, Julia's `__init__`.
 
 # The graph node for a reference's source: the top-level definition whose function body
 # contains it by byte range, or 0 (ROOT) for a reference in top-level code. Attribution is
@@ -31,11 +32,12 @@ function enclosing_def(ranges::Vector{Tuple{Int, Int, Int}}, from::Int, to::Int)
 end
 
 """
-    reach_graph(files, table; linkage=resolve_linkage(files, table)) -> (adj, roots)
+    reach_graph(files, table; linkage=resolve_linkage(files, table), entry_points=String[]) -> (adj, roots)
 
 The forward reference graph over `table.defs` and the root set a dead-code search starts
 from. `adj[i]` lists the definition indices definition `i` references; `roots` holds the
-declared-public definitions and those referenced from top-level code. Edges come from
+declared-public definitions, those referenced from top-level code, and every definition
+named in `entry_points`, an entry point called from outside the scanned roots. Edges come from
 within-file bindings and cross-file references, each attributed to its enclosing top-level
 definition by byte range; a reference in top-level code seeds a root rather than an edge.
 
@@ -44,9 +46,11 @@ already resolved the corpus does not resolve it again here.
 """
 function reach_graph(
         files::Vector{ParsedFile}, table::SymbolTable;
-        linkage::ResolvedLinkage = resolve_linkage(files, table)
+        linkage::ResolvedLinkage = resolve_linkage(files, table),
+        entry_points::Vector{String} = String[]
     )
     n = length(table.defs)
+    named = Set(entry_points)
     adj = [Int[] for _ in 1:n]
     roots = Set{Int}()
     file_by_path = Dict{String, ParsedFile}(f.file => f for f in files)
@@ -67,7 +71,7 @@ function reach_graph(
         push!(get!(() -> Int[], name_class, (d.file, d.name)), i)
         link = get(LINKAGES, file_by_path[d.file].language, nothing)
         public = link === nothing || link.is_public(d, get(() -> Set{String}(), surface, d.file))::Bool
-        (public || d.external_root) && push!(roots, i)
+        (public || d.external_root || d.name in named) && push!(roots, i)
         d.unit == 0 && continue
         from, to = unit_span(file_by_path[d.file].index.units[d.unit])
         push!(get!(() -> Tuple{Int, Int, Int}[], topfns, d.file), (from, to, i))
@@ -130,7 +134,7 @@ function reachable(adj::Vector{Vector{Int}}, roots::Set{Int})
 end
 
 """
-    cluster_unreferenced(files, table; linkage=resolve_linkage(files, table)) -> Vector{Finding}
+    cluster_unreferenced(files, table; linkage=resolve_linkage(files, table), roots=String[]) -> Vector{Finding}
 
 Top-level definitions no path reaches from the corpus's public surface, reported as
 `:unreferenced`, one finding per definition. Reachability follows [`reach_graph`](@ref):
@@ -141,15 +145,18 @@ line carries a `dendro-ignore: unreferenced` directive. Sound only over a whole 
 definition referenced from a same-module file outside the scan is falsely flagged.
 
 Pass a prebuilt `linkage` from [`resolve_linkage`](@ref) to share one resolution with a
-caller that has already resolved the corpus.
+caller that has already resolved the corpus. `roots` names entry points reached from
+outside the scan, a loader script or another package, which root reachability by name
+like a public definition; `[unreferenced] roots` in a `.dendro.toml` sets them.
 """
 function cluster_unreferenced(
         files::Vector{ParsedFile}, table::SymbolTable;
-        linkage::ResolvedLinkage = resolve_linkage(files, table)
+        linkage::ResolvedLinkage = resolve_linkage(files, table),
+        roots::Vector{String} = String[]
     )
     findings = Finding[]
-    adj, roots = reach_graph(files, table; linkage)
-    seen = reachable(adj, roots)
+    adj, starts = reach_graph(files, table; linkage, entry_points = roots)
+    seen = reachable(adj, starts)
     directives = Dict{String, Vector{Directive}}(f.file => f.directives for f in files)
     for (i, d) in enumerate(table.defs)
         seen[i] && continue

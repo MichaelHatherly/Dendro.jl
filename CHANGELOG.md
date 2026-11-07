@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `[unreferenced] roots` in `.dendro.toml` names entry points called from outside the
+  scanned roots, a function a loader script or another package reaches. `:unreferenced`
+  treats each named definition as reached, and so everything it reaches. Without it, such
+  an entry point and every private helper behind it were reported dead.
 - User-authored lint rules, a second tree-sitter query family. A `[patterns.<name>]` table
   in `.dendro.toml` declares a rule, language-independently, and a
   `.dendro/patterns/<lang>.patterns.scm` capture realises it for one grammar. A flag rule
@@ -72,6 +76,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `.tsx` file is skipped with a warning instead of scanned. It mapped to TypeScript, and
+  the TypeScript grammar parses no JSX, so the file read as one error tree and every
+  finding on it, from mis-scoped units to cohesion and reachability, came from the parse
+  failure. No TSX grammar is available to load. The warning gives the reason and names
+  each file skipped, and a skipped file is neither flagged nor counted in the baseline. A
+  `.jsx` file still parses as JavaScript, whose grammar reads JSX.
+- `errors(; since)` identifies a finding by what it is about rather than by every site it
+  names. The ratchet matched a finding's exact location set, so a change to its supporting
+  sites read as a new violation. Deleting one copy of a three-way clone failed the gate,
+  and so did moving a function out of a `:low_cohesion` file, whose count fell while a
+  different function came to represent a component. A clone cluster now matches the
+  cluster it shrank from. A finding about a file, a directory or one owning unit matches by
+  that home and is new only when its value rises. A finding whose sites are the proposed
+  edit (`:back_edge`, `:dependency_cycle`, `:divisible_package`) still keys on them all.
+- An anonymous callback no longer takes the name of the first variable its body reads. A
+  unit with no defining name fell back to the first identifier anywhere in it, body
+  included, so Dendro labelled `onFrame(() => { if (!box.current) ... })` as `box`, and a
+  finding on the callback read as one on a local variable. The fallback now reads the
+  signature alone, so such a callback is unnamed, and one with a parameter keeps its label.
+- A `:misplaced` finding keeps its gate key when the definition it leans toward in the
+  suggested home changes. That definition was the second location's unit, which `fkey`
+  reads, so an edit that only shifted which of the home file's functions the unit reached
+  for most re-reported the finding as new. Its name now sits in the label, and the key is
+  the unit and the home file.
+- A Julia module's `__init__` is no longer reported `:unreferenced`. The runtime calls it
+  as it loads the module, a package extension included, so nothing in the source names
+  it, and everything it called was reported dead with it. It now roots reachability the
+  way a definition a macro consumes does.
+- A TypeScript constructor whose parameters are parameter properties
+  (`constructor(private readonly x: T) {}`) is no longer an `:empty_body`. A parameter
+  property declares and assigns a field, so the constructor does its work in the
+  signature, the same treatment a PHP promoted parameter already had. The property's name
+  is no longer reported `:unused_parameter` when the body is not empty. A constructor with
+  plain parameters and an empty body is still flagged.
+- `:unused_parameter` reads a function's parameters from its own signature alone. Every
+  parameter name inside a function's span counted, so the names in a function type
+  (`exists: (uri: string) => boolean`, a C function pointer, a Rust `fn` type), an object
+  type's method signature, or a closure that is not a unit (a PHP arrow function) were
+  reported as unused parameters of the function around them.
+- A JavaScript or TypeScript shorthand property (`send({ name, args })`) is now a use of
+  the variable it names. The scopes query captured identifiers and property names but not
+  the shorthand node, so a parameter or local read only that way was reported
+  `:unused_parameter` or `:unused_local`, and the reference was missing from every
+  binding-based reading.
 - A definition in a module's own body is now visible by bare name to the files that module
   includes. The two sit in one namespace, so a reference in an included file writes the
   bare name, but resolution offered only the qualified form and matched nothing. A const or

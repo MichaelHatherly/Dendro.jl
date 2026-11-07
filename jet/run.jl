@@ -300,6 +300,25 @@
 # gate. The prefix stays on the record because that is where a unit's derived state lives,
 # next to `histogram` and `digest`, not to dodge a threshold.
 #
+# The `[unreferenced] roots` config key raised sound from 1379 to 1394 and opt from 33 to
+# 34. Diffing the report sets with closure numbers stripped shows the
+# `apply_reimplementation` kinds again at a second site. Seven sit inside
+# `apply_unreferenced`: iterating the TOML table, and the `merge` into the scalars. Four sit
+# at its branch in `apply_key!`, entered at `::Any` in sound mode. One is the `Config`
+# field's `convert(::Type{Vector{String}}, ::Any)`, one is `string_list`'s new key, and two
+# come from `reach_graph` and `cluster_unreferenced` each lowering one more keyword. The opt
+# report is `apply_unreferenced`'s runtime dispatch, the one `apply_reimplementation`
+# already carries. Typing `apply_unreferenced`'s signature took the first measurement of
+# 1412 down to 1394. Marking it `@inline` came next, moved nothing, and was reverted. The
+# ratchet rewrite in `gate.jl` that landed beside it measured 1379 and 33 on its own.
+#
+# Skipping `.tsx` files with a warning raised sound from 1394 to 1400, opt unchanged. Five
+# reports sit in `warn_unparseable`, four `UnsoundBuiltinErrorReport`s and one
+# `NonBooleanCondErrorReport`, and the sixth is `source_files` lowering one more keyword.
+# The five belong to the `@warn` lowering rather than to the helper's shape: a version
+# grouping the paths through a `Dict` and the one shipped, which walks the extension table,
+# both measured five.
+#
 # The count is stable under the order this file runs, basic mode then sound. Repeated runs
 # over an identical tree return 1379 every time, and dumping every report gives a
 # byte-identical file each run. An earlier note here recorded about one report of
@@ -312,8 +331,8 @@ using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1379  # JET.report_package(Dendro; mode = :sound).
-const OPT_LIMIT = 33      # JET.report_opt on analyze(::String), scoped to Dendro
+const SOUND_LIMIT = 1400  # JET.report_package(Dendro; mode = :sound).
+const OPT_LIMIT = 34      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin
     JET.test_package(Dendro; target_modules = (Dendro,), mode = :basic)

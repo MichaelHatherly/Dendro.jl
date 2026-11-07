@@ -282,3 +282,42 @@ end
     dead = Fixtures.parsedfile(:java, "package p;\nclass Dead { public int work() { return 1; } }\n"; file = "p/Dead.java")
     @test Fixtures.unref_sites([main, dead]) == Set([("p/Dead.java", "Dead")])
 end
+
+@testitem ":unreferenced roots a module's __init__" setup = [Fixtures] tags = [:unreferenced] begin
+    # Julia's runtime calls `__init__` when it loads a module, a package extension's
+    # included, so nothing in the source names it. What it calls stays live through it.
+    a = Fixtures.parsedfile(:julia, "module M\nfunction __init__()\n    setup()\nend\nsetup() = 1\nend\n"; file = "a.jl")
+    ext = Fixtures.parsedfile(:julia, "module FooExt\n__init__() = nothing\nend\n"; file = "ext.jl")
+    @test isempty(Fixtures.unref_sites([a]))
+    @test isempty(Fixtures.unref_sites([ext]))
+
+    # Only that exact name is the runtime's; a lookalike is an ordinary private function.
+    b = Fixtures.parsedfile(:julia, "module M\ninit() = 1\nend\n"; file = "b.jl")
+    @test Fixtures.unref_sites([b]) == Set([("b.jl", "init")])
+end
+
+@testitem ":unreferenced roots the entry points a config names" setup = [Fixtures] tags = [:unreferenced] begin
+    # `connect` is called from outside the scanned roots, a loader script or another
+    # package, so nothing in the corpus reaches it or what it calls.
+    src = "module M\nconnect() = serve()\nserve() = helper()\nhelper() = 1\ndead() = 2\nend\n"
+    a = Fixtures.parsedfile(:julia, src; file = "a.jl")
+    @test Fixtures.unref_sites([a]) == Set([("a.jl", n) for n in ("connect", "serve", "helper", "dead")])
+
+    # Naming it a root reaches it and everything it reaches; the rest is still dead.
+    flagged = Dendro.cluster_unreferenced([a], Dendro.corpus_symbols([a]); roots = ["connect"])
+    @test Set(first(f.locations).unit for f in flagged) == Set(["dead"])
+
+    # `analyze` reads the names from `[unreferenced] roots`.
+    mktempdir() do dir
+        write(joinpath(dir, "a.jl"), src)
+        cfgfile = joinpath(dir, "c.toml")
+        write(cfgfile, "[unreferenced]\nroots = [\"connect\"]\n")
+        mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                cfg = Dendro.discover_config([dir]; explicit = cfgfile)
+                dead = [first(f.locations).unit for f in Dendro.analyze(dir; config = cfg) if f.metric === :unreferenced]
+                @test dead == ["dead"]
+            end
+        end
+    end
+end

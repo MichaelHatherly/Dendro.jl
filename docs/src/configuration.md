@@ -71,13 +71,14 @@ the values they were measured at under
 
 ## Tables owned by a feature
 
-Four tables are the configuration surface of one feature each, and each is documented
+Five tables are the configuration surface of one feature each, and each is documented
 where that feature is:
 
 | Table | Declares | Read |
 | --- | --- | --- |
 | `[libraries.<name>]` | a reference corpus, by `path` or `paths` | [Comparing against a library](@ref) |
 | `[reimplementation]` | the vocabulary-overlap cutoff | [Duplicate detection](@ref) |
+| `[unreferenced]` | `roots`, entry points called from outside the scan | [Cohesion and placement](@ref) |
 | `[languages.<name>]` | a language to register, or a shipped query to replace | [Adding a language](@ref) |
 | `[patterns.<name>]` | a project's own rule, realised by a query under `patterns_dir` | [Pattern rules](@ref) |
 

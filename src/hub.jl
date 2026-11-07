@@ -70,12 +70,10 @@ definitions and `MIN_AUDIENCE_CONSUMERS` consumers, since one definition one fil
 to use is not a seam. A hub left with fewer than two audiences carries the file alone, a
 warning with no proposal rather than a proposal that does not hold.
 
-That makes the location set depend on who consumes the file, which the gate ratchet reads:
-`fkey` is the metric paired with every location, so a change that merges or splits an
-audience rewrites the key and the ratchet reports the hub as new. This is the same trade
-`:back_edge` makes, and for the same reason. A consumer change that reshapes a hub's
-audiences has changed what the finding proposes, and a gate that stayed quiet through it
-would be reporting a stale edit.
+That makes the location set depend on who consumes the file. The gate ratchet reads the
+representatives as evidence and identifies a hub by its file (`FLOOR_HOMES`, `gate.jl`),
+so a consumer change that merges or splits an audience reports again only when the score
+rises. The report always shows the split the current consumers support.
 
 The consumer sets come off `linkage`, the one corpus resolution the scan shares, so the
 proposal costs this rule the grouping of a firing file's definitions and nothing more:

@@ -131,6 +131,81 @@ end
     @test errs[1].metric == :duplicate
 end
 
+@testitem "quality gate: ratchet matches a clone that lost a copy" tags = [:gate] setup = [Fixtures] begin
+    using Dendro
+
+    # Base: an exact clone triple, one finding over three sites.
+    root, src = Fixtures.gitrepo()
+    pair = Fixtures.chain("alpha", 6) * Fixtures.chain("beta", 6)
+    write(joinpath(src, "m.jl"), Fixtures.modsrc(["alpha(0)", "beta(0)", "gamma(0)"], pair * Fixtures.chain("gamma", 6)))
+    Fixtures.commit!(root, "clone triple")
+
+    # Deleting one copy leaves a pair the triple already reported, so nothing is new.
+    write(joinpath(src, "m.jl"), Fixtures.modsrc(["alpha(0)", "beta(0)"], pair))
+    @test !isempty(Dendro.errors(src))
+    @test isempty(Dendro.errors(src; since = "HEAD"))
+end
+
+@testitem "quality gate: ratchet matches a file-level finding whose count fell" tags = [:gate] setup = [Fixtures] begin
+    using Dendro
+
+    # `:low_cohesion` is about the file, and its locations are one representative per
+    # component. Base: four components, `f1` representing the one it shares with `g1`.
+    root, src = Fixtures.gitrepo()
+    write(joinpath(root, ".dendro.toml"), "[bands]\nlow_cohesion = [2, 3]\n")
+    write(joinpath(src, "mod.jl"), "include(\"m.jl\")\ninclude(\"other.jl\")\n")
+    write(joinpath(src, "m.jl"), "f1() = g1()\ng1() = 1\nh() = 2\nk() = 3\np() = 4\n")
+    write(joinpath(src, "other.jl"), "z() = 0\n")
+    Fixtures.commit!(root, "four components")
+
+    cohesion(fs) = filter(f -> f.metric === :low_cohesion, fs)
+    mktempdir() do xdg
+        withenv("XDG_CONFIG_HOME" => xdg) do
+            # Moving `f1` and `p` out leaves three components and makes `g1` a
+            # representative. The count fell, so the gate has nothing new to report.
+            write(joinpath(src, "m.jl"), "g1() = 1\nh() = 2\nk() = 3\n")
+            write(joinpath(src, "other.jl"), "z() = f1() + p()\nf1() = g1()\np() = 4\n")
+            @test length(cohesion(Dendro.errors(src))) == 1
+            @test isempty(cohesion(Dendro.errors(src; since = "HEAD")))
+
+            # A fifth component raises the count over the base, which is worsening.
+            write(joinpath(src, "m.jl"), "f1() = g1()\ng1() = 1\nh() = 2\nk() = 3\np() = 4\nq() = 5\n")
+            write(joinpath(src, "other.jl"), "z() = 0\n")
+            @test length(cohesion(Dendro.errors(src; since = "HEAD"))) == 1
+        end
+    end
+end
+
+@testitem "quality gate: ratchet identifies a finding by its home" tags = [:gate] begin
+    using Dendro
+
+    mktempdir() do root
+        for name in ("a.jl", "b.jl", "c.jl")
+            touch(joinpath(root, name))
+        end
+        at(file, unit) = Dendro.Location(joinpath(root, file), 1, unit)
+        finding(metric, value, locations...) = Dendro.Finding(metric, collect(locations), value, :high, nothing, :scalar, false)
+        new(head, base) = length(Dendro.ratchet(Dendro.Findings(head), Dendro.floor_keys(Dendro.Findings(base), root), root))
+
+        # A file-level finding is the file: another representative at the same value is the
+        # same finding, a higher value is worsening.
+        hub = finding(:hub, 3, at("a.jl", ""), at("a.jl", "x"), at("a.jl", "y"))
+        @test new([finding(:hub, 3, at("a.jl", ""), at("a.jl", "z"))], [hub]) == 0
+        @test new([finding(:hub, 4, at("a.jl", ""), at("a.jl", "x"), at("a.jl", "y"))], [hub]) == 1
+        @test new([finding(:hub, 3, at("b.jl", ""))], [hub]) == 1
+
+        # A finding about one unit is that unit, whatever it points at.
+        envy = finding(:misplaced, 80, at("a.jl", "f"), at("b.jl", ""))
+        @test new([finding(:misplaced, 70, at("a.jl", "f"), at("c.jl", ""))], [envy]) == 0
+        @test new([finding(:misplaced, 90, at("a.jl", "f"), at("b.jl", ""))], [envy]) == 1
+
+        # A finding whose sites are the edit keeps its exact site set, so one more site is new.
+        edge = finding(:back_edge, 90, at("a.jl", ""), at("a.jl", "f"))
+        @test new([edge], [edge]) == 0
+        @test new([finding(:back_edge, 90, at("a.jl", ""), at("a.jl", "f"), at("a.jl", "g"))], [edge]) == 1
+    end
+end
+
 @testitem "quality gate: ratchet treats paths absent at base as all-new" tags = [:gate] setup = [Fixtures] begin
     using Dendro
 

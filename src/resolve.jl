@@ -36,7 +36,14 @@ const EXTENSIONS = Dict{String, Symbol}(
     "rb" => :ruby,
     "rs" => :rust,
     "ts" => :typescript,
-    "tsx" => :typescript,
+)
+
+# Extensions Dendro recognises but no grammar it ships can parse, each with the reason. A
+# file carrying one would parse into an error tree whose findings are noise, so the scan
+# skips it and says why. A profile a config registers for the extension claims it like
+# any other, so a project holding a grammar that can parse it lifts the skip.
+const UNPARSEABLE_EXTENSIONS = Dict{String, String}(
+    "tsx" => "the TypeScript grammar parses no JSX, and no TSX grammar is available",
 )
 
 """
@@ -70,8 +77,18 @@ language registered in a `.dendro.toml` claims its own file types; it defaults t
 built-in table, the languages Dendro ships.
 """
 function language_for_path(path::AbstractString, extensions::Dict{String, Symbol} = EXTENSIONS)
-    ext = lstrip(lowercase(last(splitext(path))), '.')
-    return get(extensions, ext, nothing)
+    return get(extensions, path_extension(path), nothing)
+end
+
+# A path's extension as the extension tables key it: lowercase, without the dot.
+path_extension(path::AbstractString) = String(lstrip(lowercase(last(splitext(path))), '.'))
+
+# Why `path` is skipped, or `nothing` when it is not: its extension is one no shipped
+# grammar parses and no language in `extensions` claims.
+function unparseable_reason(path::AbstractString, extensions::Dict{String, Symbol})
+    ext = path_extension(path)
+    haskey(extensions, ext) && return nothing
+    return get(UNPARSEABLE_EXTENSIONS, ext, nothing)
 end
 
 """

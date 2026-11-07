@@ -220,6 +220,29 @@ end
     end
 end
 
+@testitem "unreferenced config keys" setup = [Fixtures] tags = [:config] begin
+    using Dendro: discover_config, ConfigError
+
+    mktempdir() do dir
+        f = joinpath(dir, "c.toml")
+        mktempdir() do xdg
+            withenv("XDG_CONFIG_HOME" => xdg) do
+                @test isempty(discover_config([dir]; use_files = false).unreferenced_roots)
+
+                write(f, "[unreferenced]\nroots = [\"connect\", \"listing\"]\n")
+                @test discover_config([dir]; explicit = f).unreferenced_roots == ["connect", "listing"]
+
+                # An unknown key under the table warns and is dropped; a wrong shape errors.
+                write(f, "[unreferenced]\nroot = [\"connect\"]\n")
+                cfg = @test_logs (:warn,) discover_config([dir]; explicit = f)
+                @test isempty(cfg.unreferenced_roots)
+                write(f, "[unreferenced]\nroots = \"connect\"\n")
+                @test_throws ConfigError discover_config([dir]; explicit = f)
+            end
+        end
+    end
+end
+
 @testitem "config errors on a missing explicit file" setup = [Fixtures] tags = [:config] begin
     using Dendro: discover_config, ConfigError
 

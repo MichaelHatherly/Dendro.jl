@@ -32,6 +32,21 @@ base git ref, the answer to "did this change introduce a violation". A finding t
 predates the ref, even on a line the change touched, is not reported, which is what makes
 Dendro adoptable on a codebase that is not yet clean.
 
+The ratchet matches a finding against the base by what the finding is about, never by
+line:
+
+- A finding about one function, flag or scalar, is that function: metric, file and unit.
+- A finding about a file (`low_cohesion`, `scattered`, `split_audience`, `hub`), a
+  directory (`incoherent_package`) or one owning unit (`misplaced`, `distant_definition`)
+  is that home. Its other locations are representatives, evidence that can change without
+  the finding changing, so it is new only when its value rises. A file whose cohesion
+  count fell while a different function came to represent a component passes.
+- A clone cluster (`duplicate`, `near_duplicate`, `reimplementation`) is its members. A
+  cluster that lost a copy is the one it shrank from and passes; a cluster that gains a
+  copy is new.
+- A finding whose locations are the edit it proposes (`back_edge`, `dependency_cycle`,
+  `divisible_package`) is its exact set of sites, so one more reference to cut is new.
+
 Set `DENDRO_BASE` in CI to the pull request's base (`origin/main`, or the merge base) and
 leave it unset locally, where [`errors`](@ref) falls back to the absolute floor.
 

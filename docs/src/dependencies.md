@@ -240,9 +240,9 @@ name every definition its own audience. A hub left with fewer than two audiences
 representatives: it is a warning with no proposal, and saying so beats proposing a split
 that does not hold.
 
-Because the representatives sit in the finding's locations, a change to who consumes the
-file rewrites the key the gate ratchet matches on, and `errors(; since)` reports the hub
-again. That is intended: the split the earlier finding proposed no longer holds.
+The representatives are evidence, not identity. The gate ratchet identifies a hub by its
+file, so a change to who consumes it leaves `errors(; since)` quiet unless the hub's score
+rises, and the report shows the split the current consumers support.
 
 Two scores again, and here the corpus percentile does most of the work. Fan-in and fan-out
 both grow with the corpus, so the absolute band can only mark the level at which a crossing

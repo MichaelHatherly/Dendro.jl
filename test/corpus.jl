@@ -255,3 +255,32 @@ end
         @test all(loc.file == good for finding in findings for loc in finding.locations)
     end
 end
+
+@testitem "a TSX file is reported and skipped" setup = [Fixtures] tags = [:corpus] begin
+    using Dendro: analyze, collect_corpus, language_for_path
+
+    # The TypeScript grammar parses no JSX, so a `.tsx` file reads as one error tree and
+    # every finding on it is noise. JavaScript's grammar does parse JSX, so `.jsx` stays.
+    @test language_for_path("view.tsx") === nothing
+    @test language_for_path("view.jsx") === :javascript
+
+    mktempdir() do dir
+        write(joinpath(dir, "util.ts"), "export function twice(a: number) { return a * 2; }\n")
+        write(joinpath(dir, "view.jsx"), "export function View(p) { return <div>{p.text}</div>; }\n")
+        tsx = joinpath(dir, "view.tsx")
+        write(tsx, "export function View(p: P) { const unused = 1; return <div>{p.text}</div>; }\n")
+
+        # One warning names why and which files, and the file never reaches the corpus,
+        # so it is neither flagged nor counted in the baseline.
+        corpus = @test_logs (:warn, r"JSX") collect_corpus([dir], String[], nothing)
+        @test sort(basename.(corpus)) == ["util.ts", "view.jsx"]
+        findings = @test_logs (:warn, r"JSX") match_mode = :any analyze(dir)
+        @test !any(endswith(loc.file, ".tsx") for f in findings for loc in f.locations)
+
+        # A file named directly is skipped the same way rather than refused.
+        @test isempty(@test_logs (:warn, r"JSX") collect_corpus([tsx], String[], nothing))
+
+        # An ignored file is not the scan's business, so it draws no warning.
+        @test_logs collect_corpus([dir], ["*.tsx"], nothing)
+    end
+end
