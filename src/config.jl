@@ -59,7 +59,9 @@ are the cross-corpus duplication thresholds and `library_anchor_grain` widens th
 to compare blocks as well as whole functions; `libraries` holds the reference corpora a
 `[libraries.<name>]` table declares, each a [`Library`](@ref), sorted by name; and
 `ignore` holds gitignore-style patterns dropping paths from the scan, which
-[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces.
+[`analyze`](@ref)'s own `ignore` keyword adds to rather than replaces; and
+`unreferenced_roots` names the definitions `:unreferenced` treats as reached, entry points
+called from outside the scanned roots.
 Immutable: pass one to [`analyze`](@ref) with `config =` to skip file discovery.
 """
 struct Config
@@ -89,6 +91,7 @@ struct Config
     patterns_dir::String
     libraries::Vector{Library}
     ignore::Vector{String}
+    unreferenced_roots::Vector{String}
 end
 
 """
@@ -407,6 +410,18 @@ function apply_reimplementation(scalars, table, source)
     return scalars
 end
 
+# Apply an `[unreferenced]` table: the `roots` named as entry points, anything else warns.
+function apply_unreferenced(scalars::NamedTuple, table::Dict{String, Any}, source::AbstractString)
+    for (key, value) in table
+        if key == "roots"
+            scalars = merge(scalars, (unreferenced_roots = string_list(value, "unreferenced.roots", source),))
+        else
+            @warn "Dendro: unknown unreferenced key in $source, ignored" key
+        end
+    end
+    return scalars
+end
+
 # Overlay one parsed TOML table onto the accumulating overrides, returning the scalar
 # settings (`cut` and the clone thresholds) it leaves. Only the keys present are
 # touched; an unknown top-level key warns rather than failing, so a file written for a
@@ -418,7 +433,7 @@ end
 # apply differently run to run.
 const CONFIG_KEY_ORDER = (
     "patterns", "languages", "libraries", "cut", "clones", "reimplementation",
-    "patterns_dir", "ignore", "bands", "rules",
+    "unreferenced", "patterns_dir", "ignore", "bands", "rules",
 )
 
 function apply_toml!(acc, scalars, data::Dict{String, Any}, source)
@@ -440,6 +455,8 @@ function apply_key!(acc, scalars, key, value, source)
         scalars = apply_clones(scalars, config_table(value, key, source), source)
     elseif key == "reimplementation"
         scalars = apply_reimplementation(scalars, config_table(value, key, source), source)
+    elseif key == "unreferenced"
+        scalars = apply_unreferenced(scalars, config_table(value, key, source), source)
     elseif key == "bands"
         apply_bands!(acc, config_table(value, key, source), source)
     elseif key == "rules"
@@ -521,6 +538,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         library_anchor_grain = false,
         patterns_dir = "",
         ignore = String[],
+        unreferenced_roots = String[],
     )
     if use_files
         for path in config_files(roots, explicit)
@@ -546,6 +564,7 @@ function discover_config(roots; explicit = nothing, use_files = true)
         scalars.library_anchor_grain, acc.languages,
         sort!(collect(values(acc.patterns)); by = s -> s.name), scalars.patterns_dir,
         sort!(collect(values(acc.libraries)); by = l -> l.name), scalars.ignore,
+        scalars.unreferenced_roots,
     )
 end
 
@@ -576,5 +595,6 @@ function override_config(
         config.reimpl_threshold, config.library_threshold, config.library_gate_coverage,
         config.library_anchor_grain, config.languages, config.patterns, config.patterns_dir,
         libraries === nothing ? config.libraries : as_libraries(libraries), config.ignore,
+        config.unreferenced_roots,
     )
 end

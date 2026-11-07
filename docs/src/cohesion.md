@@ -216,7 +216,21 @@ the scan is falsely flagged. Runtime-only entry points (a test function, a dispa
 callback, a string-dispatched name) carry no syntactic reference, so they are flagged
 unless declared public or referenced from top level; accept one with
 `dendro-ignore: unreferenced`. The language runtime calls some hooks by name, and those
-root: a Julia module's `__init__` is always live, along with everything it calls. Java resolves a same-package reference through its `:package`
+root: a Julia module's `__init__` is always live, along with everything it calls.
+
+A project can name its own entry points. A function a loader script reaches through
+`Base.require(pkg).connect`, or a public API another package calls but this one never
+exports, has no caller in the scan. Listing it under `[unreferenced]` in `.dendro.toml`
+makes it a root, and everything it reaches is live:
+
+```toml
+[unreferenced]
+roots = ["connect", "listing"]
+```
+
+A name matches every top-level definition carrying it, in any scanned file, so the list
+reads like an export list kept beside the code rather than in it. A name matching nothing
+roots nothing, and the findings it was meant to clear stay visible. Java resolves a same-package reference through its `:package`
 linkage, so a package-private class with no user in its package is flagged alongside a
 `private` method. A package-private *member* stays public, reached same-package through a
 receiver the resolver does not follow. PHP checks only a `private` method; its classes

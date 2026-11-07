@@ -166,7 +166,7 @@ function relational_clusters(files::Vector{ParsedFile}, cfg::Config, scope, res:
         () -> cluster_distant_definition(files, table; cut = ecut, band = cfg.distant_definition)
     )
     append!(findings, scope_clusters(cluster_scattered(files, graph; cut = ecut, band = cfg.scattered), scope))
-    append!(findings, scope_clusters(cluster_unreferenced(files, table; linkage), scope))
+    append!(findings, scope_clusters(cluster_unreferenced(files, table; linkage, roots = cfg.unreferenced_roots), scope))
     append!(
         findings,
         scope_clusters(cluster_split_audience(files, table; cut = ecut, band = cfg.split_audience, linkage), scope)

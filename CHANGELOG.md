@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `[unreferenced] roots` in `.dendro.toml` names entry points called from outside the
+  scanned roots, a function a loader script or another package reaches. `:unreferenced`
+  treats each named definition as reached, and so everything it reaches. Without it, such
+  an entry point and every private helper behind it were reported dead.
 - User-authored lint rules, a second tree-sitter query family. A `[patterns.<name>]` table
   in `.dendro.toml` declares a rule, language-independently, and a
   `.dendro/patterns/<lang>.patterns.scm` capture realises it for one grammar. A flag rule
