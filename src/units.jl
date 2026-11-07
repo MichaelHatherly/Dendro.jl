@@ -70,12 +70,17 @@ end
 # Label a function node by its name, or "" when no name node is found. A qualified
 # definition tags its final component as `def_name`; prefer that over the first
 # `@name`, which for `Module.method` is the module qualifier. A bound anonymous
-# callable takes the name from its enclosing binder when it holds none of its own.
+# callable takes the name from its enclosing binder when it holds none of its own. A
+# function's body is never read: every identifier there is a use, so an anonymous
+# callback would take the name of the first variable it reads.
 function unit_name(node::TreeSitter.Node, index::QueryIndex)
     name = Ref("")
     def = Ref("")
+    body = is_function(node, index) ? function_body(node, index) : nothing
+    skip = body === nothing ? (0, -1) : TreeSitter.byte_range(body)
     TreeSitter.traverse(node) do n, enter
-        if enter
+        from, to = TreeSitter.byte_range(n)
+        if enter && !(skip[1] <= from && to <= skip[2])
             isempty(name[]) && n in index.name &&
                 (name[] = String(strip(TreeSitter.slice(index.source, n))))
             isempty(def[]) && n in index.def_name &&

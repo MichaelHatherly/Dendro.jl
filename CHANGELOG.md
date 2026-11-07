@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An anonymous callback no longer takes the name of the first variable its body reads. A
+  unit with no defining name fell back to the first identifier anywhere in it, body
+  included, so Dendro labelled `onFrame(() => { if (!box.current) ... })` as `box`, and a
+  finding on the callback read as one on a local variable. The fallback now reads the
+  signature alone, so such a callback is unnamed, and one with a parameter keeps its label.
 - A `:misplaced` finding keeps its gate key when the definition it leans toward in the
   suggested home changes. That definition was the second location's unit, which `fkey`
   reads, so an edit that only shifted which of the home file's functions the unit reached
