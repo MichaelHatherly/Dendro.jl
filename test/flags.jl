@@ -231,6 +231,10 @@ end
     @test unused(:php, "<?php function f(\$a, \$b) { return \$a; }") == 1
     @test unused(:php, "<?php function f(\$a, \$b) { return \$a + \$b; }") == 0
 
+    # A shorthand property (`{ name }`) reads the variable it names.
+    @test unused(:javascript, "function f(name, args) { return send({ name, args }); }") == 0
+    @test unused(:typescript, "function f(name: string, args: unknown) { return send({ name, args }); }") == 0
+
     # A bodyless declaration is a contract; its parameters are its signature.
     @test unused(:java, "interface I { void accept(Object o); }\n") == 0
     @test unused(:c, "int f(int a, int b);\n") == 0
@@ -278,6 +282,8 @@ end
     @test unused(:javascript, "function f() { const x = 1; return 2; }") == 1
     @test unused(:javascript, "function f() { const x = 1; return x; }") == 0
     @test unused(:typescript, "function f(): number { const x = 1; return 2; }") == 1
+    @test unused(:javascript, "function f() { const paths = list(); send({ paths }); }") == 0
+    @test unused(:typescript, "function f() { const paths = list(); send({ paths }); }") == 0
     @test unused(:go, "func f() int {\n  a := 1\n  return 2\n}\n") == 1
     @test unused(:java, "class C { int f() { int a = 1; return 2; } }") == 1
     @test unused(:c, "int f() { int a = g(); return 0; }") == 1

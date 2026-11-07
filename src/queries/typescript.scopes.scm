@@ -25,3 +25,6 @@
 
 ; --- References ---
 [(identifier) (type_identifier) (property_identifier)] @reference
+
+; A shorthand property (`{ name }`) reads the variable it names, so it is a use.
+(shorthand_property_identifier) @reference

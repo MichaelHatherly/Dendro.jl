@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A JavaScript or TypeScript shorthand property (`send({ name, args })`) is now a use of
+  the variable it names. The scopes query captured identifiers and property names but not
+  the shorthand node, so a parameter or local read only that way was reported
+  `:unused_parameter` or `:unused_local`, and the reference was missing from every
+  binding-based reading.
 - A definition in a module's own body is now visible by bare name to the files that module
   includes. The two sit in one namespace, so a reference in an included file writes the
   bare name, but resolution offered only the qualified form and matched nothing. A const or
