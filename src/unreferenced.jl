@@ -17,7 +17,25 @@
 # file outside the scan is falsely flagged. Runtime-only entry points (a test function, a
 # dispatch-table callback, a string-dispatched name) are flagged too, since no syntactic
 # reference reaches them; accept one with `dendro-ignore: unreferenced`. `external_root`
-# roots a hook the language runtime calls by name, Julia's `__init__`.
+# roots a hook the language runtime calls by name, Julia's `__init__`, and a definition a
+# decorator, annotation, or attribute registers. A method a base class plausibly calls, an
+# override, roots too (`plausible_overrides`).
+
+# The methods a base class plausibly calls: each function inside a class that extends
+# another, when that base is defined nowhere in the corpus (its methods are unknown, so
+# any could be overridden) or when the base defines a function of the same name. Name-based
+# and lexical, like the rest of the pass: a base matches a corpus type by name, never by
+# resolving which one it is, and a base outside the corpus reads as overridable.
+function plausible_overrides(table::SymbolTable)
+    types = Set{String}(d.name for d in table.defs if is_type_kind(d.kind))
+    members = Set{Tuple{String, String}}(
+        (last(d.module_path), d.name) for d in table.defs if d.kind === :function && !isempty(d.module_path)
+    )
+    return Set{Int}(
+        i for (i, d) in enumerate(table.defs)
+            if d.kind === :function && !isempty(d.base) && (!(d.base in types) || (d.base, d.name) in members)
+    )
+end
 
 # The graph node for a reference's source: the top-level definition whose function body
 # contains it by byte range, or 0 (ROOT) for a reference in top-level code. Attribution is
@@ -36,10 +54,12 @@ end
 
 The forward reference graph over `table.defs` and the root set a dead-code search starts
 from. `adj[i]` lists the definition indices definition `i` references; `roots` holds the
-declared-public definitions, those referenced from top-level code, and every definition
-named in `entry_points`, an entry point called from outside the scanned roots. Edges come from
-within-file bindings and cross-file references, each attributed to its enclosing top-level
-definition by byte range; a reference in top-level code seeds a root rather than an edge.
+declared-public definitions, those referenced from top-level code, the external roots a
+runtime hook or a registering wrapper reaches, the `plausible_overrides`, and every
+definition named in `entry_points`, an entry point called from outside the scanned roots.
+Edges come from within-file bindings and cross-file references, each attributed to its
+enclosing top-level definition by byte range; a reference in top-level code seeds a root
+rather than an edge.
 
 The cross-file edges and the public surface both come out of `linkage`, so a scan that has
 already resolved the corpus does not resolve it again here.
@@ -66,6 +86,7 @@ function reach_graph(
     topfns = Dict{String, Vector{Tuple{Int, Int, Int}}}()
     byid = Dict{Tuple{String, NodeId}, Int}()
     name_class = Dict{Tuple{String, String}, Vector{Int}}()
+    union!(roots, plausible_overrides(table))
     for (i, d) in enumerate(table.defs)
         byid[(d.file, d.id)] = i
         push!(get!(() -> Int[], name_class, (d.file, d.name)), i)
@@ -76,10 +97,17 @@ function reach_graph(
         from, to = unit_span(file_by_path[d.file].index.units[d.unit])
         push!(get!(() -> Tuple{Int, Int, Int}[], topfns, d.file), (from, to, i))
     end
+    # A function's methods can sit in several files of one namespace, so a name class also
+    # holds the same-name definitions its file sees across the boundary: the candidates a
+    # cross-file reference by that name carries.
+    no_candidates = Int[]
+    for ((file, name), class) in name_class
+        append!(class, get(linkage.visible[file], name, no_candidates))
+    end
 
     empty_ranges = Tuple{Int, Int, Int}[]
     # Within-file edges: each binding's reference attributes to its enclosing top-level
-    # def, its targets every same-name definition in the file when the named one is a
+    # def, its targets every same-name definition its file sees when the named one is a
     # top-level symbol.
     for f in files
         ranges = get(topfns, f.file, empty_ranges)

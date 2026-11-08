@@ -25,3 +25,8 @@
 
 ; --- References ---
 [(identifier) (type_identifier) (field_identifier)] @reference
+
+; --- Fields ---
+; A data member binds in the class body, where `this->name` and a bare `name` find it.
+(field_declaration declarator: (field_identifier) @definition.field)
+(field_declaration declarator: (pointer_declarator declarator: (field_identifier) @definition.field))

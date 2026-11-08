@@ -59,6 +59,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `:low_cohesion` links methods through the object they share. A field or property bound
+  in the class body, and read or written through the receiver, links every method that
+  touches it: `this.x` in TypeScript, JavaScript, Java, and C++, `self.x` in Python and
+  Rust, `$this->x` in PHP, and `@x` in Ruby. A call through the receiver links the two
+  methods, including from inside a closure, and a nested callable now links to the one
+  enclosing it, so a callback no longer reads as a concern of its own. Before, the edge
+  was call linkage alone, and a class whose methods shared only state split into one
+  component per method.
 - A scalar's corpus percentile is read only where the distribution supports a rank. A
   metric that is zero across most of a corpus has a rank that stops ranking: once the share
   of units holding nothing passes the cut, every unit sits above it and the rule reports
@@ -76,6 +84,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
+  Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
+  decorator, a Rust attribute. A framework calls these by registration, so nothing in the
+  corpus names them. The wrappers that only annotate ordinary code (`functools.cache`,
+  `@Override`, `#[inline]`, and the like) are excluded by name in each linkage query.
+- `:unreferenced` roots a Ruby method its base class plausibly calls: a method in a class
+  that extends a base defined outside the corpus, or a base defining the same name. Java
+  and PHP private methods cannot override, and Python, C++, TypeScript, and JavaScript
+  methods are never judged, so the rule has nothing to read there.
+- An exported TypeScript interface is public and visible to its importers. The linkage
+  query captured no `export interface`, so an interface named only in type positions
+  elsewhere read as dead.
+- A TypeScript or JavaScript object-literal method is a property, not a file-scope
+  definition. It hoisted past the object to the file, so a method a framework calls on an
+  exported object read as dead.
+- A Python quoted annotation (`x: "Node"`) references the type it names.
+- A function whose methods sit in several files of one namespace, as a Julia module splits
+  them, is one function to `:unreferenced`. A call bound lexically to the method in its
+  own file, so the methods in the other files read as dead.
 - A `.tsx` file is skipped with a warning instead of scanned. It mapped to TypeScript, and
   the TypeScript grammar parses no JSX, so the file read as one error tree and every
   finding on it, from mis-scoped units to cohesion and reachability, came from the parse

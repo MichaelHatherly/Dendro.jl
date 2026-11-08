@@ -25,3 +25,10 @@
 
 ; --- References ---
 [(identifier) (type_identifier)] @reference
+
+; --- Fields ---
+; A struct field binds at the scope holding the struct, and `self.name` is a use, so
+; methods sharing a field, or calling one another through `self`, link. Only a `self`
+; access reads as a use: `other.name` on another value says nothing about this type.
+(field_declaration name: (field_identifier) @definition.field)
+(field_expression value: (self) field: (field_identifier) @reference)

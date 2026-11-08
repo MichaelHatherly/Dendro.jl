@@ -10,3 +10,20 @@
 (namespace_use_declaration) @import
 (namespace_use_clause (qualified_name) @import.from)
 (namespace_use_clause (qualified_name (name) @import.name))
+
+; --- Registered definitions ---
+; An attribute hands its method, function, or class to a framework that calls it by
+; registration, a route, a listener, a command. The engine's own attributes only
+; annotate ordinary code and are excluded.
+(method_declaration
+  attributes: (attribute_list (attribute_group (attribute [(name) @_wrap (qualified_name (name) @_wrap)])))
+  name: (name) @external_root
+  (#not-any-of? @_wrap "Override" "Deprecated" "ReturnTypeWillChange" "SensitiveParameter" "NoDiscard"))
+(function_definition
+  attributes: (attribute_list (attribute_group (attribute [(name) @_wrap (qualified_name (name) @_wrap)])))
+  name: (name) @external_root
+  (#not-any-of? @_wrap "Deprecated" "ReturnTypeWillChange" "SensitiveParameter" "NoDiscard"))
+(class_declaration
+  attributes: (attribute_list (attribute_group (attribute [(name) @_wrap (qualified_name (name) @_wrap)])))
+  name: (name) @external_root
+  (#not-any-of? @_wrap "AllowDynamicProperties" "Attribute" "Deprecated"))

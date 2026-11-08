@@ -14,10 +14,16 @@
 # A namespace region: its byte span and name, a Julia `module`, a Rust `mod`, a C++
 # `namespace`. The scopes query cannot tell one from an ordinary block scope (both are
 # @scope there), so a linkage query tags it with @module and its name with @module.name.
+# A class region also carries the name of the class it extends, tagged @module.base, empty
+# when it extends nothing or the language tags no base.
 struct ModuleRegion
     from::Int
     to::Int
     name::String
+    base::String
+    # Typed so the only method takes concrete arguments, as `ScopeEntry`'s does: the default
+    # `Any`-accepting one converts each field, which sound mode reads as a possible throw.
+    ModuleRegion(from::Int, to::Int, name::String, base::String) = new(from, to, name, base)
 end
 
 # A top-level definition somewhere in the corpus: the file it lives in, its identity in
@@ -27,7 +33,9 @@ end
 # read from a per-def modifier where a language has one, `:unknown` otherwise), and
 # whether it is an external-entry root: a definition a wrapping construct the analyzer
 # cannot expand consumes (a macro, decorator, annotation, attribute), so reachability
-# roots the dead-code search from it rather than judging it dead.
+# roots the dead-code search from it rather than judging it dead. `base` is the class
+# the innermost enclosing region extends (empty for none), which marks a method a
+# plausible override the base class calls.
 #
 # The record lives here rather than beside the pass that builds it, because every
 # per-language export and visibility rule below is written over one.
@@ -41,6 +49,7 @@ struct CorpusDef
     line::Int
     visibility::Symbol
     external_root::Bool
+    base::String
 end
 
 # Every top-level definition across the corpus. A cross-file reference resolves against
@@ -59,23 +68,35 @@ is_symbol_kind(kind::Symbol) = kind in SYMBOL_KINDS
 # Definition kinds that name a type, the symbols a same-package reference resolves to.
 is_type_kind(kind::Symbol) = kind === :struct || kind === :class
 
-# The namespace regions a linkage query tags over one tree, each paired with its name.
-# @module marks the region, @module.name the name identifier; a name binds to the
-# innermost region containing it, so a `module` named only by a nested block keeps its
-# own name. Regions with no captured name keep an empty string.
+# The namespace regions a linkage query tags over one tree, each paired with its name and
+# base. @module marks the region, @module.name the name identifier and @module.base the
+# class it extends; each binds to the innermost region containing it, so a `module` named
+# only by a nested block keeps its own name. Regions with no captured name or base keep an
+# empty string.
 function module_regions(tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString)
     spans = Tuple{Int, Int}[]
     namenodes = TreeSitter.Node[]
+    basenodes = TreeSitter.Node[]
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)
         if name == "module"
             push!(spans, TreeSitter.byte_range(cap.node))
         elseif name == "module.name"
             push!(namenodes, cap.node)
+        elseif name == "module.base"
+            push!(basenodes, cap.node)
         end
     end
+    names = region_labels(spans, namenodes, source)
+    bases = region_labels(spans, basenodes, source)
+    return ModuleRegion[ModuleRegion(spans[k][1], spans[k][2], names[k], bases[k]) for k in eachindex(spans)]
+end
+
+# One label per region in `spans`: the text of the first node in `nodes` whose innermost
+# containing region it is, or "".
+function region_labels(spans::Vector{Tuple{Int, Int}}, nodes::Vector{TreeSitter.Node}, source::AbstractString)
     labels = fill("", length(spans))
-    for nc in namenodes
+    for nc in nodes
         nf, nt = TreeSitter.byte_range(nc)
         best = 0
         best_span = typemax(Int)
@@ -89,7 +110,31 @@ function module_regions(tree::TreeSitter.Tree, query::TreeSitter.Query, source::
         best == 0 && continue
         isempty(labels[best]) && (labels[best] = String(strip(TreeSitter.slice(source, nc))))
     end
-    return ModuleRegion[ModuleRegion(spans[k][1], spans[k][2], labels[k]) for k in eachindex(spans)]
+    return labels
+end
+
+# The base the innermost region containing `[from, to]` extends, or "" outside any region.
+function region_base(regions::Vector{ModuleRegion}, from::Int, to::Int)
+    base = ""
+    best_span = typemax(Int)
+    for r in regions
+        (r.from <= from && to <= r.to && r.to - r.from < best_span) || continue
+        base = r.base
+        best_span = r.to - r.from
+    end
+    return base
+end
+
+# The definition names a linkage query tags @external_root: a definition a decorator,
+# annotation, or attribute hands to machinery outside the corpus, which calls it by
+# registration rather than by a reference Dendro can see. The query excludes the wrappers
+# that only annotate ordinary code, by name.
+function external_root_ids(tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString)
+    ids = Set{NodeId}()
+    for cap in TreeSitter.each_capture(tree, query, source)
+        TreeSitter.capture_name(query, cap) == "external_root" && push!(ids, nodeid(cap.node))
+    end
+    return ids
 end
 
 # The module path of a definition at `[from, to]`: the names of every region containing
@@ -289,7 +334,9 @@ end
 # definition is consumed by something the source never shows calling it: a wrapping
 # construct the analyzer cannot expand (a macro, decorator, annotation, attribute) or a
 # hook the language runtime calls by name. It is a second source of reachability roots
-# alongside `is_public`; a language with neither uses `no_external_root`.
+# alongside `is_public`; a language with neither uses `no_external_root`. A wrapper a
+# query can recognise by its shape is tagged `@external_root` in the linkage query
+# instead, which `file_symbols!` reads beside this hook.
 #
 # The callables stay abstractly typed, so each is a pointer load and each call through one
 # is a dynamic dispatch. A type parameter per callable would make every language's linkage a
@@ -727,6 +774,7 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
     isempty(caps.scopes) && return table
     imports = imports_query_for(file)
     regions = imports === nothing ? ModuleRegion[] : module_regions(file.tree, imports, file.source)
+    consumed = imports === nothing ? Set{NodeId}() : external_root_ids(file.tree, imports, file.source)
     root = root_scope(caps.scopes)
     namespaces = Set{Tuple{Int, Int}}([(root.from, root.to)])
     for r in regions
@@ -746,8 +794,9 @@ function file_symbols!(table::SymbolTable, file::ParsedFile)
         path = module_path_of(regions, from, to)
         unit = containing_callable(file.index, uranges, from, to)
         line = Int(TreeSitter.start_point(d).row) + 1
-        external = link !== nothing && link.external_root(d, file.source)::Bool
-        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d), external))
+        external = nodeid(d) in consumed || (link !== nothing && link.external_root(d, file.source)::Bool)
+        base = region_base(regions, from, to)
+        push!(table.defs, CorpusDef(file.file, nodeid(d), name, kind, path, unit, line, def_visibility(file, d), external, base))
     end
     return table
 end

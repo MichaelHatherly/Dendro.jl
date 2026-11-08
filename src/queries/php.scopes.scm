@@ -22,3 +22,10 @@
 
 ; --- References ---
 (name) @reference
+
+; --- Properties ---
+; A property binds in the class body, where `$this->name` finds it. A promoted
+; constructor parameter declares one from inside the constructor's scope, so its kind
+; hoists it one level, into the class body.
+(property_element name: (variable_name (name) @definition.field))
+(property_promotion_parameter name: (variable_name (name) @definition.property))

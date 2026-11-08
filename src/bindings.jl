@@ -20,9 +20,10 @@ end
 
 # Definition kinds whose name binds in the enclosing scope, not their own. A
 # function, named type, class, or macro is visible to its siblings, so a call from
-# one sibling to another resolves to it. Other kinds (locals, consts) bind in their
-# own scope.
-const HOISTED_KINDS = ("function", "struct", "macro", "class")
+# one sibling to another resolves to it. A property, a field declared by a constructor
+# parameter, binds in the class body enclosing that constructor. Other kinds (locals,
+# consts, fields declared in the body) bind in their own scope.
+const HOISTED_KINDS = ("function", "struct", "macro", "class", "property")
 
 # Definition kinds that bind a local variable. Julia splits them: `:local` is a
 # fresh-binding form (a `for`/`let` head), `:assign` a statement assignment that
@@ -80,7 +81,7 @@ function collect_scopes(tree::TreeSitter.Tree, query::TreeSitter.Query, source::
             push!(scopes, ScopeEntry(from, to, Dict{String, TreeSitter.Node}()))
         elseif name == "reference"
             push!(refnodes, cap.node)
-        else
+        elseif !startswith(name, "_")  # an `@_` capture only feeds a predicate
             push!(defnodes, cap.node)
             push!(defhoist, is_hoisted(name))
             push!(defkinds, def_kind(name))

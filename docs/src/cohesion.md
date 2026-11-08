@@ -39,12 +39,19 @@ same file-local name, not that they call the same method. The signal stays synta
 and within one file. Cohesion runs for every supported language; each ships a scopes
 query.
 
-The lexical line has a cost in class-based code. An edge is call linkage, two
-functions naming the same file-local definition, not shared-field cohesion: with no
-symbol or field resolution, methods that touch the same instance field through
-different names form no edge. The reading is weakest for a file that is one class,
-where field-sharing is the main cohesion and Dendro sees only method-to-method calls.
-Java is the extreme, since every file is one class.
+In class-based code the shared definition is often a field. A field or property declared
+in the class body binds there, and an access through the receiver is a use of it, so two
+methods touching one field link, as do a method and another it calls through the
+receiver: `this.x` in TypeScript, JavaScript, Java, and C++, `self.x` in Python and Rust,
+`$this->x` in PHP, and `@x` in Ruby. Python and Ruby declare no fields, so the
+assignments in `__init__` and `initialize` declare them, and an assignment in another
+method is a use. A closure or callback is part of the callable enclosing it, so a call
+made inside one links its enclosing method. The resolution is still lexical: a field
+matches by name within the class body, never by the receiver's type, so a Rust field is
+read only through `self`, where `other.x` on another value would conflate types, and Go
+is left out, since its receiver is an ordinary named parameter. A constructor that
+initialises every field links the whole class, the standard LCOM4 caveat, since Dendro
+does not single constructors out.
 
 ## Cross-file placement
 
@@ -207,7 +214,10 @@ private when it is `static` (file-local), a method is private under a Ruby `priv
 when it is package-private (not marked `public`). A reference is attributed to its enclosing top-level definition by
 byte range, so a call inside a nested helper or a lambda still keeps the enclosing function
 alive. A name matching several definitions keeps all of them alive, since name resolution
-cannot tell a type from its constructor or one method from its overload.
+cannot tell a type from its constructor or one method from its overload. That holds across
+files too: a call bound to a method in its own file reaches the methods of the same name
+the file sees in others, so a Julia function split across the files of one module is one
+function.
 
 The reading is name-based and lexical, like the rest of placement: it matches a name to a
 declared definition, never resolving a type or a dispatch. Two limits follow. It is sound
@@ -217,6 +227,19 @@ callback, a string-dispatched name) carry no syntactic reference, so they are fl
 unless declared public or referenced from top level; accept one with
 `dendro-ignore: unreferenced`. The language runtime calls some hooks by name, and those
 root: a Julia module's `__init__` is always live, along with everything it calls.
+
+Frameworks call definitions by registration, and those root too. A definition a Python
+decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class decorator,
+a Rust attribute, or a Julia macro wraps is handed to code outside the corpus, a route
+table, a test runner, an injector. A linkage query tags these `@external_root` and names
+the wrappers that only annotate ordinary code (`functools.cache`, `@Override`, `#[inline]`),
+which root nothing; Julia's macros are read the same way in code, `@inline` among the
+transparent ones. A method a base class plausibly calls roots as well: in a
+class extending a base the corpus does not define, any method may be an override, and in
+one extending a corpus base, a method of a name that base defines is one. A linkage query
+tags the base `@module.base`; Ruby is the language that needs it, since a Java or PHP
+private method cannot override, and a Python, C++, TypeScript, or JavaScript method sits
+in a class body that is no namespace, so it is never judged at all.
 
 A project can name its own entry points. A function a loader script reaches through
 `Base.require(pkg).connect`, or a public API another package calls but this one never

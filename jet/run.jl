@@ -319,6 +319,13 @@
 # grouping the paths through a `Dict` and the one shipped, which walks the extension table,
 # both measured five.
 #
+# Reading framework roots and receiver fields moved sound from 1400 to 1398, opt unchanged.
+# The new `base` field on `CorpusDef` and on `ModuleRegion` each added one `convert` report
+# from the default constructor, and a `skip` keyword on `containing_unit` added six more of
+# kwarg lowering, so it became a positional argument (1408, then 1402). A typed inner
+# constructor on `ModuleRegion`, as `ScopeEntry` carries, then removed all four of its
+# field conversions.
+#
 # The count is stable under the order this file runs, basic mode then sound. Repeated runs
 # over an identical tree return 1379 every time, and dumping every report gives a
 # byte-identical file each run. An earlier note here recorded about one report of
@@ -331,7 +338,7 @@ using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1400  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1398  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 34      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

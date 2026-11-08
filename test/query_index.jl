@@ -59,13 +59,16 @@ end
     end
 
     # A scopes query routes captures by name: `scope`, `reference`, or `definition.*`.
-    # Any other capture mis-routes silently in the resolver. Catch a typo here, for
-    # every language that ships a scopes query.
+    # Underscore captures are predicate helpers, never read. Any other capture mis-routes
+    # silently in the resolver. Catch a typo here, for every language that ships a scopes
+    # query.
     fixed = Set{String}(["scope", "reference"])
     @testset "$lang" for lang in sort!(collect(keys(Dendro.PROFILES)))
         q = Dendro.scopes_query_for(lang)
         q === nothing && continue
-        extra = filter(n -> !(n in fixed) && !startswith(n, "definition."), capture_names(q))
+        extra = filter(capture_names(q)) do n
+            !(n in fixed) && !startswith(n, "definition.") && !startswith(n, "_")
+        end
         @test isempty(extra)
     end
 end
@@ -80,11 +83,11 @@ end
         ]
     end
 
-    # An imports query routes captures by name: `module`/`module.name` mark a namespace,
-    # `import`/`import.*` an import, `export` a visibility marker, `include.path` a splice
-    # target. Underscore captures are predicate helpers, never read. Any other capture is
+    # An imports query routes captures by name: `module`/`module.name`/`module.base` mark a
+    # namespace, `import`/`import.*` an import, `export` a visibility marker,
+    # `external_root` a registered definition, `include.path` a splice target. Underscore captures are predicate helpers, never read. Any other capture is
     # a typo that mis-routes silently. Catch it, for every language that ships one.
-    fixed = Set{String}(["module", "module.name", "export", "import", "include.path"])
+    fixed = Set{String}(["module", "module.name", "module.base", "export", "external_root", "import", "include.path"])
     @testset "$lang" for lang in sort!(collect(keys(Dendro.PROFILES)))
         q = Dendro.imports_query_for(lang)
         q === nothing && continue

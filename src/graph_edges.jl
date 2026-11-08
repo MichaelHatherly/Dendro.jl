@@ -3,9 +3,9 @@
 # files.
 #
 # `binding_groups` is the undirected one: a file's units link when they reference a common
-# file-local binding, a helper, type, or constant defined in the same file. It answers which
-# units belong together, so it drops a cross-cutting binding every concern reaches for and
-# says nothing about direction. `:low_cohesion` counts the components these form and
+# file-local binding, a helper, type, or constant defined in the same file, and a nested
+# callable links to the one enclosing it. It answers which units belong together, so it
+# drops a cross-cutting binding every concern reaches for and says nothing about direction. `:low_cohesion` counts the components these form and
 # `:scattered` folds them into the cross-file graph, so a cohesive file's units settle into
 # one community.
 #
@@ -26,12 +26,13 @@ unit_ranges(index::QueryIndex) =
     Tuple{Int, Int}[unit_span(u) for u in units(index)]
 
 # The innermost function unit whose byte span contains `[from, to]`, or 0 when the
-# position lies in no function (top-level code). Units are few per file, so a scan.
-function containing_unit(ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
+# position lies in no function (top-level code). Units are few per file, so a scan. A
+# `skip` unit is passed over, so a unit's own span finds the unit enclosing it.
+function containing_unit(ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int, skip::Int = 0)
     best = 0
     best_span = typemax(Int)
     for (i, r) in enumerate(ranges)
-        (r[1] <= from && to <= r[2]) || continue
+        (i != skip && r[1] <= from && to <= r[2]) || continue
         span = r[2] - r[1]
         span < best_span || continue
         best = i
@@ -41,19 +42,19 @@ function containing_unit(ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
 end
 
 """
-    containing_callable(index, ranges, from, to) -> Int
+    containing_callable(index, ranges, from, to, skip=0) -> Int
 
-The innermost callable unit whose byte span contains `[from, to]`, or 0. The symbol
-table, the corpus graph and cohesion all ask which definition owns a position, and
-top-level code is not one: a run of statements has no name to resolve and cannot be
-moved the way a definition can, so a position inside one belongs to no unit, exactly
-as it did before top-level code became a unit.
+The innermost callable unit whose byte span contains `[from, to]`, or 0, passing over
+the unit at index `skip`. The symbol table, the corpus graph and cohesion all ask which
+definition owns a position, and top-level code is not one: a run of statements has no
+name to resolve and cannot be moved the way a definition can, so a position inside one
+belongs to no unit, exactly as it did before top-level code became a unit.
 
 `ranges` is [`unit_ranges`](@ref) over the same index, so an index it returns is an
 index into `units(index)`.
 """
-function containing_callable(index::QueryIndex, ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int)
-    ui = containing_unit(ranges, from, to)
+function containing_callable(index::QueryIndex, ranges::Vector{Tuple{Int, Int}}, from::Int, to::Int, skip::Int = 0)
+    ui = containing_unit(ranges, from, to, skip)
     ui == 0 && return 0
     return is_callable(units(index)[ui], index) ? ui : 0
 end
@@ -61,8 +62,10 @@ end
 # The within-file links a file's bindings imply: each entry lists the local unit indices
 # that share one definition, the units referencing it plus, when it lives in a unit, its
 # owner. A binding referenced by more than `ubiquity` of the units links nothing, a
-# cross-cutting utility rather than a shared concern. The connectivity `:low_cohesion`
-# reads as components and `:scattered` folds into the corpus graph.
+# cross-cutting utility rather than a shared concern. A nested callable, a closure or a
+# callback, also pairs with the callable enclosing it, whose concern it is part of. The
+# connectivity `:low_cohesion` reads as components and `:scattered` folds into the corpus
+# graph.
 function binding_groups(index::QueryIndex, ubiquity::Float64)
     units = index.units
     n = length(units)
@@ -80,6 +83,11 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
         length(unique(members)) > threshold && continue
         owner = containing_callable(index, ranges, defid[1], defid[2])
         push!(out, owner == 0 ? members : push!(copy(members), owner))
+    end
+    for (ui, (from, to)) in enumerate(ranges)
+        is_callable(units[ui], index) || continue
+        parent = containing_callable(index, ranges, from, to, ui)
+        parent == 0 || push!(out, [ui, parent])
     end
     return out
 end

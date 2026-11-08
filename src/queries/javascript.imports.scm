@@ -17,3 +17,8 @@
 (export_statement declaration: (class_declaration name: (identifier) @export))
 (export_statement declaration: (lexical_declaration (variable_declarator name: (identifier) @export)))
 (export_statement (export_clause (export_specifier name: (identifier) @export)))
+
+; --- Registered definitions ---
+; A decorator hands its class to the code that applies it, an injector or a component
+; registry, which constructs it by registration.
+(class_declaration decorator: (decorator) name: (identifier) @external_root)
