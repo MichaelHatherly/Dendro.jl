@@ -156,6 +156,20 @@ end
     @test isempty(Dendro.cluster_unreferenced([a], Dendro.corpus_symbols([a])))
 end
 
+@testitem ":unreferenced keeps a method defined in another file of the module alive" setup = [Fixtures] tags = [:unreferenced] begin
+    # `render` has a method in a.jl and one in b.jl, both spliced into `M`. The call in
+    # `entry` binds lexically to the a.jl method, but the b.jl one is the same function, so
+    # reaching one reaches both.
+    mod = Fixtures.parsedfile(:julia, "module M\nexport entry\ninclude(\"a.jl\")\ninclude(\"b.jl\")\nend\n"; file = "mod.jl")
+    a = Fixtures.parsedfile(:julia, "entry() = render(1)\nrender(x::Int) = 1\n"; file = "a.jl")
+    b = Fixtures.parsedfile(:julia, "render(x::String) = 2\n"; file = "b.jl")
+    @test isempty(Fixtures.unref_sites([mod, a, b]))
+
+    # A same-named function in another module, which the call cannot name, stays dead.
+    other = Fixtures.parsedfile(:julia, "module Other\nrender(x::Float64) = 3\nend\n"; file = "other.jl")
+    @test Fixtures.unref_sites([mod, a, b, other]) == Set([("other.jl", "render")])
+end
+
 @testitem ":unreferenced roots a macro-consumed definition" setup = [Fixtures] tags = [:unreferenced] begin
     # `@GET` consumes `handler`: a route macro registers it, so no in-corpus call reaches it,
     # yet it is a live entry point. It roots the search, and `helper`, called only from it,
@@ -213,6 +227,103 @@ end
     src = "export function keep() { return used(); }\nfunction used() { return 1; }\nfunction dead() { return 2; }\n"
     j = Fixtures.parsedfile(:javascript, src; file = "m.js")
     @test Fixtures.unref_sites([j]) == Set([("m.js", "dead")])
+end
+
+@testitem ":unreferenced reads an exported TypeScript interface as public" setup = [Fixtures] tags = [:unreferenced] begin
+    # `Shape` is exported and named only in type positions elsewhere: an `import type`, an
+    # `implements` clause, a generic argument. It is public, and the reference resolves.
+    shapes = Fixtures.parsedfile(:typescript, "export interface Shape { size: number }\n"; file = "shapes.ts")
+    src = "import type { Shape } from './shapes';\nexport class Box implements Shape { size = 1; }\nexport const all: Array<Shape> = [];\n"
+    use = Fixtures.parsedfile(:typescript, src; file = "use.ts")
+    files = [shapes, use]
+    @test isempty(Fixtures.unref_sites(files))
+    table = Dendro.corpus_symbols(files)
+    reached = Set(table.defs[di].name for r in Dendro.resolve_linkage(files, table).references for di in r.candidates)
+    @test "Shape" in reached
+
+    # A private interface lives through a type annotation in its own file, and one nothing
+    # names is dead.
+    local_src = "interface Options { n: number }\ninterface Unused { m: number }\nexport function make(o: Options): number { return o.n; }\n"
+    m = Fixtures.parsedfile(:typescript, local_src; file = "m.ts")
+    @test Fixtures.unref_sites([m]) == Set([("m.ts", "Unused")])
+end
+
+@testitem ":unreferenced reads an object-literal method as a property" setup = [Fixtures] tags = [:unreferenced] begin
+    # `start` is a key of the exported object, which a framework calls through the object.
+    # A property key binds no file-scope name, so it is never a definition to judge, and
+    # `boot`, which it calls, is live.
+    src = "export const hooks = {\n  start() { boot(); },\n};\nfunction boot() { }\nfunction dead() { }\n"
+    t = Fixtures.parsedfile(:typescript, src; file = "hooks.ts")
+    @test Fixtures.unref_sites([t]) == Set([("hooks.ts", "dead")])
+end
+
+@testitem ":unreferenced roots a Python definition a decorator registers" setup = [Fixtures] tags = [:unreferenced] begin
+    # `@app.route` hands `_handler` to a route table, and `_helper` lives through it. A
+    # wrapper that only annotates ordinary code, `functools.cache`, roots nothing.
+    src = "@app.route('/')\ndef _handler():\n    return _helper()\ndef _helper():\n    return 1\n@functools.cache\ndef _dead():\n    return 2\n@register\nclass _Plugin:\n    pass\n"
+    p = Fixtures.parsedfile(:python, src; file = "m.py")
+    @test Fixtures.unref_sites([p]) == Set([("m.py", "_dead")])
+end
+
+@testitem ":unreferenced roots a Java method or class an annotation registers" setup = [Fixtures] tags = [:unreferenced] begin
+    # A lifecycle or injection annotation hands its method to the framework. A `java.lang`
+    # annotation only annotates, so the method it marks is still judged.
+    src = "public class C {\n  @PostConstruct\n  private void init() { }\n  @javax.inject.Inject private void wire(int a) { }\n  @SuppressWarnings(\"x\")\n  private void dead() { }\n}\n@Component\nclass Registered { }\nclass Unused { }\n"
+    j = Fixtures.parsedfile(:java, src; file = "C.java")
+    @test Fixtures.unref_sites([j]) == Set([("C.java", "dead"), ("C.java", "Unused")])
+end
+
+@testitem ":unreferenced roots a PHP method, function, or class an attribute registers" setup = [Fixtures] tags = [:unreferenced] begin
+    src = "<?php\n#[AsCommand('x')]\nclass Cmd {\n  #[Route('/x')]\n  private function handler() { }\n  #[\\Override]\n  private function dead() { }\n}\n"
+    p = Fixtures.parsedfile(:php, src; file = "C.php")
+    @test Fixtures.unref_sites([p]) == Set([("C.php", "dead")])
+end
+
+@testitem ":unreferenced roots a TypeScript or JavaScript class a decorator registers" setup = [Fixtures] tags = [:unreferenced] begin
+    # An injector constructs a decorated class by registration, so nothing need name it.
+    ts = Fixtures.parsedfile(:typescript, "@injectable()\nclass Service { }\nclass Dead { }\n"; file = "s.ts")
+    @test Fixtures.unref_sites([ts]) == Set([("s.ts", "Dead")])
+    js = Fixtures.parsedfile(:javascript, "@injectable()\nclass Service { }\nclass Dead { }\n"; file = "s.js")
+    @test Fixtures.unref_sites([js]) == Set([("s.js", "Dead")])
+end
+
+@testitem ":unreferenced roots a Rust item an attribute registers" setup = [Fixtures] tags = [:unreferenced] begin
+    # `#[test]` hands `checks` to the harness, through a further attribute, and `helper`
+    # lives through it. `#[inline]` only annotates. An attribute on one item says nothing
+    # about the next.
+    src = "#[test]\n#[allow(unused)]\nfn checks() { helper(); }\nfn helper() {}\n#[inline]\nfn dead() {}\n#[test]\nfn other() {}\nfn after() {}\n"
+    r = Fixtures.parsedfile(:rust, src; file = "m.rs")
+    @test Fixtures.unref_sites([r]) == Set([("m.rs", "dead"), ("m.rs", "after")])
+end
+
+@testitem ":unreferenced roots a Ruby method its base class plausibly calls" setup = [Fixtures] tags = [:unreferenced] begin
+    # `View#render` overrides `Base#render`, which `Base#run` calls. `View#dead` matches
+    # nothing in `Base`. `Ext` extends a class outside the corpus, whose methods are
+    # unknown, so any of its methods may be an override.
+    src = "class Base\n  def run\n    render\n  end\n  def render\n  end\nend\nclass View < Base\n  private\n  def render\n    1\n  end\n  def dead\n  end\nend\nclass Ext < Outside::Thing\n  private\n  def hook\n  end\nend\n"
+    r = Fixtures.parsedfile(:ruby, src; file = "v.rb")
+    @test Fixtures.unref_sites([r]) == Set([("v.rb", "dead")])
+end
+
+@testitem ":unreferenced leaves a subclass method alone where it is no reachability node" setup = [Fixtures] tags = [:unreferenced] begin
+    # A Python, C++, TypeScript, or JavaScript class body is no namespace, so its methods
+    # are never judged, override or not. A Java or PHP private method cannot override, so
+    # it is judged in a subclass as anywhere else.
+    @test isempty(Fixtures.unref_sites([Fixtures.parsedfile(:python, "class V(Base):\n    def render(self):\n        pass\n"; file = "v.py")]))
+    @test isempty(Fixtures.unref_sites([Fixtures.parsedfile(:cpp, "class V : public Base {\n  void render() { }\n};\nint main() { V v; return 0; }\n"; file = "v.cpp")]))
+    @test isempty(Fixtures.unref_sites([Fixtures.parsedfile(:typescript, "export class V extends Base {\n  render(): void { }\n}\n"; file = "v.ts")]))
+    @test isempty(Fixtures.unref_sites([Fixtures.parsedfile(:javascript, "export class V extends Base {\n  render() { }\n}\n"; file = "v.js")]))
+    j = Fixtures.parsedfile(:java, "public class V extends Base {\n  private void render() { }\n}\n"; file = "V.java")
+    @test Fixtures.unref_sites([j]) == Set([("V.java", "render")])
+    p = Fixtures.parsedfile(:php, "<?php\nclass V extends Base {\n  private function render() { }\n}\n"; file = "V.php")
+    @test Fixtures.unref_sites([p]) == Set([("V.php", "render")])
+end
+
+@testitem ":unreferenced reads a Python quoted annotation as a reference" setup = [Fixtures] tags = [:unreferenced] begin
+    # A forward reference names its type in a string. Only a bare quoted name is read.
+    src = "class _Node:\n    pass\nclass _Dead:\n    pass\ndef run(o: \"_Node\") -> None:\n    pass\n"
+    p = Fixtures.parsedfile(:python, src; file = "m.py")
+    @test Fixtures.unref_sites([p]) == Set([("m.py", "_Dead")])
 end
 
 @testitem ":unreferenced reads Rust pub as the public surface" setup = [Fixtures] tags = [:unreferenced] begin

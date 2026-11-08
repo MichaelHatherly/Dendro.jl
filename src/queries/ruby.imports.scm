@@ -10,3 +10,8 @@
 
 (module name: (constant) @module.name) @module
 (class name: (constant) @module.name) @module
+
+; --- Base class ---
+; The class a class extends, its final name, so a method there can read as an override
+; the base calls.
+(class superclass: (superclass [(constant) @module.base (scope_resolution name: (constant) @module.base)]))

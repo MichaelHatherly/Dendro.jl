@@ -292,7 +292,8 @@ Measurement:
   `containing_unit` finds the innermost unit spanning a byte range. The undirected one is
   `binding_groups`, which reads `index.bindings` into the groups of local units that share
   a definition, dropping a binding referenced by more than `COHESION_UBIQUITY` of the
-  file's units; the corpus graph joins each group as a clique into `within_edges`, and
+  file's units, and pairs each nested callable with the one enclosing it; the corpus graph
+  joins each group as a clique into `within_edges`, and
   cohesion and scattering read those. The directed one is `binding_reference_edges`, one
   edge per reference from the unit that named it to the unit holding the definition,
   keeping every binding and every named unit rather than only the callables; the unit-level
@@ -470,7 +471,9 @@ Reporting:
   `package_visible` and `merge_visible`, where the `:package` model (Java) unions import
   visibility with the same-directory types a package resolves without an import, so a
   package-private class reference resolves. The query readings live here too: `file_exports`,
-  `file_imports`, `include_targets`, `declared_targets`, and `module_regions`, along with
+  `file_imports`, `include_targets`, `declared_targets`, `module_regions` (a region's name
+  and, from `@module.base`, the class it extends), and `external_root_ids` (the
+  `@external_root` definitions a decorator, annotation, or attribute registers), along with
   `file_symbols!`, what one language declares as a top-level symbol. `CorpusDef` and
   `SymbolTable` are defined here rather than beside the pass that builds them, because every
   per-language predicate is written over one. `Corpus` and the POSIX path helpers back the
@@ -597,8 +600,10 @@ Reporting:
   a dedicated reference graph over `table.defs` that keeps non-unit targets and discounts
   no cross-cutting utility. `reach_graph` builds the forward edges (within-file bindings
   and `corpus_references`, each attributed to its enclosing top-level definition by
-  `enclosing_def`) and the root set (declared-public definitions and those referenced from
-  top-level code); `reachable` walks it breadth-first. `cluster_unreferenced` emits an
+  `enclosing_def`) and the root set (declared-public definitions, those referenced from
+  top-level code, external roots, and `plausible_overrides`); `reachable` walks it
+  breadth-first. A within-file target reaches every same-name definition its file sees,
+  so the methods of one function split across files stay one function. `cluster_unreferenced` emits an
   `:unreferenced` finding per unreached definition, suppressible inline. Reads `linkage.jl`
   for `corpus_references` and the public surface. Included after `scattered.jl`.
 - `cohesion.jl` defines within-file cohesion. `cluster_low_cohesion` reads the within
@@ -1113,9 +1118,11 @@ scopes query, so cohesion runs everywhere Dendro parses; a language without one 
 be skipped rather than reported as all-isolated. The ceiling is honest: name
 resolution gives def-site linkage, never dispatch resolution, so an edge is "these two
 functions reference this file-local name," not "these two dispatch to the same
-method." With no field resolution, the edge is call linkage, not shared-field
-cohesion, so a file that is one class reads only its method-to-method calls. Java is
-the extreme, every file a single class. Most cohesion signal lives below that line.
+method." A field declared in a class body binds there, and a receiver access (`this.x`,
+`self.x`, `$this->x`, `@x`) is a use, so methods sharing state link through a binding like
+any other; Python and Ruby declare a field by its assignment in `__init__`/`initialize`,
+through a hoisted `property` kind, as TypeScript and PHP declare a constructor parameter
+field. Most cohesion signal lives below that line.
 
 ## The file graph
 

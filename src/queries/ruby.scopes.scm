@@ -22,3 +22,12 @@
 
 ; --- References ---
 [(identifier) (constant)] @reference
+
+; --- Instance variables ---
+; An instance variable `initialize` assigns hoists into the class body enclosing
+; `initialize`, and every `@name` is a use, so methods sharing one link.
+(method
+  name: (identifier) @_init
+  body: (body_statement (assignment left: (instance_variable) @definition.property))
+  (#eq? @_init "initialize"))
+(instance_variable) @reference

@@ -58,6 +58,63 @@ end
     @test isempty(Dendro.cluster_low_cohesion(files, graph; band = (2, 3)))
 end
 
+@testitem "cluster_low_cohesion links TypeScript methods through this" setup = [Fixtures] tags = [:cohesion] begin
+    # Methods sharing a declared field, a constructor parameter property, or a call made
+    # inside a callback each form one component; methods on different fields do not.
+    @test Fixtures.cohesive(:typescript, "class Store {\n  private count = 0;\n  bump(): void { this.count += 1; }\n  read(): number { return this.count; }\n}\n")
+    @test Fixtures.cohesive(:typescript, "class Holder {\n  constructor(private readonly items: string[]) {}\n  first(): string { return this.items[0]; }\n}\n")
+    @test Fixtures.cohesive(:typescript, "class Runner {\n  start(): void { [1, 2].forEach(n => this.step(n)); }\n  step(n: number): void { }\n}\n")
+    @test !Fixtures.cohesive(:typescript, "class Pair {\n  private a = 0;\n  private b = 0;\n  getA(): number { return this.a; }\n  getB(): number { return this.b; }\n}\n")
+end
+
+@testitem "cluster_low_cohesion links JavaScript methods through this" setup = [Fixtures] tags = [:cohesion] begin
+    @test Fixtures.cohesive(:javascript, "class Store {\n  count = 0;\n  bump() { this.count += 1; }\n  read() { return this.count; }\n}\n")
+    @test Fixtures.cohesive(:javascript, "class Runner {\n  start() { [1].forEach(n => this.step(n)); }\n  step(n) { }\n}\n")
+    @test !Fixtures.cohesive(:javascript, "class Pair {\n  a = 0;\n  b = 0;\n  getA() { return this.a; }\n  getB() { return this.b; }\n}\n")
+end
+
+@testitem "cluster_low_cohesion links Python methods through self" setup = [Fixtures] tags = [:cohesion] begin
+    # A field `__init__` assigns is declared there; a write elsewhere is a use of it.
+    @test Fixtures.cohesive(:python, "class Store:\n    def __init__(self):\n        self.count = 0\n    def bump(self):\n        self.count += 1\n    def reset(self):\n        self.count = 0\n")
+    @test Fixtures.cohesive(:python, "class Runner:\n    def start(self):\n        return list(map(lambda n: self.step(n), [1]))\n    def step(self, n):\n        return n\n")
+    # A field binds in its own class: two classes sharing a field name stay apart.
+    @test !Fixtures.cohesive(:python, "class A:\n    def __init__(self):\n        self.v = 0\n    def read(self):\n        return self.v\nclass B:\n    def __init__(self):\n        self.v = 0\n    def read(self):\n        return self.v\n")
+end
+
+@testitem "cluster_low_cohesion links Java methods through this" setup = [Fixtures] tags = [:cohesion] begin
+    @test Fixtures.cohesive(:java, "class Store {\n  private int count = 0;\n  void bump() { this.count += 1; }\n  int read() { return count; }\n}\n")
+    @test Fixtures.cohesive(:java, "class Runner {\n  void start() { java.util.List.of(1).forEach(n -> this.step(n)); }\n  void step(int n) { }\n}\n")
+    @test !Fixtures.cohesive(:java, "class Pair {\n  private int a, b;\n  int getA() { return this.a; }\n  int getB() { return this.b; }\n}\n")
+end
+
+@testitem "cluster_low_cohesion links PHP methods through \$this" setup = [Fixtures] tags = [:cohesion] begin
+    # A declared property and a promoted constructor parameter both bind in the class.
+    @test Fixtures.cohesive(:php, "<?php\nclass Store {\n  private \$count = 0;\n  function bump() { \$this->count += 1; }\n  function read() { return \$this->count; }\n}\n")
+    @test Fixtures.cohesive(:php, "<?php\nclass Holder {\n  function __construct(private array \$items) {}\n  function first() { return \$this->items[0]; }\n}\n")
+    @test Fixtures.cohesive(:php, "<?php\nclass Runner {\n  function start() { array_map(fn(\$n) => \$this->step(\$n), [1]); }\n  function step(\$n) { }\n}\n")
+    @test !Fixtures.cohesive(:php, "<?php\nclass Pair {\n  private \$a = 0;\n  private \$b = 0;\n  function getA() { return \$this->a; }\n  function getB() { return \$this->b; }\n}\n")
+end
+
+@testitem "cluster_low_cohesion links Ruby methods through instance variables and self" setup = [Fixtures] tags = [:cohesion] begin
+    @test Fixtures.cohesive(:ruby, "class Store\n  def initialize\n    @count = 0\n  end\n  def bump\n    @count += 1\n  end\n  def read\n    @count\n  end\nend\n")
+    @test Fixtures.cohesive(:ruby, "class Runner\n  def start\n    [1].each { |n| self.step(n) }\n  end\n  def step(n)\n    n\n  end\nend\n")
+    # An instance variable binds in its own class: two classes sharing a name stay apart.
+    @test !Fixtures.cohesive(:ruby, "class A\n  def initialize\n    @v = 0\n  end\n  def read\n    @v\n  end\nend\nclass B\n  def initialize\n    @v = 0\n  end\n  def read\n    @v\n  end\nend\n")
+end
+
+@testitem "cluster_low_cohesion links Rust methods through self" setup = [Fixtures] tags = [:cohesion] begin
+    @test Fixtures.cohesive(:rust, "struct Store { count: i32 }\nimpl Store {\n  fn bump(&mut self) { self.count += 1; }\n  fn read(&self) -> i32 { self.count }\n}\n")
+    @test Fixtures.cohesive(:rust, "struct Runner;\nimpl Runner {\n  fn start(&self) { [1].iter().for_each(|n| self.step(*n)); }\n  fn step(&self, n: i32) { }\n}\n")
+    # Only a `self` access is a use: the same field read off another value links nothing.
+    @test !Fixtures.cohesive(:rust, "struct Pair { a: i32 }\nimpl Pair {\n  fn get(&self) -> i32 { self.a }\n}\nfn other(p: Pair) -> i32 { p.a }\n")
+end
+
+@testitem "cluster_low_cohesion links C++ methods through this" setup = [Fixtures] tags = [:cohesion] begin
+    @test Fixtures.cohesive(:cpp, "class Store {\n  int count = 0;\n  void bump() { this->count += 1; }\n  int read() { return count; }\n};\n")
+    @test Fixtures.cohesive(:cpp, "class Runner {\n  void start() { auto f = [this](int n) { this->step(n); }; f(1); }\n  void step(int n) { }\n};\n")
+    @test !Fixtures.cohesive(:cpp, "class Pair {\n  int* a;\n  int b;\n  int getA() { return *this->a; }\n  int getB() { return this->b; }\n};\n")
+end
+
 @testitem "cluster_low_cohesion ubiquity drop separates concerns sharing a utility" setup = [Fixtures] tags = [:cohesion] begin
     # Two concerns, but every function also reads `FOO`. Keeping that edge folds them
     # into one component; dropping `FOO` as cross-cutting restores the two concerns.

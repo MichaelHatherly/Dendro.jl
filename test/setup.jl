@@ -60,6 +60,14 @@
     unref_sites(files) =
         Set((loc.file, loc.unit) for f in Dendro.cluster_unreferenced(files, Dendro.corpus_symbols(files)) for loc in f.locations)
 
+    # Whether one file's functions form a single cohesion component, the reading the
+    # receiver-linking items assert on.
+    function cohesive(lang, src; file = "c." * string(lang))
+        files = [parsedfile(lang, src; file)]
+        graph = Dendro.build_corpus_graph(files, Dendro.corpus_symbols(files))
+        return isempty(Dendro.cluster_low_cohesion(files, graph; band = (2, 3)))
+    end
+
     # A synthetic directory whose factoring is known because it was generated, the ground
     # truth the layout rules are held to. `sizes` is one entry per cohesive group whose
     # files reference each other; `cross` is how many calls each file makes into other

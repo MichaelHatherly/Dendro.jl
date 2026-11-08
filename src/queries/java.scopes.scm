@@ -23,3 +23,7 @@
 
 ; --- References ---
 [(identifier) (type_identifier)] @reference
+
+; --- Fields ---
+; A field binds in the class body, where `this.name` and a bare `name` both find it.
+(field_declaration declarator: (variable_declarator name: (identifier) @definition.field))
