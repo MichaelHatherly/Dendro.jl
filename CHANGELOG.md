@@ -84,6 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `cognitive_complexity` charges a switch once, as SonarSource's Cognitive Complexity does,
+  and nothing per case. Each case was a decision paying its nesting, so a flat five-case
+  switch cost ten and a short dispatch function crossed the warn band. The cases still
+  count as paths in `cyclomatic`. Two captures carry it, `@arm` and `@multiway`, tagged in
+  every language with a switch, match, or `case` construct.
 - `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
   Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
   decorator, a Rust attribute. A framework calls these by registration, so nothing in the

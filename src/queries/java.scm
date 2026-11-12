@@ -6,6 +6,11 @@
 [(if_statement) (for_statement) (enhanced_for_statement) (while_statement)
  (do_statement) (switch_label) (ternary_expression) (catch_clause)] @decision
 
+; Cognitive complexity charges a multi-way branch once, at its @multiway construct,
+; and nothing at the @arm cases cyclomatic counts as @decision paths.
+(switch_label) @arm
+(switch_expression) @multiway
+
 [(if_statement) (for_statement) (enhanced_for_statement) (while_statement)
  (do_statement) (switch_expression) (try_statement)] @nesting
 

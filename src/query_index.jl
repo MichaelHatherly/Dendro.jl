@@ -72,7 +72,7 @@ PatternBucket() = PatternBucket(Concept(), Concept())
 # this set.
 # dendro-ignore: unreferenced
 const CONCEPT_NAMES = (
-    :short_function, :decision, :continuation, :nesting, :short_circuit,
+    :short_function, :decision, :continuation, :arm, :multiway, :nesting, :short_circuit,
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
@@ -98,6 +98,12 @@ struct QueryIndex
     short_function::Concept
     decision::Concept
     continuation::Concept
+    # A decision that is one arm of a multi-way branch (a switch case, a match arm, a
+    # `when`), co-tagged `@decision`: cyclomatic counts each arm as a path, while cognitive
+    # complexity scores none of them and charges their `multiway` construct once instead.
+    arm::Concept
+    # The multi-way branch construct holding the `arm`s: a switch, a match, a `case`.
+    multiway::Concept
     nesting::Concept
     short_circuit::Concept
     parameter::Concept
@@ -180,6 +186,7 @@ struct QueryIndex
 
     function QueryIndex(language::Symbol, source::String, scope_captures::ScopeCaptures = ScopeCaptures())
         short_function, decision, continuation, nesting = Concept(), Concept(), Concept(), Concept()
+        arm, multiway = Concept(), Concept()
         short_circuit, parameter, body, catch_clause = Concept(), Concept(), Concept(), Concept()
         comment, name, trivial_body, return_stmt = Concept(), Concept(), Concept(), Concept()
         finally_clause, call, binary_expr, conditional = Concept(), Concept(), Concept(), Concept()
@@ -190,7 +197,8 @@ struct QueryIndex
         toplevel, declaration = Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
-            "continuation" => continuation, "nesting" => nesting,
+            "continuation" => continuation, "arm" => arm, "multiway" => multiway,
+            "nesting" => nesting,
             "short_circuit" => short_circuit, "parameter" => parameter,
             "body" => body, "catch" => catch_clause, "comment" => comment,
             "name" => name, "trivial_body" => trivial_body, "return" => return_stmt,
@@ -204,7 +212,7 @@ struct QueryIndex
         )
         return new(
             language, source, Unit[], Set{NodeId}(),
-            short_function, decision, continuation, nesting, short_circuit, parameter,
+            short_function, decision, continuation, arm, multiway, nesting, short_circuit, parameter,
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,

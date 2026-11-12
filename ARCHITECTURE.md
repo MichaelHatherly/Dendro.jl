@@ -723,8 +723,8 @@ in its query, not here.
 
 `QueryIndex` (`query_index.jl`). One tree's identified nodes: the `functions` units
 and `function_ids` (the no-descend boundary), plus one `Concept` per measured
-construct (decision points, short-circuit operators, nesting, parameters, parameter
-names, bodies,
+construct (decision points, multi-way branches and their arms, short-circuit operators,
+nesting, parameters, parameter names, bodies,
 catches, broad catches, comments, names, trivial statements, returns, finally clauses, calls,
 callee names,
 binary expressions, binary operators, conditionals, terminals, short-form

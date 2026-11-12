@@ -24,7 +24,8 @@ runs by default. This section says what they measure.
 
 Scalar (per function): cyclomatic complexity, cognitive complexity (the same branch
 points weighted by the nesting they sit under, so a deeply-nested function scores
-worse than a flat one of the same path count), length, maximum nesting depth,
+worse than a flat one of the same path count, and a switch charged once rather than
+per case), length, maximum nesting depth,
 parameter count, boolean complexity (the most `&&`/`||` operators joined into one
 expression).
 

@@ -7,6 +7,11 @@
 [(if_statement) (for_statement) (expression_case) (type_case)
  (communication_case)] @decision
 
+; Cognitive complexity charges a multi-way branch once, at its @multiway construct,
+; and nothing at the @arm cases cyclomatic counts as @decision paths.
+[(expression_case) (type_case) (communication_case)] @arm
+[(expression_switch_statement) (type_switch_statement) (select_statement)] @multiway
+
 [(if_statement) (for_statement) (expression_switch_statement)
  (type_switch_statement) (select_statement)] @nesting
 

@@ -6,10 +6,11 @@
 # through `resolve_profiles`, overlaying the languages a `.dendro.toml` adds, and gates
 # whether it analyses a file on that, not on this table.
 #
-# Switch/case complexity counts each case label. Where a grammar gives the default
-# branch its own node type (Go, JS, TS, PHP, Ruby) it is excluded from the
-# `@decision` capture; where default shares the case node (C, C++, Java) it adds
-# one. This is a documented variance, not a per-language workaround.
+# Cyclomatic complexity counts each case label; cognitive complexity charges the switch
+# once at its `@multiway` construct instead. Where a grammar gives the default branch its
+# own node type (Go, JS, TS, PHP, Ruby) it is excluded from the `@decision` capture;
+# where default shares the case node (C, C++, Java) it adds one. This is a documented
+# variance, not a per-language workaround.
 
 const PROFILES = Dict{Symbol, LanguageProfile}(
     name => LanguageProfile(name) for name in (
