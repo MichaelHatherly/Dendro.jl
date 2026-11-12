@@ -453,7 +453,12 @@ Reporting:
   idiom (Tu et al.), with `cross_entropy` the global-only case at `λ = 1`;
   `cluster_unnatural` emits an `:unnatural` finding per function, carrying both an
   absolute cross-entropy band and the corpus percentile, skipping a language whose
-  corpus is below `MIN_CORPUS_TOKENS`. A surprising function
+  corpus is below `MIN_CORPUS_TOKENS`. A function under `MIN_UNIT_TOKENS` trains the
+  model and is neither scored nor ranked. The floor says when a function's own score
+  exists, so it moves neither standard: the band stays a fixed opinion and the
+  percentile still ranks against the corpus. A band read relative to the corpus
+  vocabulary was the alternative, and would derive the standard from the corpus while
+  leaving the noisy one-liners at the top of the percentile. A surprising function
   reads as unidiomatic, which correlates with bugs. Structure only, no symbol
   resolution; within one language. Included before `analyze.jl`, which calls it.
 - `linkage.jl` is the registry side of cross-file resolution: how each language lets one

@@ -88,7 +88,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and nothing per case. Each case was a decision paying its nesting, so a flat five-case
   switch cost ten and a short dispatch function crossed the warn band. The cases still
   count as paths in `cyclomatic`. Two captures carry it, `@arm` and `@multiway`, tagged in
-  every language with a switch, match, or `case` construct.
+  every language with a multi-way branch.
+- `:unnatural` no longer scores a function of fewer than 30 tokens. Its score is the mean
+  bits per token, so a one-liner's rides on a few trigrams. That noise alone reached the
+  warn band: over ten corpora in five languages, 26 of the 28 functions at or above it
+  were that short. Such a function still trains the model, and is left out of the
+  percentile as well as the band. Neither standard moves. Reading the band against the
+  corpus vocabulary instead would have derived it from the corpus.
 - `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
   Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
   decorator, a Rust attribute. A framework calls these by registration, so nothing in the

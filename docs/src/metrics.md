@@ -70,7 +70,9 @@ of Software"), so a function is read against its own file's idiom, not just the
 corpus's, which sharpens genuine outliers and quiets file-consistent patterns. A
 surprising, unidiomatic function scores high, and surprise correlates with bugs.
 Reported as `:unnatural` with both scores, the absolute cross-entropy band and the
-corpus percentile. A language with too few tokens to model is skipped.
+corpus percentile. A language with too few tokens to model is skipped. A function of
+fewer than 30 tokens trains the model but is not scored: its score is a mean over a
+handful of trigrams, and at that length the noise alone reaches the band.
 
 Cohesion asks whether a file's functions group by usage, placement whether a unit sits
 in the right file, scattering whether a file's units belong to one module, and
