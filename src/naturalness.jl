@@ -200,6 +200,10 @@ function file_caches(units::Vector{NaturalnessUnit})
     return Dict{String, NGramModel}(zip(order, models))
 end
 
+# True when a language's units hold too few tokens to train a model worth ranking against.
+thin_corpus(units::Vector{NaturalnessUnit}, min_tokens::Integer) =
+    sum(length(u.tokens) for u in units; init = 0) < min_tokens
+
 # Naturalness findings for one language's units, scored against a global model
 # interpolated with each unit's file cache. Every unit trains the model; only those of at
 # least `min_unit_tokens` tokens are scored and ranked.
@@ -247,7 +251,7 @@ function cluster_unnatural(
     )
     findings = Finding[]
     for units in values(naturalness_units(files))
-        sum(length(u.tokens) for u in units; init = 0) < min_tokens && continue
+        thin_corpus(units, min_tokens) && continue
         unnatural_in_language!(findings, units, band, cut, min_unit_tokens)
     end
     sort!(findings; by = f -> (-something(f.value), first(f.locations).file, first(f.locations).line))
