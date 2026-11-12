@@ -101,6 +101,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The binder's name now belongs to the unit it names, in the within-file reference edges
   too. A function expression bound the same way (`const f = function () {}`) is named
   after its binder, where it took the name of its first parameter.
+- `:low_cohesion` links a TypeScript or JavaScript value's callables to the units that read
+  its name. In `const SHAPE = { a: isNames, b: v => ... }` the value is no unit, so the
+  arrow, `isNames` and the function reading `SHAPE` shared no binding, and a file holding
+  a table of checks split into one concern per entry. A new `@binder` capture names the
+  declaration, and what its value holds now joins the units that read the name.
 - `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
   Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
   decorator, a Rust attribute. A framework calls these by registration, so nothing in the

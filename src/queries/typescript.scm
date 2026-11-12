@@ -64,6 +64,10 @@
 (variable_declarator name: (identifier) @def_name
   value: [(arrow_function) (function_expression)])
 
+; A name bound to a value. Cohesion reads what the value holds as the name's, since the
+; value is no unit of its own.
+(variable_declarator name: (identifier) value: (_)) @binder
+
 (return_statement) @return
 
 (finally_clause) @finally

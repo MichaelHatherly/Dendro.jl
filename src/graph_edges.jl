@@ -72,11 +72,49 @@ function bound_callables(index::QueryIndex)
     return out
 end
 
+# The callable a definition belongs to: the one it names, from `bound_callables`, or else
+# the one holding it, or 0 for neither.
+definition_owner(index::QueryIndex, ranges::Vector{Tuple{Int, Int}}, bound::Dict{NodeId, Int}, defid::NodeId) =
+    get(() -> containing_callable(index, ranges, defid[1], defid[2]), bound, defid)
+
+# What each top-level `@binder`'s value holds: the callables directly inside it and the
+# owners of the definitions it reads outside any of them. Also each binder's index keyed
+# by its name's identity. `const SHAPE = { a: isNames, b: v => ... }` is no unit, so
+# without this the arrow, `isNames` and the function reading `SHAPE` share no binding.
+function binder_contents(index::QueryIndex, ranges::Vector{Tuple{Int, Int}}, bound::Dict{NodeId, Int})
+    spans = Tuple{Int, Int}[]
+    for b in index.binder.nodes
+        from, to = TreeSitter.byte_range(b)
+        containing_callable(index, ranges, from, to) == 0 && push!(spans, (from, to))
+    end
+    held = [Int[] for _ in spans]
+    for (ui, (from, to)) in enumerate(ranges)
+        (is_callable(index.units[ui], index) && containing_callable(index, ranges, from, to, ui) == 0) || continue
+        bi = containing_unit(spans, from, to)
+        bi == 0 || push!(held[bi], ui)
+    end
+    for (refid, defid) in index.bindings
+        containing_callable(index, ranges, refid[1], refid[2]) == 0 || continue
+        bi = containing_unit(spans, refid[1], refid[2])
+        o = bi == 0 ? 0 : definition_owner(index, ranges, bound, defid)
+        o == 0 || push!(held[bi], o)
+    end
+    defs = Set(values(index.bindings))
+    held_by = Dict{NodeId, Int}()
+    for name in index.name.nodes
+        nodeid(name) in defs || continue
+        bi = findfirst(==(TreeSitter.byte_range(TreeSitter.parent(name))), spans)
+        bi === nothing || (held_by[nodeid(name)] = bi)
+    end
+    return held, held_by
+end
+
 # The within-file links a file's bindings imply: each entry lists the local unit indices
 # that share one definition, the units referencing it plus, when it lives in or names a
 # unit, its owner. A binding referenced by more than `ubiquity` of the units links nothing, a
 # cross-cutting utility rather than a shared concern. A nested callable, a closure or a
-# callback, also pairs with the callable enclosing it, whose concern it is part of. The
+# callback, also pairs with the callable enclosing it, whose concern it is part of. What a
+# top-level binder's value holds joins the units that read its name. The
 # connectivity `:low_cohesion` reads as components and `:scattered` folds into the corpus
 # graph.
 function binding_groups(index::QueryIndex, ubiquity::Float64)
@@ -91,12 +129,17 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
         ui == 0 && continue
         push!(get!(() -> Int[], groups, defid), ui)
     end
-    out = Vector{Int}[]
+    held, held_by = binder_contents(index, ranges, bound)
+    out = copy(held)
     threshold = ubiquity * n
     for (defid, members) in groups
         length(unique(members)) > threshold && continue
-        owner = get(() -> containing_callable(index, ranges, defid[1], defid[2]), bound, defid)
-        push!(out, owner == 0 ? members : push!(copy(members), owner))
+        group = copy(members)
+        o = definition_owner(index, ranges, bound, defid)
+        o == 0 || push!(group, o)
+        bi = get(held_by, defid, 0)
+        bi == 0 || append!(group, held[bi])
+        push!(out, group)
     end
     for (ui, (from, to)) in enumerate(ranges)
         is_callable(units[ui], index) || continue

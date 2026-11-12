@@ -83,6 +83,23 @@ end
     @test !Fixtures.cohesive(:typescript, "const quoted = (t: string) => t;\nexport const literal = (t: string) => t;\n")
 end
 
+@testitem "cluster_low_cohesion links a value's callables to the units that read its name" setup = [Fixtures] tags = [:cohesion] begin
+    # `SHAPE` is no unit, so the arrows its initialiser holds and the helpers it names
+    # belong to it, and through its name to the function that reads the table.
+    table(typed) = """
+    const isNumber = (v$(typed)) => typeof v === 'number';
+    const isNames = (v$(typed)) => Array.isArray(v);
+    const SHAPE = { order: isNames, sizes: (v$(typed)) => Object.values(v).every(isNumber) };
+    export function check(saved$(typed)) { return Object.entries(SHAPE).every(([k, fits]) => fits(saved[k])); }
+    """
+    @test Fixtures.cohesive(:typescript, table(": any"))
+    @test Fixtures.cohesive(:javascript, table(""))
+
+    # A table nothing reads stays apart from the function beside it.
+    unread = "const isNames = (v: any) => Array.isArray(v);\nconst SHAPE = { order: isNames };\nexport function check(saved: any) { return saved; }\n"
+    @test !Fixtures.cohesive(:typescript, unread)
+end
+
 @testitem "cluster_low_cohesion links Python methods through self" setup = [Fixtures] tags = [:cohesion] begin
     # A field `__init__` assigns is declared there; a write elsewhere is a use of it.
     @test Fixtures.cohesive(:python, "class Store:\n    def __init__(self):\n        self.count = 0\n    def bump(self):\n        self.count += 1\n    def reset(self):\n        self.count = 0\n")

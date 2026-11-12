@@ -76,7 +76,7 @@ const CONCEPT_NAMES = (
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
-    :parameter_name, :broad_catch, :callee, :toplevel, :declaration,
+    :parameter_name, :broad_catch, :callee, :toplevel, :declaration, :binder,
 )
 
 """
@@ -157,6 +157,10 @@ struct QueryIndex
     # A run of top-level code breaks at one, the way it breaks at a callable definition,
     # so a declaration is never folded into the code around it.
     declaration::Concept
+    # A declaration binding a name to a value, such as `const SHAPE = {...}`. The value is no
+    # unit, so cohesion gives what it holds to the units that read the name. Empty for a
+    # language whose query tags none.
+    binder::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -194,7 +198,7 @@ struct QueryIndex
         ternary, try_stmt, case = Concept(), Concept(), Concept()
         def_name, init, requires_body, parameter_name = Concept(), Concept(), Concept(), Concept()
         broad_catch, callee = Concept(), Concept()
-        toplevel, declaration = Concept(), Concept()
+        toplevel, declaration, binder = Concept(), Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
             "continuation" => continuation, "arm" => arm, "multiway" => multiway,
@@ -208,7 +212,7 @@ struct QueryIndex
             "case" => case, "def_name" => def_name, "init" => init,
             "requires_body" => requires_body, "parameter_name" => parameter_name,
             "broad_catch" => broad_catch, "callee" => callee,
-            "toplevel" => toplevel, "declaration" => declaration,
+            "toplevel" => toplevel, "declaration" => declaration, "binder" => binder,
         )
         return new(
             language, source, Unit[], Set{NodeId}(),
@@ -216,7 +220,7 @@ struct QueryIndex
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
-            callee, toplevel, declaration, by_name, Dict{NodeId, TreeSitter.Node}(),
+            callee, toplevel, declaration, binder, by_name, Dict{NodeId, TreeSitter.Node}(),
             Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,
         )

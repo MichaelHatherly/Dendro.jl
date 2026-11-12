@@ -295,7 +295,9 @@ Measurement:
   file's units, and pairs each nested callable with the one enclosing it. A definition's
   owner is the unit it names (`bound_callables`, read off the binder's `@def_name`, since
   `const f = () => ...` holds `f` outside the arrow's span) or else the unit spanning it,
-  and both edges read it that way. The corpus graph
+  and both edges read it that way. A top-level `@binder` such as `const SHAPE = {...}` is
+  no unit, so `binder_contents` gives the callables its value holds, and the owners of
+  what it references, to the units that read its name. The corpus graph
   joins each group as a clique into `within_edges`, and
   cohesion and scattering read those. The directed one is `binding_reference_edges`, one
   edge per reference from the unit that named it to the unit holding the definition,
