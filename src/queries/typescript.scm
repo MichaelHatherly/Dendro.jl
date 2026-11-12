@@ -56,11 +56,13 @@
 (identifier) @name
 
 ; Name a unit by its defining name, not the first identifier the lexical scan
-; reaches: an arrow callback is otherwise labelled by its first parameter. A bare
-; anonymous arrow stays unnamed.
+; reaches: an arrow callback or function expression is otherwise labelled by its first
+; parameter. A bare anonymous arrow stays unnamed. A bound name sits in the declarator,
+; outside the callable, and the binding passes read it as the definition of that unit.
 (function_declaration name: (identifier) @def_name)
 (method_definition name: (property_identifier) @def_name)
-(variable_declarator name: (identifier) @def_name value: (arrow_function))
+(variable_declarator name: (identifier) @def_name
+  value: [(arrow_function) (function_expression)])
 
 (return_statement) @return
 

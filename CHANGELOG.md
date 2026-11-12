@@ -95,6 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   were that short. Such a function still trains the model, and is left out of the
   percentile as well as the band. Neither standard moves. Reading the band against the
   corpus vocabulary instead would have derived it from the corpus.
+- `:low_cohesion` links a TypeScript or JavaScript callable bound to a name to its callers.
+  In `const f = () => ...` the name sits in the declarator beside the arrow, outside the
+  unit's span, so the definition had no owner and `f` never joined the units calling it.
+  The binder's name now belongs to the unit it names, in the within-file reference edges
+  too. A function expression bound the same way (`const f = function () {}`) is named
+  after its binder, where it took the name of its first parameter.
 - `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
   Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
   decorator, a Rust attribute. A framework calls these by registration, so nothing in the

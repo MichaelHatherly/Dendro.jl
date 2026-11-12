@@ -59,9 +59,22 @@ function containing_callable(index::QueryIndex, ranges::Vector{Tuple{Int, Int}},
     return is_callable(units(index)[ui], index) ? ui : 0
 end
 
+# Each callable named from outside its own span, keyed by the name's identity. A binder
+# such as `const f = () => ...` holds `f` beside the arrow, so no unit's span contains the
+# definition of the unit it names, and a containment lookup would find no owner for it.
+function bound_callables(index::QueryIndex)
+    out = Dict{NodeId, Int}()
+    for (ui, u) in enumerate(units(index))
+        is_callable(u, index) || continue
+        held = binder_name(unit_node(u), index)
+        held === nothing || (out[nodeid(held)] = ui)
+    end
+    return out
+end
+
 # The within-file links a file's bindings imply: each entry lists the local unit indices
-# that share one definition, the units referencing it plus, when it lives in a unit, its
-# owner. A binding referenced by more than `ubiquity` of the units links nothing, a
+# that share one definition, the units referencing it plus, when it lives in or names a
+# unit, its owner. A binding referenced by more than `ubiquity` of the units links nothing, a
 # cross-cutting utility rather than a shared concern. A nested callable, a closure or a
 # callback, also pairs with the callable enclosing it, whose concern it is part of. The
 # connectivity `:low_cohesion` reads as components and `:scattered` folds into the corpus
@@ -70,6 +83,7 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
     units = index.units
     n = length(units)
     ranges = unit_ranges(index)
+    bound = bound_callables(index)
     # Units referencing one definition, keyed by the definition's identity.
     groups = Dict{NodeId, Vector{Int}}()
     for (refid, defid) in index.bindings
@@ -81,7 +95,7 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
     threshold = ubiquity * n
     for (defid, members) in groups
         length(unique(members)) > threshold && continue
-        owner = containing_callable(index, ranges, defid[1], defid[2])
+        owner = get(() -> containing_callable(index, ranges, defid[1], defid[2]), bound, defid)
         push!(out, owner == 0 ? members : push!(copy(members), owner))
     end
     for (ui, (from, to)) in enumerate(ranges)
@@ -94,8 +108,9 @@ end
 
 # The within-file links a file's bindings imply, read as references: each key is a
 # `(referrer, definition)` pair of local unit indices and the weight how many times the
-# referrer named it. A reference outside any unit, a definition outside any unit, and a
-# unit naming its own definition all draw nothing. The directed reading beside
+# referrer named it. A definition belongs to the unit it names or else the unit holding
+# it. A reference outside any unit, a definition belonging to none, and a unit naming its
+# own definition all draw nothing. The directed reading beside
 # `binding_groups`' undirected one: an arrow here says which unit reached for which, which
 # is what a diff of the within-file view reports. Every unit is a node, not only the
 # callables, so a file-scope constant its functions read is the node they point at.
@@ -105,11 +120,12 @@ end
 # split `file_graph.jl` draws over the cross-file references.
 function binding_reference_edges(index::QueryIndex)
     ranges = unit_ranges(index)
+    bound = bound_callables(index)
     out = Dict{Tuple{Int, Int}, Float64}()
     for (refid, defid) in index.bindings
         src = containing_unit(ranges, refid[1], refid[2])
         src == 0 && continue
-        dst = containing_unit(ranges, defid[1], defid[2])
+        dst = get(() -> containing_unit(ranges, defid[1], defid[2]), bound, defid)
         (dst == 0 || dst == src) && continue
         out[(src, dst)] = get(out, (src, dst), 0.0) + 1.0
     end

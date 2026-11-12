@@ -198,6 +198,16 @@ end
     @test edges == Dict(("one", "X") => 1.0, ("two", "X") => 1.0)
 end
 
+@testitem "a callable bound to a name is the target of a reference to that name" setup = [Fixtures] tags = [:corpus_graph] begin
+    index = Fixtures.idx(:typescript, "const helper = () => 1;\nconst one = () => helper();\nfunction outer() { const inner = () => 2; return inner(); }\n")
+    name(i) = Dendro.unit_name(Dendro.units(index)[i], index)
+    edges = Dict((name(a), name(b)) => w for ((a, b), w) in Dendro.binding_reference_edges(index))
+
+    # The bound name sits in the declarator, outside the arrow, and still names the arrow:
+    # a nested one is the unit its enclosing function reached for, not that function.
+    @test edges == Dict(("one", "helper") => 1.0, ("outer", "inner") => 1.0)
+end
+
 @testitem "a unit's references to itself draw no reference edge" setup = [Fixtures] tags = [:corpus_graph] begin
     index = Fixtures.idx(:julia, "countdown(x) = x > 0 ? countdown(x - 1) : 0\n")
     # Recursion couples a unit to nothing, the same rule `fan_out` applies to a unit's own

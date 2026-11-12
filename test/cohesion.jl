@@ -73,6 +73,16 @@ end
     @test !Fixtures.cohesive(:javascript, "class Pair {\n  a = 0;\n  b = 0;\n  getA() { return this.a; }\n  getB() { return this.b; }\n}\n")
 end
 
+@testitem "cluster_low_cohesion links a callable bound to a name to its callers" setup = [Fixtures] tags = [:cohesion] begin
+    # `const f = () => ...` binds the name in the declarator beside the arrow, outside the
+    # callable's own span, so the definition still belongs to the unit it names.
+    @test Fixtures.cohesive(:typescript, "const quoted = (t: string) => t.trim();\nexport const literal = (t: string) => quoted(t);\n")
+    @test Fixtures.cohesive(:javascript, "const quoted = (t) => t.trim();\nexport const literal = (t) => quoted(t);\n")
+    @test Fixtures.cohesive(:typescript, "const quoted = function (t: string) { return t; };\nexport const literal = (t: string) => quoted(t);\n")
+    @test Fixtures.cohesive(:javascript, "const quoted = function (t) { return t; };\nexport const literal = (t) => quoted(t);\n")
+    @test !Fixtures.cohesive(:typescript, "const quoted = (t: string) => t;\nexport const literal = (t: string) => t;\n")
+end
+
 @testitem "cluster_low_cohesion links Python methods through self" setup = [Fixtures] tags = [:cohesion] begin
     # A field `__init__` assigns is declared there; a write elsewhere is a use of it.
     @test Fixtures.cohesive(:python, "class Store:\n    def __init__(self):\n        self.count = 0\n    def bump(self):\n        self.count += 1\n    def reset(self):\n        self.count = 0\n")

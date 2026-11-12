@@ -46,7 +46,8 @@ receiver: `this.x` in TypeScript, JavaScript, Java, and C++, `self.x` in Python 
 `$this->x` in PHP, and `@x` in Ruby. Python and Ruby declare no fields, so the
 assignments in `__init__` and `initialize` declare them, and an assignment in another
 method is a use. A closure or callback is part of the callable enclosing it, so a call
-made inside one links its enclosing method. The resolution is still lexical: a field
+made inside one links its enclosing method. A callable bound to a name, `const f = () =>
+...` in TypeScript or JavaScript, owns that name, so its callers link to it. The resolution is still lexical: a field
 matches by name within the class body, never by the receiver's type, so a Rust field is
 read only through `self`, where `other.x` on another value would conflate types, and Go
 is left out, since its receiver is an ordinary named parameter. A constructor that

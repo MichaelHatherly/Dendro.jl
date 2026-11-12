@@ -292,7 +292,10 @@ Measurement:
   `containing_unit` finds the innermost unit spanning a byte range. The undirected one is
   `binding_groups`, which reads `index.bindings` into the groups of local units that share
   a definition, dropping a binding referenced by more than `COHESION_UBIQUITY` of the
-  file's units, and pairs each nested callable with the one enclosing it; the corpus graph
+  file's units, and pairs each nested callable with the one enclosing it. A definition's
+  owner is the unit it names (`bound_callables`, read off the binder's `@def_name`, since
+  `const f = () => ...` holds `f` outside the arrow's span) or else the unit spanning it,
+  and both edges read it that way. The corpus graph
   joins each group as a clique into `within_edges`, and
   cohesion and scattering read those. The directed one is `binding_reference_edges`, one
   edge per reference from the unit that named it to the unit holding the definition,
