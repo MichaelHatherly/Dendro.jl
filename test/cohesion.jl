@@ -100,6 +100,17 @@ end
     @test !Fixtures.cohesive(:typescript, unread)
 end
 
+@testitem "cluster_low_cohesion links TypeScript units through a shared type" setup = [Fixtures] tags = [:cohesion] begin
+    uses(type) = "export function f(r: $type) { return r.a; }\nexport function g(r: $type) { return r.a + 1; }\n"
+    @test Fixtures.cohesive(:typescript, "type Row = { a: number };\n" * uses("Row"))
+    @test Fixtures.cohesive(:typescript, "import type { Row } from './rows';\n" * uses("Row"))
+    @test Fixtures.cohesive(:typescript, "import { type Row } from './rows';\n" * uses("Row"))
+    @test Fixtures.cohesive(:typescript, "import type { Base as Row } from './rows';\n" * uses("Row"))
+    @test Fixtures.cohesive(:typescript, "import type Row from './rows';\n" * uses("Row"))
+    # An imported value is a shared utility, not a shared concern, so it links nothing.
+    @test !Fixtures.cohesive(:typescript, "import { quoted } from './q';\nexport function f(t: string) { return quoted(t); }\nexport function g(t: string) { return quoted(t) + 1; }\n")
+end
+
 @testitem "cluster_low_cohesion links Python methods through self" setup = [Fixtures] tags = [:cohesion] begin
     # A field `__init__` assigns is declared there; a write elsewhere is a use of it.
     @test Fixtures.cohesive(:python, "class Store:\n    def __init__(self):\n        self.count = 0\n    def bump(self):\n        self.count += 1\n    def reset(self):\n        self.count = 0\n")

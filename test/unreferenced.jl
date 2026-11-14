@@ -16,6 +16,11 @@ end
     @test isempty(Dendro.cluster_unreferenced([a], Dendro.corpus_symbols([a])))
 end
 
+@testitem ":unreferenced leaves an exported TypeScript type alias alone" setup = [Fixtures] tags = [:unreferenced] begin
+    a = Fixtures.parsedfile(:typescript, "export type Row = { a: number };\n"; file = "a.ts")
+    @test isempty(Dendro.cluster_unreferenced([a], Dendro.corpus_symbols([a])))
+end
+
 @testitem ":unreferenced flags a private definition nothing names" setup = [Fixtures] tags = [:unreferenced] begin
     a = Fixtures.parsedfile(:julia, "export keep\nkeep() = 1\ndead() = 2\n"; file = "a.jl")
     f = only(Dendro.cluster_unreferenced([a], Dendro.corpus_symbols([a])))

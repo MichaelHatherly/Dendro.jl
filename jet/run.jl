@@ -335,6 +335,9 @@
 # annotation on the helper traded that report for a `convert` and a `typeassert`, and
 # was reverted. The `@arm`/`@multiway` captures and `bound_callables` added none.
 #
+# Filing references to a TypeScript type import in their own `imports` map lowered sound
+# from 1400 to 1398, opt unchanged.
+#
 # The count is stable under the order this file runs, basic mode then sound. Repeated runs
 # over an identical tree return 1379 every time, and dumping every report gives a
 # byte-identical file each run. An earlier note here recorded about one report of
@@ -347,7 +350,7 @@ using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1400  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1398  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 34      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

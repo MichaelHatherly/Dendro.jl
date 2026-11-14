@@ -22,6 +22,17 @@
 ; --- Type names (hoisted) ---
 (class_declaration name: (type_identifier) @definition.class)
 (interface_declaration name: (type_identifier) @definition.struct)
+(type_alias_declaration name: (type_identifier) @definition.struct)
+
+; --- Type imports ---
+; A type import names a type defined in another file. Units sharing it link within the
+; file, and its uses stay cross-file references. A value import is a shared utility, not
+; a shared concern, so it binds nothing.
+(import_statement "type" (import_clause (identifier) @definition.import))
+(import_statement "type" (import_clause (named_imports (import_specifier !alias name: (identifier) @definition.import))))
+(import_statement "type" (import_clause (named_imports (import_specifier alias: (identifier) @definition.import))))
+(import_specifier "type" !alias name: (identifier) @definition.import)
+(import_specifier "type" alias: (identifier) @definition.import)
 
 ; --- Fields ---
 ; A declared field binds in the class body directly. A parameter property

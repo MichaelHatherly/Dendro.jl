@@ -3,8 +3,8 @@
 # files.
 #
 # `binding_groups` is the undirected one: a file's units link when they reference a common
-# file-local binding, a helper, type, or constant defined in the same file, and a nested
-# callable links to the one enclosing it. It answers which units belong together, so it
+# file-local binding, a helper, type, or constant defined in the same file or a type it
+# imports, and a nested callable links to the one enclosing it. It answers which units belong together, so it
 # drops a cross-cutting binding every concern reaches for and says nothing about direction. `:low_cohesion` counts the components these form and
 # `:scattered` folds them into the cross-file graph, so a cohesive file's units settle into
 # one community.
@@ -17,7 +17,7 @@
 # A binding referenced by more than this fraction of a file's units is cross-cutting,
 # a file-local utility every concern reaches for, and links nothing: keeping its edges
 # would fold genuine concerns into one. Binding resolution already drops the imported
-# and global names a string graph trips on, so the default keeps every file-local
+# values and global names a string graph trips on, so the default keeps every file-local
 # binding (1.0 never drops) and dogfood tunes it down only if needed.
 const COHESION_UBIQUITY = 1.0
 
@@ -124,7 +124,7 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
     bound = bound_callables(index)
     # Units referencing one definition, keyed by the definition's identity.
     groups = Dict{NodeId, Vector{Int}}()
-    for (refid, defid) in index.bindings
+    for table in (index.bindings, index.imports), (refid, defid) in table
         ui = containing_callable(index, ranges, refid[1], refid[2])
         ui == 0 && continue
         push!(get!(() -> Int[], groups, defid), ui)

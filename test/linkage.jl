@@ -53,6 +53,14 @@ end
     @test file.index.units[pushref.unit].firstline == 2
 end
 
+@testitem "unbound references keep an imported type" setup = [Fixtures] tags = [:linkage] begin
+    # The type import binds `Row` in the file for cohesion, but its definition lives in
+    # `rows.ts`, so each use stays a cross-file reference, the import's own name included.
+    file = Fixtures.parsedfile(:typescript, "import type { Row } from './rows';\nexport function f(r: Row) { return r; }\n"; file = "f.ts")
+    units = [r.unit for r in Dendro.unbound_references(file) if r.name == "Row"]
+    @test sort(units) == [0, 1]
+end
+
 @testitem "unbound references carry the namespace a reference qualifies" setup = [Fixtures] tags = [:linkage] begin
     # A qualified reference resolves under `Namespace.name`, reading the namespace that
     # the name sits directly under: `Inner` out of `Outer.Inner.deep`. The qualifier's own

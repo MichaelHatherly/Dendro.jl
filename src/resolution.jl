@@ -62,7 +62,7 @@ end
 """
     unbound_references(file) -> Vector{UnboundRef}
 
-The references in `file` that resolve to no in-file definition, each tagged with the
+The references in `file` that resolve to no in-file definition, an import aside, each tagged with the
 name it resolves under and its containing function unit. The per-file binding resolver
 drops these; the corpus graph picks them up and tries to resolve them against
 [`corpus_symbols`](@ref). A reference qualified by a namespace carries the qualified name
@@ -77,10 +77,11 @@ function unbound_references(file::ParsedFile)
     refs = UnboundRef[]
     for r in caps.refnodes
         rid = nodeid(r)
-        rid in caps.defids && continue
+        rid in caps.defids && !(rid in caps.importids) && continue
         from, to = TreeSitter.byte_range(r)
         name = String(strip(TreeSitter.slice(file.source, r)))
-        lookup_definition(caps.scopes, from, to, name) === nothing || continue
+        d = lookup_definition(caps.scopes, from, to, name)
+        d === nothing || nodeid(d) in caps.importids || continue
         resolved = reference_name(r, file.source, access, name)
         push!(refs, UnboundRef(rid, resolved, containing_callable(file.index, uranges, from, to)))
     end

@@ -176,6 +176,9 @@ struct QueryIndex
     # Each reference identifier's identity mapped to the in-file definition it
     # resolves to, filled by `resolve_bindings!` when a scopes query is supplied.
     bindings::Dict{NodeId, NodeId}
+    # Each reference identifier's identity mapped to the import naming it, a definition
+    # in another file. Kept apart from `bindings` so only cohesion reads it.
+    imports::Dict{NodeId, NodeId}
     # What each declared pattern rule matched in this tree, keyed by rule name and filled
     # by `index_patterns!` from a second query. Empty for a project that declares none, so
     # the whole feature costs an unconfigured scan nothing. Kept separate from the concept
@@ -221,7 +224,7 @@ struct QueryIndex
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
             callee, toplevel, declaration, binder, by_name, Dict{NodeId, TreeSitter.Node}(),
-            Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
+            Dict{NodeId, NodeId}(), Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,
         )
     end
@@ -287,7 +290,7 @@ function build_index(
     end
     append_toplevel_units!(idx)
     index_def_name_parents!(idx)
-    (!bindings || isempty(caps.scopes)) || resolve_bindings!(idx.bindings, caps, source)
+    (!bindings || isempty(caps.scopes)) || resolve_bindings!(idx.bindings, caps, source, idx.imports)
     return idx
 end
 

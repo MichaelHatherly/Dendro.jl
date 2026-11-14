@@ -297,7 +297,10 @@ Measurement:
   `const f = () => ...` holds `f` outside the arrow's span) or else the unit spanning it,
   and both edges read it that way. A top-level `@binder` such as `const SHAPE = {...}` is
   no unit, so `binder_contents` gives the callables its value holds, and the owners of
-  what it references, to the units that read its name. The corpus graph
+  what it references, to the units that read its name. A TypeScript type import is an
+  `@definition.import`; `resolve_bindings!` files a reference to it in `index.imports`
+  rather than `index.bindings`, which `binding_groups` alone reads, and
+  `unbound_references` still reports it as cross-file. The corpus graph
   joins each group as a clique into `within_edges`, and
   cohesion and scattering read those. The directed one is `binding_reference_edges`, one
   edge per reference from the unit that named it to the unit holding the definition,

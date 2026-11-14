@@ -106,6 +106,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrow, `isNames` and the function reading `SHAPE` shared no binding, and a file holding
   a table of checks split into one concern per entry. A new `@binder` capture names the
   declaration, and what its value holds now joins the units that read the name.
+- `:low_cohesion` links TypeScript units through a shared type alias or type import. The
+  scopes query bound `interface` names alone, so four functions taking one imported type
+  shared no binding and the file split into four concerns. A `type X = ...` alias is now
+  a definition, exported like an interface, and a type-only import (`import type { X }`,
+  `import { type X }`) binds its name for cohesion while each use stays a cross-file
+  reference. A value import still links nothing.
 - `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
   Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
   decorator, a Rust attribute. A framework calls these by registration, so nothing in the

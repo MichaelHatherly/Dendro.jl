@@ -49,7 +49,8 @@ end
 
 # The scope, definition, and reference nodes a scopes query tags over one tree. The
 # binding resolver and the corpus symbol table both read it, so the capture walk runs
-# once per consumer. `defhoist` and `defkinds` are parallel to `defnodes`.
+# once per consumer. `defhoist` and `defkinds` are parallel to `defnodes`. `importids`
+# holds the definitions of kind `:import`, a name bound here to a definition in another file.
 struct ScopeCaptures
     scopes::Vector{ScopeEntry}
     defnodes::Vector{TreeSitter.Node}
@@ -57,11 +58,12 @@ struct ScopeCaptures
     defkinds::Vector{Symbol}
     refnodes::Vector{TreeSitter.Node}
     defids::Set{NodeId}
+    importids::Set{NodeId}
 end
 
 # An empty captures set, the value a `QueryIndex` carries for a file with no scopes
 # query or no scope regions, so the field stays concretely typed rather than nullable.
-ScopeCaptures() = ScopeCaptures(ScopeEntry[], TreeSitter.Node[], Bool[], Symbol[], TreeSitter.Node[], Set{NodeId}())
+ScopeCaptures() = ScopeCaptures(ScopeEntry[], TreeSitter.Node[], Bool[], Symbol[], TreeSitter.Node[], Set{NodeId}(), Set{NodeId}())
 
 # Walk a scopes query's captures once: scope regions, name-introducing definitions
 # with their hoist flag and kind, and references. The second pass that assigns
@@ -74,6 +76,7 @@ function collect_scopes(tree::TreeSitter.Tree, query::TreeSitter.Query, source::
     defkinds = Symbol[]
     refnodes = TreeSitter.Node[]
     defids = Set{NodeId}()
+    importids = Set{NodeId}()
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)
         if name == "scope"
@@ -84,11 +87,13 @@ function collect_scopes(tree::TreeSitter.Tree, query::TreeSitter.Query, source::
         elseif !startswith(name, "_")  # an `@_` capture only feeds a predicate
             push!(defnodes, cap.node)
             push!(defhoist, is_hoisted(name))
-            push!(defkinds, def_kind(name))
+            kind = def_kind(name)
+            push!(defkinds, kind)
             push!(defids, nodeid(cap.node))
+            kind === :import && push!(importids, nodeid(cap.node))
         end
     end
-    return ScopeCaptures(scopes, defnodes, defhoist, defkinds, refnodes, defids)
+    return ScopeCaptures(scopes, defnodes, defhoist, defkinds, refnodes, defids, importids)
 end
 
 # Assign each definition to its owning scope, hoisting functions, types, and macros to
@@ -162,22 +167,27 @@ in-file definition it resolves to, running `query` (a language's scopes query) o
 `tree`. A definition is assigned to its scope, hoisted to the enclosing scope for
 functions, types, and macros so siblings resolve to it; each reference binds to the
 nearest enclosing definition of its name. References with no in-file definition are
-left unbound.
+left unbound. A reference resolving to an import goes into `imports` instead, since its
+definition lives in another file.
 """
 function resolve_bindings!(
         bindings::Dict{NodeId, NodeId}, tree::TreeSitter.Tree,
-        query::TreeSitter.Query, source::AbstractString
+        query::TreeSitter.Query, source::AbstractString,
+        imports::Dict{NodeId, NodeId} = Dict{NodeId, NodeId}()
     )
     caps = collect_scopes(tree, query, source)
     isempty(caps.scopes) && return bindings
     assign_defs!(caps, source)
-    return resolve_bindings!(bindings, caps, source)
+    return resolve_bindings!(bindings, caps, source, imports)
 end
 
 # Resolve references against an already-collected, scope-assigned captures set, the
 # path that reuses the cached `ScopeCaptures` on a `QueryIndex` so the capture walk and
 # scope assignment are not repeated.
-function resolve_bindings!(bindings::Dict{NodeId, NodeId}, caps::ScopeCaptures, source::AbstractString)
+function resolve_bindings!(
+        bindings::Dict{NodeId, NodeId}, caps::ScopeCaptures, source::AbstractString,
+        imports::Dict{NodeId, NodeId} = Dict{NodeId, NodeId}()
+    )
     sizehint!(bindings, length(caps.refnodes))
     for r in caps.refnodes
         rid = nodeid(r)
@@ -186,7 +196,8 @@ function resolve_bindings!(bindings::Dict{NodeId, NodeId}, caps::ScopeCaptures, 
         name = String(strip(TreeSitter.slice(source, r)))
         d = lookup_definition(caps.scopes, from, to, name)
         d === nothing && continue
-        bindings[rid] = nodeid(d)
+        did = nodeid(d)
+        did in caps.importids ? (imports[rid] = did) : (bindings[rid] = did)
     end
     return bindings
 end
