@@ -117,6 +117,18 @@ end
     @test !Fixtures.cohesive(:typescript, "import { quoted } from './q';\nexport function f(t: string) { return quoted(t); }\nexport function g(t: string) { return quoted(t) + 1; }\n")
 end
 
+@testitem "cluster_low_cohesion keeps a TypeScript type apart from a same-named value" setup = [Fixtures] tags = [:cohesion] begin
+    # A type and a value share a name in separate namespaces, so `Shape.check` reads the
+    # const whichever comes first, and the arrow it holds joins `valid`.
+    value = "const Shape = { check: (v: unknown) => typeof v === 'object' };\n"
+    type = "type Shape = { a: number };\n"
+    reader = "export function valid(v: unknown) { return Shape.check(v); }\n"
+    @test Fixtures.cohesive(:typescript, type * value * reader)
+    @test Fixtures.cohesive(:typescript, value * type * reader)
+    # One function reads the type and the other the value: two bindings, two concerns.
+    @test !Fixtures.cohesive(:typescript, "const Status = { A: 'a' };\ntype Status = 'a';\nexport function f(s: Status) { return s; }\nexport function g() { return Status.A; }\n")
+end
+
 @testitem "cluster_low_cohesion links Python methods through self" setup = [Fixtures] tags = [:cohesion] begin
     # A field `__init__` assigns is declared there; a write elsewhere is a use of it.
     @test Fixtures.cohesive(:python, "class Store:\n    def __init__(self):\n        self.count = 0\n    def bump(self):\n        self.count += 1\n    def reset(self):\n        self.count = 0\n")

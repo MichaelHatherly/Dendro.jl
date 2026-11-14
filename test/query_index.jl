@@ -58,11 +58,12 @@ end
         ]
     end
 
-    # A scopes query routes captures by name: `scope`, `reference`, or `definition.*`.
+    # A scopes query routes captures by name: `scope`, `reference`, `reference.type`, or
+    # `definition.*`.
     # Underscore captures are predicate helpers, never read. Any other capture mis-routes
     # silently in the resolver. Catch a typo here, for every language that ships a scopes
     # query.
-    fixed = Set{String}(["scope", "reference"])
+    fixed = Set{String}(["scope", "reference", "reference.type"])
     @testset "$lang" for lang in sort!(collect(keys(Dendro.PROFILES)))
         q = Dendro.scopes_query_for(lang)
         q === nothing && continue

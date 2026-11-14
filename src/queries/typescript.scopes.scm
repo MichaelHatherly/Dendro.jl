@@ -4,7 +4,10 @@
 ; reference resolves; a class body or object literal is a scope so its methods hoist
 ; into it, where `this.name` finds them, and never reach file scope as definitions.
 ; A field binds in the class body too, so methods sharing `this.field` link. Other
-; parameters are not captured: they form no cross-function cohesion edge.
+; parameters are not captured: they form no cross-function cohesion edge. Types and
+; values are separate namespaces: an interface, alias, or type import is a
+; @definition.type.<kind>, and a @reference.type in a type position looks there before
+; the values, where a class declares its type.
 
 ; --- Scope regions ---
 (program) @scope
@@ -22,18 +25,18 @@
 
 ; --- Type names (hoisted) ---
 (class_declaration name: (type_identifier) @definition.class)
-(interface_declaration name: (type_identifier) @definition.struct)
-(type_alias_declaration name: (type_identifier) @definition.struct)
+(interface_declaration name: (type_identifier) @definition.type.struct)
+(type_alias_declaration name: (type_identifier) @definition.type.struct)
 
 ; --- Type imports ---
 ; A type import names a type defined in another file. Units sharing it link within the
 ; file, and its uses stay cross-file references. A value import is a shared utility, not
 ; a shared concern, so it binds nothing.
-(import_statement "type" (import_clause (identifier) @definition.import))
-(import_statement "type" (import_clause (named_imports (import_specifier !alias name: (identifier) @definition.import))))
-(import_statement "type" (import_clause (named_imports (import_specifier alias: (identifier) @definition.import))))
-(import_specifier "type" !alias name: (identifier) @definition.import)
-(import_specifier "type" alias: (identifier) @definition.import)
+(import_statement "type" (import_clause (identifier) @definition.type.import))
+(import_statement "type" (import_clause (named_imports (import_specifier !alias name: (identifier) @definition.type.import))))
+(import_statement "type" (import_clause (named_imports (import_specifier alias: (identifier) @definition.type.import))))
+(import_specifier "type" !alias name: (identifier) @definition.type.import)
+(import_specifier "type" alias: (identifier) @definition.type.import)
 
 ; --- Fields ---
 ; A declared field binds in the class body directly. A parameter property
@@ -49,7 +52,8 @@
 (variable_declarator name: (identifier) @definition.local)
 
 ; --- References ---
-[(identifier) (type_identifier) (property_identifier)] @reference
+[(identifier) (property_identifier)] @reference
+(type_identifier) @reference.type
 
 ; A shorthand property (`{ name }`) reads the variable it names, so it is a use.
 (shorthand_property_identifier) @reference

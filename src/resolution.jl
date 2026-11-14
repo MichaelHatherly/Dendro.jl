@@ -75,12 +75,12 @@ function unbound_references(file::ParsedFile)
     uranges = Tuple{Int, Int}[unit_span(u) for u in units]
     access = get(MODULE_ACCESS, file.language, nothing)
     refs = UnboundRef[]
-    for r in caps.refnodes
+    for (i, r) in enumerate(caps.refnodes)
         rid = nodeid(r)
         rid in caps.defids && !(rid in caps.importids) && continue
         from, to = TreeSitter.byte_range(r)
         name = String(strip(TreeSitter.slice(file.source, r)))
-        d = lookup_definition(caps.scopes, from, to, name)
+        d = lookup_definition(caps.scopes, from, to, name, caps.reftype[i])
         d === nothing || nodeid(d) in caps.importids || continue
         resolved = reference_name(r, file.source, access, name)
         push!(refs, UnboundRef(rid, resolved, containing_callable(file.index, uranges, from, to)))

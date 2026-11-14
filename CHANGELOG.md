@@ -112,6 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a definition, exported like an interface, and a type-only import (`import type { X }`,
   `import { type X }`) binds its name for cohesion while each use stays a cross-file
   reference. A value import still links nothing.
+- TypeScript types and values bind in separate namespaces. With `type Status` and
+  `const Status` in one file, every use bound to whichever came first, so the const's
+  readers could link to the type's and miss the callables the const holds.
 - An exported TypeScript type alias is a corpus symbol, as an interface is. A reference
   to one from another file now resolves, so it reaches `:unreferenced` reachability and
   adds weight to the file and module graphs that `:back_edge`, `:hub`, `:misplaced`, and

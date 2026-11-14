@@ -326,8 +326,8 @@
 # constructor on `ModuleRegion`, as `ScopeEntry` carries, then removed all four of its
 # field conversions.
 #
-# The per-function token floor on `:unnatural` raised sound from 1398 to 1400, opt
-# unchanged. One report is the `min_unit_tokens` keyword's `getfield` lowering, the kind
+# The per-function token floor on `:unnatural` raised sound from 1398 to 1400 under Julia
+# 1.12 and to 1401 under 1.13.3, opt unchanged. One report is the `min_unit_tokens` keyword's `getfield` lowering, the kind
 # every `cluster_*` keyword adds. The other comes from moving the corpus-token check out
 # of `unnatural_in_language!`, which kept that function at five parameters: inline in
 # `cluster_unnatural`'s keyword body, sound mode analysed it twice (1401), and the
@@ -335,8 +335,12 @@
 # annotation on the helper traded that report for a `convert` and a `typeassert`, and
 # was reverted. The `@arm`/`@multiway` captures and `bound_callables` added none.
 #
-# Filing references to a TypeScript type import in their own `imports` map lowered sound
-# from 1400 to 1398, opt unchanged.
+# Measured under 1.13.3, which matches CI's 1.13.4 on the commits both ran: `definition_owner`
+# took one away (1400), the `importids` field on `ScopeCaptures` added one (1401), and the
+# `deftype` and `reftype` fields of the TypeScript type namespace two more (1403). Each was a
+# field `convert` in the default constructor. A zero-argument inner constructor that
+# `collect_scopes` fills in place removed all nine of them (1394), opt unchanged; a typed
+# nine-argument one did the same but tripped the dogfood `parameter_count` floor.
 #
 # The count is stable under the order this file runs, basic mode then sound. Repeated runs
 # over an identical tree return 1379 every time, and dumping every report gives a
@@ -350,7 +354,7 @@ using Dendro
 using JET
 using Test
 
-const SOUND_LIMIT = 1398  # JET.report_package(Dendro; mode = :sound).
+const SOUND_LIMIT = 1394  # JET.report_package(Dendro; mode = :sound).
 const OPT_LIMIT = 34      # JET.report_opt on analyze(::String), scoped to Dendro
 
 @testset "JET" begin

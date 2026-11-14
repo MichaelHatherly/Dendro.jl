@@ -1110,7 +1110,10 @@ its name, hoisting function, type, class, and macro names to the enclosing scope
 sibling reference resolves to them. Linking on a resolved binding rather than a
 shared identifier string is what drops the `x`/`i`/`T` and imported-name noise a
 string graph carries: a local in one function and a same-named local in another are
-different bindings, and an external name resolves to nothing.
+different bindings, and an external name resolves to nothing. A language with a separate
+type namespace tags its type definitions `@definition.type.<kind>` and type-position uses
+`@reference.type`; `ScopeEntry.types` holds the first, and `lookup_definition` reads it
+before the values for the second, so a TypeScript alias and a same-named const stay apart.
 
 The unit graph is the corpus graph's within view. `binding_groups` (`graph_edges.jl`)
 reads `index.bindings`: two units link when they reference a common file-local binding,
