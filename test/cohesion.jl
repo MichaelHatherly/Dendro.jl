@@ -98,6 +98,10 @@ end
     # A table nothing reads stays apart from the function beside it.
     unread = "const isNames = (v: any) => Array.isArray(v);\nconst SHAPE = { order: isNames };\nexport function check(saved: any) { return saved; }\n"
     @test !Fixtures.cohesive(:typescript, unread)
+
+    # Nothing reads `api`, so its unrelated members stay apart, as a class's would.
+    @test !Fixtures.cohesive(:typescript, "export const api = { load(id: string) { return id; }, save(x: number) { return x; } };\n")
+    @test !Fixtures.cohesive(:javascript, "export const Store = class { a() { return 1; } b() { return 2; } };\n")
 end
 
 @testitem "cluster_low_cohesion links TypeScript units through a shared type" setup = [Fixtures] tags = [:cohesion] begin

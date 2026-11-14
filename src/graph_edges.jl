@@ -130,7 +130,7 @@ function binding_groups(index::QueryIndex, ubiquity::Float64)
         push!(get!(() -> Int[], groups, defid), ui)
     end
     held, held_by = binder_contents(index, ranges, bound)
-    out = copy(held)
+    out = Vector{Int}[]
     threshold = ubiquity * n
     for (defid, members) in groups
         length(unique(members)) > threshold && continue
