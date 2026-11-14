@@ -13,6 +13,11 @@
 [(if_statement) (for_statement) (for_in_statement) (while_statement)
  (do_statement) (switch_case) (ternary_expression) (catch_clause)] @decision
 
+; Cognitive complexity charges a multi-way branch once, at its @multiway construct,
+; and nothing at the @arm cases cyclomatic counts as @decision paths.
+(switch_case) @arm
+(switch_statement) @multiway
+
 [(if_statement) (for_statement) (for_in_statement) (while_statement)
  (do_statement) (switch_statement) (try_statement)] @nesting
 
@@ -51,11 +56,17 @@
 (identifier) @name
 
 ; Name a unit by its defining name, not the first identifier the lexical scan
-; reaches: an arrow callback is otherwise labelled by its first parameter. A bare
-; anonymous arrow stays unnamed.
+; reaches: an arrow callback or function expression is otherwise labelled by its first
+; parameter. A bare anonymous arrow stays unnamed. A bound name sits in the declarator,
+; outside the callable, and the binding passes read it as the definition of that unit.
 (function_declaration name: (identifier) @def_name)
 (method_definition name: (property_identifier) @def_name)
-(variable_declarator name: (identifier) @def_name value: (arrow_function))
+(variable_declarator name: (identifier) @def_name
+  value: [(arrow_function) (function_expression)])
+
+; A name bound to a value. Cohesion reads what the value holds as the name's, since the
+; value is no unit of its own.
+(variable_declarator name: (identifier) value: (_)) @binder
 
 (return_statement) @return
 

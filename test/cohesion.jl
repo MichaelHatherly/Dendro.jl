@@ -73,6 +73,62 @@ end
     @test !Fixtures.cohesive(:javascript, "class Pair {\n  a = 0;\n  b = 0;\n  getA() { return this.a; }\n  getB() { return this.b; }\n}\n")
 end
 
+@testitem "cluster_low_cohesion links a callable bound to a name to its callers" setup = [Fixtures] tags = [:cohesion] begin
+    # `const f = () => ...` binds the name in the declarator beside the arrow, outside the
+    # callable's own span, so the definition still belongs to the unit it names.
+    @test Fixtures.cohesive(:typescript, "const quoted = (t: string) => t.trim();\nexport const literal = (t: string) => quoted(t);\n")
+    @test Fixtures.cohesive(:javascript, "const quoted = (t) => t.trim();\nexport const literal = (t) => quoted(t);\n")
+    @test Fixtures.cohesive(:typescript, "const quoted = function (t: string) { return t; };\nexport const literal = (t: string) => quoted(t);\n")
+    @test Fixtures.cohesive(:javascript, "const quoted = function (t) { return t; };\nexport const literal = (t) => quoted(t);\n")
+    @test !Fixtures.cohesive(:typescript, "const quoted = (t: string) => t;\nexport const literal = (t: string) => t;\n")
+end
+
+@testitem "cluster_low_cohesion links a value's callables to the units that read its name" setup = [Fixtures] tags = [:cohesion] begin
+    # `SHAPE` is no unit, so the arrows its initialiser holds and the helpers it names
+    # belong to it, and through its name to the function that reads the table.
+    table(typed) = """
+    const isNumber = (v$(typed)) => typeof v === 'number';
+    const isNames = (v$(typed)) => Array.isArray(v);
+    const SHAPE = { order: isNames, sizes: (v$(typed)) => Object.values(v).every(isNumber) };
+    export function check(saved$(typed)) { return Object.entries(SHAPE).every(([k, fits]) => fits(saved[k])); }
+    """
+    @test Fixtures.cohesive(:typescript, table(": any"))
+    @test Fixtures.cohesive(:javascript, table(""))
+
+    # A table nothing reads stays apart from the function beside it.
+    unread = "const isNames = (v: any) => Array.isArray(v);\nconst SHAPE = { order: isNames };\nexport function check(saved: any) { return saved; }\n"
+    @test !Fixtures.cohesive(:typescript, unread)
+
+    # Nothing reads `api`, so its unrelated members stay apart, as a class's would.
+    @test !Fixtures.cohesive(:typescript, "export const api = { load(id: string) { return id; }, save(x: number) { return x; } };\n")
+    @test !Fixtures.cohesive(:javascript, "export const Store = class { a() { return 1; } b() { return 2; } };\n")
+end
+
+@testitem "cluster_low_cohesion links TypeScript units through a shared type" setup = [Fixtures] tags = [:cohesion] begin
+    uses(type) = "export function f(r: $type) { return r.a; }\nexport function g(r: $type) { return r.a + 1; }\n"
+    @test Fixtures.cohesive(:typescript, "type Row = { a: number };\n" * uses("Row"))
+    @test Fixtures.cohesive(:typescript, "import type { Row } from './rows';\n" * uses("Row"))
+    @test Fixtures.cohesive(:typescript, "import { type Row } from './rows';\n" * uses("Row"))
+    @test Fixtures.cohesive(:typescript, "import type { Base as Row } from './rows';\n" * uses("Row"))
+    @test Fixtures.cohesive(:typescript, "import type Row from './rows';\n" * uses("Row"))
+    # A type alias declared inside a function binds there, so a same-named one elsewhere is apart.
+    @test !Fixtures.cohesive(:typescript, "function f() { type Opts = { a: number }; const x: Opts = { a: 1 }; return x.a; }\nfunction g() { type Opts = { b: string }; const y: Opts = { b: '' }; return y.b; }\n")
+    # An imported value is a shared utility, not a shared concern, so it links nothing.
+    @test !Fixtures.cohesive(:typescript, "import { quoted } from './q';\nexport function f(t: string) { return quoted(t); }\nexport function g(t: string) { return quoted(t) + 1; }\n")
+end
+
+@testitem "cluster_low_cohesion keeps a TypeScript type apart from a same-named value" setup = [Fixtures] tags = [:cohesion] begin
+    # A type and a value share a name in separate namespaces, so `Shape.check` reads the
+    # const whichever comes first, and the arrow it holds joins `valid`.
+    value = "const Shape = { check: (v: unknown) => typeof v === 'object' };\n"
+    type = "type Shape = { a: number };\n"
+    reader = "export function valid(v: unknown) { return Shape.check(v); }\n"
+    @test Fixtures.cohesive(:typescript, type * value * reader)
+    @test Fixtures.cohesive(:typescript, value * type * reader)
+    # One function reads the type and the other the value: two bindings, two concerns.
+    @test !Fixtures.cohesive(:typescript, "const Status = { A: 'a' };\ntype Status = 'a';\nexport function f(s: Status) { return s; }\nexport function g() { return Status.A; }\n")
+end
+
 @testitem "cluster_low_cohesion links Python methods through self" setup = [Fixtures] tags = [:cohesion] begin
     # A field `__init__` assigns is declared there; a write elsewhere is a use of it.
     @test Fixtures.cohesive(:python, "class Store:\n    def __init__(self):\n        self.count = 0\n    def bump(self):\n        self.count += 1\n    def reset(self):\n        self.count = 0\n")

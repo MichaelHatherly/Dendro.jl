@@ -72,11 +72,11 @@ PatternBucket() = PatternBucket(Concept(), Concept())
 # this set.
 # dendro-ignore: unreferenced
 const CONCEPT_NAMES = (
-    :short_function, :decision, :continuation, :nesting, :short_circuit,
+    :short_function, :decision, :continuation, :arm, :multiway, :nesting, :short_circuit,
     :parameter, :body, :catch, :comment, :name, :trivial_body, :return,
     :finally, :call, :binary_expr, :conditional, :terminal, :operator,
     :loop, :switch, :ternary, :try, :case, :def_name, :init, :requires_body,
-    :parameter_name, :broad_catch, :callee, :toplevel, :declaration,
+    :parameter_name, :broad_catch, :callee, :toplevel, :declaration, :binder,
 )
 
 """
@@ -98,6 +98,12 @@ struct QueryIndex
     short_function::Concept
     decision::Concept
     continuation::Concept
+    # A decision that is one arm of a multi-way branch (a switch case, a match arm, a
+    # `when`), co-tagged `@decision`: cyclomatic counts each arm as a path, while cognitive
+    # complexity scores none of them and charges their `multiway` construct once instead.
+    arm::Concept
+    # The multi-way branch construct holding the `arm`s: a switch, a match, a `case`.
+    multiway::Concept
     nesting::Concept
     short_circuit::Concept
     parameter::Concept
@@ -151,6 +157,10 @@ struct QueryIndex
     # A run of top-level code breaks at one, the way it breaks at a callable definition,
     # so a declaration is never folded into the code around it.
     declaration::Concept
+    # A declaration binding a name to a value, such as `const SHAPE = {...}`. The value is no
+    # unit, so cohesion gives what it holds to the units that read the name. Empty for a
+    # language whose query tags none.
+    binder::Concept
     # Capture name to its concept, the same `Concept` objects the fields hold, so
     # `dispatch!` routes by name without a branch per concept. The reserved-word
     # captures (`catch`, `return`, `finally`, `try`) key to the `_clause`/`_stmt`
@@ -166,6 +176,9 @@ struct QueryIndex
     # Each reference identifier's identity mapped to the in-file definition it
     # resolves to, filled by `resolve_bindings!` when a scopes query is supplied.
     bindings::Dict{NodeId, NodeId}
+    # Each reference identifier's identity mapped to the import naming it, a definition
+    # in another file. Kept apart from `bindings` so only cohesion reads it.
+    imports::Dict{NodeId, NodeId}
     # What each declared pattern rule matched in this tree, keyed by rule name and filled
     # by `index_patterns!` from a second query. Empty for a project that declares none, so
     # the whole feature costs an unconfigured scan nothing. Kept separate from the concept
@@ -180,6 +193,7 @@ struct QueryIndex
 
     function QueryIndex(language::Symbol, source::String, scope_captures::ScopeCaptures = ScopeCaptures())
         short_function, decision, continuation, nesting = Concept(), Concept(), Concept(), Concept()
+        arm, multiway = Concept(), Concept()
         short_circuit, parameter, body, catch_clause = Concept(), Concept(), Concept(), Concept()
         comment, name, trivial_body, return_stmt = Concept(), Concept(), Concept(), Concept()
         finally_clause, call, binary_expr, conditional = Concept(), Concept(), Concept(), Concept()
@@ -187,10 +201,11 @@ struct QueryIndex
         ternary, try_stmt, case = Concept(), Concept(), Concept()
         def_name, init, requires_body, parameter_name = Concept(), Concept(), Concept(), Concept()
         broad_catch, callee = Concept(), Concept()
-        toplevel, declaration = Concept(), Concept()
+        toplevel, declaration, binder = Concept(), Concept(), Concept()
         by_name = Dict{String, Concept}(
             "short_function" => short_function, "decision" => decision,
-            "continuation" => continuation, "nesting" => nesting,
+            "continuation" => continuation, "arm" => arm, "multiway" => multiway,
+            "nesting" => nesting,
             "short_circuit" => short_circuit, "parameter" => parameter,
             "body" => body, "catch" => catch_clause, "comment" => comment,
             "name" => name, "trivial_body" => trivial_body, "return" => return_stmt,
@@ -200,16 +215,16 @@ struct QueryIndex
             "case" => case, "def_name" => def_name, "init" => init,
             "requires_body" => requires_body, "parameter_name" => parameter_name,
             "broad_catch" => broad_catch, "callee" => callee,
-            "toplevel" => toplevel, "declaration" => declaration,
+            "toplevel" => toplevel, "declaration" => declaration, "binder" => binder,
         )
         return new(
             language, source, Unit[], Set{NodeId}(),
-            short_function, decision, continuation, nesting, short_circuit, parameter,
+            short_function, decision, continuation, arm, multiway, nesting, short_circuit, parameter,
             body, catch_clause, comment, name, trivial_body, return_stmt, finally_clause,
             call, binary_expr, conditional, terminal, operator, loop, switch, ternary,
             try_stmt, case, def_name, init, requires_body, parameter_name, broad_catch,
-            callee, toplevel, declaration, by_name, Dict{NodeId, TreeSitter.Node}(),
-            Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
+            callee, toplevel, declaration, binder, by_name, Dict{NodeId, TreeSitter.Node}(),
+            Dict{NodeId, NodeId}(), Dict{NodeId, NodeId}(), Dict{Symbol, PatternBucket}(),
             scope_captures,
         )
     end
@@ -275,7 +290,7 @@ function build_index(
     end
     append_toplevel_units!(idx)
     index_def_name_parents!(idx)
-    (!bindings || isempty(caps.scopes)) || resolve_bindings!(idx.bindings, caps, source)
+    (!bindings || isempty(caps.scopes)) || resolve_bindings!(idx.bindings, caps, source, idx.imports)
     return idx
 end
 

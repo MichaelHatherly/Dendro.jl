@@ -8,14 +8,16 @@
 # costs nothing here.
 
 # A scope region: its byte span and the definitions introduced directly in it,
-# keyed by name text.
+# keyed by name text. `types` holds those in a language's separate type namespace, a
+# TypeScript interface beside a same-named const, and stays empty where there is none.
 struct ScopeEntry
     from::Int
     to::Int
     defs::Dict{String, TreeSitter.Node}
+    types::Dict{String, TreeSitter.Node}
     # Typed constructor so the only method takes concrete arguments: the default
     # `Any`-accepting one would convert each field, which reads as a possible throw.
-    ScopeEntry(from::Int, to::Int, defs::Dict{String, TreeSitter.Node}) = new(from, to, defs)
+    ScopeEntry(from::Int, to::Int) = new(from, to, Dict{String, TreeSitter.Node}(), Dict{String, TreeSitter.Node}())
 end
 
 # Definition kinds whose name binds in the enclosing scope, not their own. A
@@ -49,46 +51,54 @@ end
 
 # The scope, definition, and reference nodes a scopes query tags over one tree. The
 # binding resolver and the corpus symbol table both read it, so the capture walk runs
-# once per consumer. `defhoist` and `defkinds` are parallel to `defnodes`.
+# once per consumer. `defhoist`, `defkinds` and `deftype` are parallel to `defnodes`,
+# `reftype` to `refnodes`: a `@definition.type.<kind>` lives in the type namespace and a
+# `@reference.type` sits in a type position. `importids` holds the definitions of kind
+# `:import`, a name bound here to a definition in another file.
 struct ScopeCaptures
     scopes::Vector{ScopeEntry}
     defnodes::Vector{TreeSitter.Node}
     defhoist::Vector{Bool}
     defkinds::Vector{Symbol}
+    deftype::Vector{Bool}
     refnodes::Vector{TreeSitter.Node}
+    reftype::Vector{Bool}
     defids::Set{NodeId}
+    importids::Set{NodeId}
+    # An empty captures set, filled in place by `collect_scopes`, and the value a
+    # `QueryIndex` carries for a file with no scopes query or no scope regions. Taking no
+    # arguments, it converts none, where the default constructor converts every field.
+    ScopeCaptures() = new(
+        ScopeEntry[], TreeSitter.Node[], Bool[], Symbol[], Bool[], TreeSitter.Node[], Bool[],
+        Set{NodeId}(), Set{NodeId}(),
+    )
 end
-
-# An empty captures set, the value a `QueryIndex` carries for a file with no scopes
-# query or no scope regions, so the field stays concretely typed rather than nullable.
-ScopeCaptures() = ScopeCaptures(ScopeEntry[], TreeSitter.Node[], Bool[], Symbol[], TreeSitter.Node[], Set{NodeId}())
 
 # Walk a scopes query's captures once: scope regions, name-introducing definitions
 # with their hoist flag and kind, and references. The second pass that assigns
 # definitions to scopes lives in `assign_defs!`, since the symbol table places them
 # differently.
 function collect_scopes(tree::TreeSitter.Tree, query::TreeSitter.Query, source::AbstractString)
-    scopes = ScopeEntry[]
-    defnodes = TreeSitter.Node[]
-    defhoist = Bool[]
-    defkinds = Symbol[]
-    refnodes = TreeSitter.Node[]
-    defids = Set{NodeId}()
+    caps = ScopeCaptures()
     for cap in TreeSitter.each_capture(tree, query, source)
         name = TreeSitter.capture_name(query, cap)
         if name == "scope"
             from, to = TreeSitter.byte_range(cap.node)
-            push!(scopes, ScopeEntry(from, to, Dict{String, TreeSitter.Node}()))
-        elseif name == "reference"
-            push!(refnodes, cap.node)
+            push!(caps.scopes, ScopeEntry(from, to))
+        elseif name == "reference" || name == "reference.type"
+            push!(caps.refnodes, cap.node)
+            push!(caps.reftype, name == "reference.type")
         elseif !startswith(name, "_")  # an `@_` capture only feeds a predicate
-            push!(defnodes, cap.node)
-            push!(defhoist, is_hoisted(name))
-            push!(defkinds, def_kind(name))
-            push!(defids, nodeid(cap.node))
+            push!(caps.defnodes, cap.node)
+            push!(caps.defhoist, is_hoisted(name))
+            kind = def_kind(name)
+            push!(caps.defkinds, kind)
+            push!(caps.deftype, startswith(name, "definition.type."))
+            push!(caps.defids, nodeid(cap.node))
+            kind === :import && push!(caps.importids, nodeid(cap.node))
         end
     end
-    return ScopeCaptures(scopes, defnodes, defhoist, defkinds, refnodes, defids)
+    return caps
 end
 
 # Assign each definition to its owning scope, hoisting functions, types, and macros to
@@ -99,7 +109,7 @@ function assign_defs!(caps::ScopeCaptures, source::AbstractString)
         owner = owning_scope(caps.scopes, from, to, caps.defhoist[i])
         owner === nothing && continue
         name = String(strip(TreeSitter.slice(source, d)))
-        get!(owner.defs, name, d)
+        get!(caps.deftype[i] ? owner.types : owner.defs, name, d)
     end
     return caps
 end
@@ -138,15 +148,24 @@ end
 
 # The definition a reference at `[from,to]` resolves to: the nearest enclosing scope
 # that defines `name`, by smallest containing span, or `nothing` for a free name with
-# no in-file definition (an import, a builtin).
-function lookup_definition(scopes::Vector{ScopeEntry}, from::Int, to::Int, name::AbstractString)
+# no in-file definition (an import, a builtin). A reference in a type position tries the
+# type namespace first and falls back to the values, where a class declares its type.
+function lookup_definition(scopes::Vector{ScopeEntry}, from::Int, to::Int, name::AbstractString, type::Bool = false)
+    if type
+        d = nearest_definition(scopes, from, to, name, true)
+        d === nothing || return d
+    end
+    return nearest_definition(scopes, from, to, name, false)
+end
+
+function nearest_definition(scopes::Vector{ScopeEntry}, from::Int, to::Int, name::AbstractString, types::Bool)
     best = nothing
     best_span = typemax(Int)
     for s in scopes
         (s.from <= from && to <= s.to) || continue
         span = s.to - s.from
         span < best_span || continue
-        d = get(s.defs, name, nothing)
+        d = get(types ? s.types : s.defs, name, nothing)
         d === nothing && continue
         best = d
         best_span = span
@@ -162,31 +181,37 @@ in-file definition it resolves to, running `query` (a language's scopes query) o
 `tree`. A definition is assigned to its scope, hoisted to the enclosing scope for
 functions, types, and macros so siblings resolve to it; each reference binds to the
 nearest enclosing definition of its name. References with no in-file definition are
-left unbound.
+left unbound. A reference resolving to an import goes into `imports` instead, since its
+definition lives in another file.
 """
 function resolve_bindings!(
         bindings::Dict{NodeId, NodeId}, tree::TreeSitter.Tree,
-        query::TreeSitter.Query, source::AbstractString
+        query::TreeSitter.Query, source::AbstractString,
+        imports::Dict{NodeId, NodeId} = Dict{NodeId, NodeId}()
     )
     caps = collect_scopes(tree, query, source)
     isempty(caps.scopes) && return bindings
     assign_defs!(caps, source)
-    return resolve_bindings!(bindings, caps, source)
+    return resolve_bindings!(bindings, caps, source, imports)
 end
 
 # Resolve references against an already-collected, scope-assigned captures set, the
 # path that reuses the cached `ScopeCaptures` on a `QueryIndex` so the capture walk and
 # scope assignment are not repeated.
-function resolve_bindings!(bindings::Dict{NodeId, NodeId}, caps::ScopeCaptures, source::AbstractString)
+function resolve_bindings!(
+        bindings::Dict{NodeId, NodeId}, caps::ScopeCaptures, source::AbstractString,
+        imports::Dict{NodeId, NodeId} = Dict{NodeId, NodeId}()
+    )
     sizehint!(bindings, length(caps.refnodes))
-    for r in caps.refnodes
+    for (i, r) in enumerate(caps.refnodes)
         rid = nodeid(r)
         rid in caps.defids && continue
         from, to = TreeSitter.byte_range(r)
         name = String(strip(TreeSitter.slice(source, r)))
-        d = lookup_definition(caps.scopes, from, to, name)
+        d = lookup_definition(caps.scopes, from, to, name, caps.reftype[i])
         d === nothing && continue
-        bindings[rid] = nodeid(d)
+        did = nodeid(d)
+        did in caps.importids ? (imports[rid] = did) : (bindings[rid] = did)
     end
     return bindings
 end

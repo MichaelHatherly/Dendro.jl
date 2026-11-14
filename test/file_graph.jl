@@ -207,3 +207,16 @@ end
     @test fg.first_line == [1]
     @test isempty(fg.edges)
 end
+
+@testitem "file graph counts a reference to an exported TypeScript type alias" setup = [Fixtures] tags = [:file_graph] begin
+    a = Fixtures.parsedfile(:typescript, "export type Row = { a: number };\n"; file = "src/a.ts")
+    b = Fixtures.parsedfile(:typescript, "import type { Row } from './a';\nexport function f(r: Row) { return r.a; }\n"; file = "src/b.ts")
+    files = [a, b]
+    table = Dendro.corpus_symbols(files)
+    fg = Dendro.build_file_graph(files, table, Dendro.Corpus(files))
+
+    # The import's own name and the parameter's type both cross to `a.ts`.
+    edge = fg.edges[(fg.index["src/b.ts"], fg.index["src/a.ts"])]
+    @test edge.weight == 2
+    @test edge.names == ["Row"]
+end

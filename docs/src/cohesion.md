@@ -15,7 +15,7 @@ is reached at all. The level above, files depending on files, is
 [`analyze`](@ref) reports files whose functions split into independent concerns, as
 `:low_cohesion`. It builds a graph of a file's functions and links two when they
 reference a common file-local name, a helper, type, or constant defined in the same
-file. A file that breaks into several disconnected components holds that many
+file, or a TypeScript type the file imports. A file that breaks into several disconnected components holds that many
 concerns living together, the LCOM4 reading of low cohesion. The finding's value is
 the component count, and its locations are one representative function per component:
 
@@ -29,7 +29,7 @@ To link on the name's binding rather than the bare string, Dendro resolves each
 reference to the definition it refers to within the file (tree-sitter `locals`-style
 scopes, `src/queries/<lang>.scopes.scm`). This drops the noise a string graph
 carries: a local `x` in one function and a same-named `x` in another are different
-bindings, and an imported or builtin name resolves to nothing. A binding referenced
+bindings, and an imported value or builtin name resolves to nothing. A binding referenced
 by most of the file's functions is a cross-cutting utility, not a shared concern, and
 links nothing. Reported with both scores, the absolute band on the component count
 and the corpus percentile.
@@ -46,7 +46,8 @@ receiver: `this.x` in TypeScript, JavaScript, Java, and C++, `self.x` in Python 
 `$this->x` in PHP, and `@x` in Ruby. Python and Ruby declare no fields, so the
 assignments in `__init__` and `initialize` declare them, and an assignment in another
 method is a use. A closure or callback is part of the callable enclosing it, so a call
-made inside one links its enclosing method. The resolution is still lexical: a field
+made inside one links its enclosing method. A callable bound to a name, `const f = () =>
+...` in TypeScript or JavaScript, owns that name, so its callers link to it. The resolution is still lexical: a field
 matches by name within the class body, never by the receiver's type, so a Rust field is
 read only through `self`, where `other.x` on another value would conflate types, and Go
 is left out, since its receiver is an ordinary named parameter. A constructor that

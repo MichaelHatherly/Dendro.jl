@@ -9,6 +9,11 @@
 [(if_statement) (elif_clause) (for_statement) (while_statement)
  (case_item)] @decision
 
+; Cognitive complexity charges a multi-way branch once, at its @multiway construct,
+; and nothing at the @arm cases cyclomatic counts as @decision paths.
+(case_item) @arm
+(case_statement) @multiway
+
 (elif_clause) @continuation
 
 [(if_statement) (for_statement) (while_statement) (case_statement)] @nesting

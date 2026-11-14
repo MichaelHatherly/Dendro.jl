@@ -445,7 +445,9 @@ A structural reading of how hard a function is to follow, after SonarSource's
 Cognitive Complexity. Each decision point adds one plus the nesting it sits under,
 so a branch three levels deep costs more than a flat one of the same cyclomatic
 count. An else-if continuation adds a flat one instead, since it reads at the same
-level as the `if` it extends. Each maximal run of one short-circuit operator adds
+level as the `if` it extends. A multi-way branch (a switch, a match) adds one plus its
+nesting for the whole construct and nothing per case, as SonarSource scores it; cyclomatic
+still counts each case as a path. Each maximal run of one short-circuit operator adds
 one; an operator change starts a new run.
 """
 cognitive_complexity(node::TreeSitter.Node, index::QueryIndex) =
@@ -455,10 +457,12 @@ cognitive_complexity(node::TreeSitter.Node, index::QueryIndex) =
 cognitive_complexity(u::Unit, index::QueryIndex) = fold_run(cognitive_complexity, +, u, index)
 
 # A decision adds one plus its enclosing nesting; an else-if continuation adds a flat
-# one; a nesting construct deepens the context for its children.
+# one; a multi-way branch is charged at its construct and never at its arms; a nesting
+# construct deepens the context for its children.
 function cognitive_step(node::TreeSitter.Node, index::QueryIndex, nesting::Int)
     score = node in index.continuation ? 1 :
-        node in index.decision ? 1 + nesting : 0
+        node in index.arm ? 0 :
+        (node in index.decision || node in index.multiway) ? 1 + nesting : 0
     child_nesting = node in index.nesting ? nesting + 1 : nesting
     return score, child_nesting
 end

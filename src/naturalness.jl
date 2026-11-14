@@ -15,6 +15,13 @@ const LAPLACE_ALPHA = 1.0
 # file falls below it and reports nothing, as percentile scoring does on a thin corpus.
 const MIN_CORPUS_TOKENS = 1000
 
+# A function needs this many tokens before its own score means anything. Its score is a
+# mean, so a one-liner's rides on a few trigrams, and the shortest functions fill both the
+# band and the top percentile on that noise alone. Over ten corpora in five languages, 26
+# of the 28 functions at or above the warn band had fewer than 30 tokens. A shorter
+# function still trains the model; it is only left unscored and unranked.
+const MIN_UNIT_TOKENS = 30
+
 # Interpolation weight on the global model against the per-file cache, `P = λ·P_global
 # + (1-λ)·P_cache`. Code is locally repetitive (Tu et al., "On the Localness of
 # Software"), so a function read against its own file's idiom stands out only when it
@@ -193,20 +200,24 @@ function file_caches(units::Vector{NaturalnessUnit})
     return Dict{String, NGramModel}(zip(order, models))
 end
 
+# True when a language's units hold too few tokens to train a model worth ranking against.
+thin_corpus(units::Vector{NaturalnessUnit}, min_tokens::Integer) =
+    sum(length(u.tokens) for u in units; init = 0) < min_tokens
+
 # Naturalness findings for one language's units, scored against a global model
-# interpolated with each unit's file cache. Skipped when the corpus is too thin to
-# rank against.
+# interpolated with each unit's file cache. Every unit trains the model; only those of at
+# least `min_unit_tokens` tokens are scored and ranked.
 function unnatural_in_language!(
         findings::Vector{Finding}, units::Vector{NaturalnessUnit},
-        band::Tuple{Int, Int}, cut::Real, min_tokens::Integer
+        band::Tuple{Int, Int}, cut::Real, min_unit_tokens::Integer
     )
-    sum(length(u.tokens) for u in units; init = 0) < min_tokens && return findings
     global_model = build_model([u.tokens for u in units])
     caches = file_caches(units)
+    scored = filter(u -> length(u.tokens) >= min_unit_tokens, units)
     # Scoring each unit is independent, so it fans out into the preallocated vector.
-    entropies = Vector{Float64}(undef, length(units))
+    entropies = Vector{Float64}(undef, length(scored))
     parallel_map!(entropies) do i
-        interpolated_cross_entropy(units[i].tokens, global_model, caches[units[i].location.file], CACHE_LAMBDA)
+        interpolated_cross_entropy(scored[i].tokens, global_model, caches[scored[i].location.file], CACHE_LAMBDA)
     end
     sorted = sort(entropies)
     # Ranked on the cross-entropy itself, not on the centibit value the band reads, so this
@@ -214,8 +225,7 @@ function unnatural_in_language!(
     # rather than calling them. Rounding to centibits first would tie functions the model
     # separates, and the rank is what this metric is read by. Reconcile the two only if the
     # ranking key is ever unified.
-    for (u, h) in zip(units, entropies)
-        isempty(u.tokens) && continue
+    for (u, h) in zip(scored, entropies)
         value = round(Int, 100 * h)
         absolute = severity(value, band)
         pct = searchsortedlast(sorted, h) / length(sorted)
@@ -226,20 +236,23 @@ function unnatural_in_language!(
 end
 
 """
-    cluster_unnatural(files; band=$UNNATURAL_BAND, cut=0.95, min_tokens=$MIN_CORPUS_TOKENS) -> Vector{Finding}
+    cluster_unnatural(files; band=$UNNATURAL_BAND, cut=0.95, min_tokens=$MIN_CORPUS_TOKENS, min_unit_tokens=$MIN_UNIT_TOKENS) -> Vector{Finding}
 
 Functions whose token sequence is surprising under their language's corpus model,
 reported as `:unnatural`. Each carries both scores: the absolute cross-entropy `band`
 in centibits, and the corpus percentile, fired when either trips. A language with
-fewer than `min_tokens` tokens is skipped, its model too sparse to rank against.
+fewer than `min_tokens` tokens is skipped, its model too sparse to rank against. A
+function of fewer than `min_unit_tokens` tokens trains the model but is neither scored
+nor ranked, its mean surprise too noisy to read.
 """
 function cluster_unnatural(
         files::Vector{ParsedFile}; band::Tuple{Int, Int} = UNNATURAL_BAND, cut::Real = 0.95,
-        min_tokens::Integer = MIN_CORPUS_TOKENS
+        min_tokens::Integer = MIN_CORPUS_TOKENS, min_unit_tokens::Integer = MIN_UNIT_TOKENS
     )
     findings = Finding[]
     for units in values(naturalness_units(files))
-        unnatural_in_language!(findings, units, band, cut, min_tokens)
+        thin_corpus(units, min_tokens) && continue
+        unnatural_in_language!(findings, units, band, cut, min_unit_tokens)
     end
     sort!(findings; by = f -> (-something(f.value), first(f.locations).file, first(f.locations).line))
     return findings

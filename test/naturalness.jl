@@ -48,7 +48,7 @@ end
     src = string(common, "\n", odd, "\n")
     files = [Fixtures.parsedfile(:julia, src; file = "c.jl")]
 
-    findings = Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9)
+    findings = Dendro.cluster_unnatural(files; min_tokens = 0, min_unit_tokens = 0, cut = 0.9)
     @test !isempty(findings)
     # The surprising function sorts to the top by cross-entropy.
     @test first(findings).metric == :unnatural
@@ -63,10 +63,34 @@ end
     directives = Dendro.suppressions(i; file = "c.jl")
     files = [Fixtures.parsedfile(:julia, src; file = "c.jl", directives = directives)]
 
-    findings = Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9)
+    findings = Dendro.cluster_unnatural(files; min_tokens = 0, min_unit_tokens = 0, cut = 0.9)
     odd = only(f for f in findings if f.locations[1].unit == "odd")
     # Two scores travel with the finding, and the directive marks it.
     @test odd.value > 0
     @test odd.percentile !== nothing
     @test odd.suppressed
+end
+
+@testitem "cluster_unnatural leaves a function under the token floor unscored" setup = [Fixtures] tags = [:naturalness] begin
+    # A mean over a handful of tokens is sampling noise, so a one-line function reads as
+    # surprising on whichever few trigrams it happens to hold. The odd function is the
+    # one a ranking test sorts first, short enough to sit under the floor.
+    common = join(["g$i(x) = x + $i" for i in 1:12], "\n")
+    loop = "    while xs\n        try\n            break\n        catch\n        end\n    end\n"
+    short = string("function odd(xs)\n", loop, "end\n")
+    files = [Fixtures.parsedfile(:julia, string(common, "\n", short); file = "c.jl")]
+    @test isempty(Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9))
+
+    # The same structure at length is scored, and ranks alone: the short units around it
+    # are neither reported nor sampled into its percentile.
+    long = string("function odd(xs)\n", loop^4, "end\n")
+    files = [Fixtures.parsedfile(:julia, string(common, "\n", long); file = "c.jl")]
+    hit = only(Dendro.cluster_unnatural(files; min_tokens = 0, cut = 0.9))
+    @test hit.locations[1].unit == "odd"
+    @test hit.percentile == 1.0
+
+    i = files[1].index
+    lengths = Dict(Dendro.unit_name(u, i) => length(Dendro.token_stream(u, i)) for u in Dendro.units(i))
+    @test lengths["odd"] >= Dendro.MIN_UNIT_TOKENS
+    @test all(n < Dendro.MIN_UNIT_TOKENS for (name, n) in lengths if name != "odd")
 end

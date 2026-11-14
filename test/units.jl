@@ -74,6 +74,8 @@ end
     @test name(:javascript, "class C { foo() {} }\n") == "foo"
     @test name(:javascript, "const f = key => key.toLowerCase();\n") == "f"
     @test name(:typescript, "const f = (key: string) => key;\n") == "f"
+    @test name(:javascript, "const f = function (key) { return key; };\n") == "f"
+    @test name(:typescript, "const f = function (key: string) { return key; };\n") == "f"
 
     # An anonymous arrow callback carries no name; it stays labelled by the first
     # identifier the lexical scan reaches, its parameter.
