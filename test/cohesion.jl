@@ -107,6 +107,8 @@ end
     @test Fixtures.cohesive(:typescript, "import { type Row } from './rows';\n" * uses("Row"))
     @test Fixtures.cohesive(:typescript, "import type { Base as Row } from './rows';\n" * uses("Row"))
     @test Fixtures.cohesive(:typescript, "import type Row from './rows';\n" * uses("Row"))
+    # A type alias declared inside a function binds there, so a same-named one elsewhere is apart.
+    @test !Fixtures.cohesive(:typescript, "function f() { type Opts = { a: number }; const x: Opts = { a: 1 }; return x.a; }\nfunction g() { type Opts = { b: string }; const y: Opts = { b: '' }; return y.b; }\n")
     # An imported value is a shared utility, not a shared concern, so it links nothing.
     @test !Fixtures.cohesive(:typescript, "import { quoted } from './q';\nexport function f(t: string) { return quoted(t); }\nexport function g(t: string) { return quoted(t) + 1; }\n")
 end

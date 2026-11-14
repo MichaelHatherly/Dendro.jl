@@ -1,6 +1,6 @@
 ; TypeScript lexical scopes. Feeds Dendro's binding resolver: @scope marks a region,
 ; @definition.<kind> a name-introducing identifier, @reference a name use. Function,
-; method, class, and interface names hoist to the enclosing scope so a sibling
+; method, class, interface, and type alias names hoist to the enclosing scope so a sibling
 ; reference resolves; a class body or object literal is a scope so its methods hoist
 ; into it, where `this.name` finds them, and never reach file scope as definitions.
 ; A field binds in the class body too, so methods sharing `this.field` link. Other
@@ -14,6 +14,7 @@
 (class_body) @scope
 (object) @scope
 (interface_declaration) @scope
+(type_alias_declaration) @scope
 
 ; --- Function and method names (hoisted) ---
 (function_declaration name: (identifier) @definition.function)
