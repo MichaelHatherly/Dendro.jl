@@ -326,6 +326,18 @@
 # constructor on `ModuleRegion`, as `ScopeEntry` carries, then removed all four of its
 # field conversions.
 #
+# The per-function token floor on `:unnatural` raised sound from 1398 to 1400, opt
+# unchanged. One report is the `min_unit_tokens` keyword's `getfield` lowering, the kind
+# every `cluster_*` keyword adds. The other comes from moving the corpus-token check out
+# of `unnatural_in_language!`, which kept that function at five parameters: inline in
+# `cluster_unnatural`'s keyword body, sound mode analysed it twice (1401), and the
+# `thin_corpus` helper brings that to one extra non-boolean condition. A `::Bool` return
+# annotation on the helper traded that report for a `convert` and a `typeassert`, and
+# was reverted. The `@arm`/`@multiway` captures and `bound_callables` added none.
+#
+# Filing references to a TypeScript type import in their own `imports` map lowered sound
+# from 1400 to 1398, opt unchanged.
+#
 # The count is stable under the order this file runs, basic mode then sound. Repeated runs
 # over an identical tree return 1379 every time, and dumping every report gives a
 # byte-identical file each run. An earlier note here recorded about one report of

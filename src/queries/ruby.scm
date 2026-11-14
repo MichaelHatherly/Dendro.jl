@@ -17,6 +17,11 @@
 [(if) (elsif) (unless) (while) (until) (for) (when) (rescue)
  (conditional)] @decision
 
+; Cognitive complexity charges a multi-way branch once, at its @multiway construct,
+; and nothing at the @arm cases cyclomatic counts as @decision paths.
+(when) @arm
+(case) @multiway
+
 (elsif) @continuation
 
 [(if) (unless) (while) (until) (for) (case) (begin)] @nesting

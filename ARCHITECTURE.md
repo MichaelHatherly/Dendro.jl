@@ -292,7 +292,15 @@ Measurement:
   `containing_unit` finds the innermost unit spanning a byte range. The undirected one is
   `binding_groups`, which reads `index.bindings` into the groups of local units that share
   a definition, dropping a binding referenced by more than `COHESION_UBIQUITY` of the
-  file's units, and pairs each nested callable with the one enclosing it; the corpus graph
+  file's units, and pairs each nested callable with the one enclosing it. A definition's
+  owner is the unit it names (`bound_callables`, read off the binder's `@def_name`, since
+  `const f = () => ...` holds `f` outside the arrow's span) or else the unit spanning it,
+  and both edges read it that way. A top-level `@binder` such as `const SHAPE = {...}` is
+  no unit, so `binder_contents` gives the callables its value holds, and the owners of
+  what it references, to the units that read its name. A TypeScript type import is an
+  `@definition.import`; `resolve_bindings!` files a reference to it in `index.imports`
+  rather than `index.bindings`, which `binding_groups` alone reads, and
+  `unbound_references` still reports it as cross-file. The corpus graph
   joins each group as a clique into `within_edges`, and
   cohesion and scattering read those. The directed one is `binding_reference_edges`, one
   edge per reference from the unit that named it to the unit holding the definition,
@@ -453,7 +461,12 @@ Reporting:
   idiom (Tu et al.), with `cross_entropy` the global-only case at `λ = 1`;
   `cluster_unnatural` emits an `:unnatural` finding per function, carrying both an
   absolute cross-entropy band and the corpus percentile, skipping a language whose
-  corpus is below `MIN_CORPUS_TOKENS`. A surprising function
+  corpus is below `MIN_CORPUS_TOKENS`. A function under `MIN_UNIT_TOKENS` trains the
+  model and is neither scored nor ranked. The floor says when a function's own score
+  exists, so it moves neither standard: the band stays a fixed opinion and the
+  percentile still ranks against the corpus. A band read relative to the corpus
+  vocabulary was the alternative, and would derive the standard from the corpus while
+  leaving the noisy one-liners at the top of the percentile. A surprising function
   reads as unidiomatic, which correlates with bugs. Structure only, no symbol
   resolution; within one language. Included before `analyze.jl`, which calls it.
 - `linkage.jl` is the registry side of cross-file resolution: how each language lets one
@@ -723,8 +736,8 @@ in its query, not here.
 
 `QueryIndex` (`query_index.jl`). One tree's identified nodes: the `functions` units
 and `function_ids` (the no-descend boundary), plus one `Concept` per measured
-construct (decision points, short-circuit operators, nesting, parameters, parameter
-names, bodies,
+construct (decision points, multi-way branches and their arms, short-circuit operators,
+nesting, parameters, parameter names, bodies,
 catches, broad catches, comments, names, trivial statements, returns, finally clauses, calls,
 callee names,
 binary expressions, binary operators, conditionals, terminals, short-form

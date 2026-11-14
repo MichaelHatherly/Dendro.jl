@@ -268,6 +268,35 @@ end
     @test Dendro.cognitive_complexity(un, ni) == 4  # if(1) + elseif(1) + for(2)
 end
 
+@testitem "cognitive_complexity scores a switch once, not per case" setup = [Fixtures] tags = [:metrics] begin
+    # SonarSource adds one for the switch and nothing per case, and the switch nests what
+    # its cases hold. Each fixture is a three-way switch whose second case holds an `if`:
+    # switch(1) + if(1 + 1 nesting) = 3. Cyclomatic still counts each case as a path.
+    cases = [
+        (:bash, "f() {\n  case \"\$1\" in\n    a) echo a ;;\n    b) if [ -n \"\$2\" ]; then echo b; fi ;;\n    *) echo c ;;\n  esac\n}\n", 5),
+        (:c, "int f(int x, int y){ switch(x){ case 1: a(); break; case 2: if (y) { b(); } break; default: c(); } return 0; }\n", 5),
+        (:cpp, "int f(int x, int y){ switch(x){ case 1: a(); break; case 2: if (y) { b(); } break; default: c(); } return 0; }\n", 5),
+        (:go, "func f(x int, y bool) {\n\tswitch x {\n\tcase 1:\n\t\ta()\n\tcase 2:\n\t\tif y {\n\t\t\tb()\n\t\t}\n\tdefault:\n\t\tc()\n\t}\n}\n", 4),
+        (:java, "class C { void f(int x, boolean y){ switch(x){ case 1: a(); break; case 2: if (y) { b(); } break; default: c(); } } }\n", 5),
+        (:javascript, "function f(x, y){ switch(x){ case 1: a(); break; case 2: if (y) { b(); } break; default: c(); } }\n", 4),
+        (:php, "<?php\nfunction f(\$x, \$y){ switch(\$x){ case 1: a(); break; case 2: if (\$y) { b(); } break; default: c(); } }\n", 4),
+        (:ruby, "def f(x, y)\n  case x\n  when 1\n    a\n  when 2\n    if y\n      b\n    end\n  else\n    c\n  end\nend\n", 4),
+        (:rust, "fn f(x: i32, y: bool){ match x { 1 => a(), 2 => if y { b() }, _ => c() } }\n", 5),
+        (:typescript, "function f(x: number, y: boolean){ switch(x){ case 1: a(); break; case 2: if (y) { b(); } break; default: c(); } }\n", 4),
+    ]
+    @testset "$lang" for (lang, src, cyclomatic) in cases
+        i = Fixtures.idx(lang, src)
+        u = only(Dendro.units(i))
+        @test Dendro.cognitive_complexity(u, i) == 3
+        @test Dendro.cyclomatic(u, i) == cyclomatic
+    end
+
+    # A switch is itself a decision that pays the nesting it sits under: if(1) + switch(2).
+    nested = "function f(x: number, y: boolean){ if (y) { switch(x){ case 1: a(); break; case 2: b(); break; } } }\n"
+    ni = Fixtures.idx(:typescript, nested)
+    @test Dendro.cognitive_complexity(only(Dendro.units(ni)), ni) == 3
+end
+
 @testitem "npath (julia)" setup = [Fixtures] tags = [:metrics] begin
     # A straight-line function has one path.
     simple = "function f(x)\n    x + 1\nend\n"

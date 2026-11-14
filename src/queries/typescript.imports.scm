@@ -17,6 +17,7 @@
 (export_statement declaration: (function_declaration name: (identifier) @export))
 (export_statement declaration: (class_declaration name: (type_identifier) @export))
 (export_statement declaration: (interface_declaration name: (type_identifier) @export))
+(export_statement declaration: (type_alias_declaration name: (type_identifier) @export))
 (export_statement declaration: (lexical_declaration (variable_declarator name: (identifier) @export)))
 (export_statement (export_clause (export_specifier name: (identifier) @export)))
 

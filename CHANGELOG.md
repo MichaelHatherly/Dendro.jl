@@ -84,6 +84,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `cognitive_complexity` charges a switch once, as SonarSource's Cognitive Complexity does,
+  and nothing per case. Each case was a decision paying its nesting, so a flat five-case
+  switch cost ten and a short dispatch function crossed the warn band. The cases still
+  count as paths in `cyclomatic`. Two captures carry it, `@arm` and `@multiway`, tagged in
+  every language with a multi-way branch.
+- `:unnatural` no longer scores a function of fewer than 30 tokens. Its score is the mean
+  bits per token, so a one-liner's rides on a few trigrams. That noise alone reached the
+  warn band: over ten corpora in five languages, 26 of the 28 functions at or above it
+  were that short. Such a function still trains the model, and is left out of the
+  percentile as well as the band. Neither standard moves. Reading the band against the
+  corpus vocabulary instead would have derived it from the corpus.
+- `:low_cohesion` links a TypeScript or JavaScript callable bound to a name to its callers.
+  In `const f = () => ...` the name sits in the declarator beside the arrow, outside the
+  unit's span, so the definition had no owner and `f` never joined the units calling it.
+  The binder's name now belongs to the unit it names, in the within-file reference edges
+  too. A function expression bound the same way (`const f = function () {}`) is named
+  after its binder, where it took the name of its first parameter.
+- `:low_cohesion` links a TypeScript or JavaScript value's callables to the units that read
+  its name. In `const SHAPE = { a: isNames, b: v => ... }` the value is no unit, so the
+  arrow, `isNames` and the function reading `SHAPE` shared no binding, and a file holding
+  a table of checks split into one concern per entry. A new `@binder` capture names the
+  declaration, and what its value holds now joins the units that read the name.
+- `:low_cohesion` links TypeScript units through a shared type alias or type import. The
+  scopes query bound `interface` names alone, so four functions taking one imported type
+  shared no binding and the file split into four concerns. A `type X = ...` alias is now
+  a definition, exported like an interface, and a type-only import (`import type { X }`,
+  `import { type X }`) binds its name for cohesion while each use stays a cross-file
+  reference. A value import still links nothing.
 - `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
   Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
   decorator, a Rust attribute. A framework calls these by registration, so nothing in the
