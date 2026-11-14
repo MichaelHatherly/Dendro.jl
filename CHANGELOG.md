@@ -112,6 +112,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a definition, exported like an interface, and a type-only import (`import type { X }`,
   `import { type X }`) binds its name for cohesion while each use stays a cross-file
   reference. A value import still links nothing.
+- An exported TypeScript type alias is a corpus symbol, as an interface is. A reference
+  to one from another file now resolves, so it reaches `:unreferenced` reachability and
+  adds weight to the file and module graphs that `:back_edge`, `:hub`, `:misplaced`, and
+  `:scattered` read.
 - `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
   Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
   decorator, a Rust attribute. A framework calls these by registration, so nothing in the
