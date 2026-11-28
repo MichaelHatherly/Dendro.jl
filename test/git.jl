@@ -152,6 +152,32 @@ end
     @test !haskey(got, "src/untracked.jl")
 end
 
+# A moved file contributes only the lines its move changed, under its new path. Without
+# rename detection the diff reads a move as a deletion and an addition, and every function
+# in a moved file counts as touched. One rename is committed and one only staged, so both
+# sides of the comparison against the working tree are covered.
+@testitem "changed_ranges reads a renamed file's edits, not the whole file" tags = [:git] setup = [Fixtures] begin
+    root, src = Fixtures.gitrepo()
+    body = join(("f$(i)() = $(i)" for i in 1:20), "\n") * "\n"
+    write(joinpath(src, "committed.jl"), body)
+    write(joinpath(src, "staged.jl"), body)
+    Fixtures.commit!(root, "init")
+    base = readchomp(`git -C $root rev-parse HEAD`)
+
+    mkpath(joinpath(src, "moved"))
+    run(pipeline(`git -C $root mv src/committed.jl src/moved/committed.jl`; stdout = devnull, stderr = devnull))
+    write(joinpath(src, "moved", "committed.jl"), replace(body, "f3() = 3" => "f3() = 30"))
+    Fixtures.commit!(root, "move one")
+    run(pipeline(`git -C $root mv src/staged.jl src/moved/staged.jl`; stdout = devnull, stderr = devnull))
+    write(joinpath(src, "moved", "staged.jl"), replace(body, "f7() = 7" => "f7() = 70"))
+    run(pipeline(`git -C $root add src/moved/staged.jl`; stdout = devnull, stderr = devnull))
+
+    got = withenv("PATH" => "/nonexistent") do
+        Dendro.changed_ranges(realpath(root), base)
+    end
+    @test got == Dict("src/moved/committed.jl" => [3:3], "src/moved/staged.jl" => [7:7])
+end
+
 # A working tree matching the ref has nothing to report, and an empty result must be an
 # empty Dict rather than an error or a phantom entry.
 @testitem "changed_ranges is empty for an unchanged tree" tags = [:git] setup = [Fixtures] begin

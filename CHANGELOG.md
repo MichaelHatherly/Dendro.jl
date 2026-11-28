@@ -119,6 +119,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to one from another file now resolves, so it reaches `:unreferenced` reachability and
   adds weight to the file and module graphs that `:back_edge`, `:hub`, `:misplaced`, and
   `:scattered` read.
+- `base` detects renames, as `git diff` does by default. A moved file contributes only the
+  lines its move changed. Before, the diff read a move as a deletion and an addition, so
+  every function in a moved file counted as touched, and a branch that only moved code
+  reported every finding those files already carried.
 - `:unreferenced` roots a definition a decorator, annotation, or attribute registers: a
   Python decorator, a Java annotation, a PHP attribute, a TypeScript or JavaScript class
   decorator, a Rust attribute. A framework calls these by registration, so nothing in the
