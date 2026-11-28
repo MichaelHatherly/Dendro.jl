@@ -95,7 +95,8 @@ function diff_ranges(diff::LibGit2.GitDiff)
 end
 
 # libgit2's `git_diff_find_options`, which the stdlib does not wrap. Zeroed thresholds and
-# limit take libgit2's defaults, and a null `metric` its own similarity measure.
+# limit take libgit2's defaults, and a null `metric` its own similarity measure. The one
+# typed constructor replaces the default, whose untyped fields JET's sound mode reports.
 struct DiffFindOptions
     version::Cuint
     flags::UInt32
@@ -105,6 +106,7 @@ struct DiffFindOptions
     break_rewrite_threshold::UInt16
     rename_limit::Csize_t
     metric::Ptr{Cvoid}
+    DiffFindOptions(flags::UInt32) = new(1, flags, 0, 0, 0, 0, 0, C_NULL)
 end
 
 const GIT_DIFF_FIND_RENAMES = UInt32(1)
@@ -112,7 +114,7 @@ const GIT_DIFF_FIND_RENAMES = UInt32(1)
 # Pairs each deleted file with an added one it closely resembles, as `git diff` does by
 # default, so a moved file's patch holds only the lines the move changed.
 function find_renames!(diff::LibGit2.GitDiff)
-    opts = Ref(DiffFindOptions(1, GIT_DIFF_FIND_RENAMES, 0, 0, 0, 0, 0, C_NULL))
+    opts = Ref(DiffFindOptions(GIT_DIFF_FIND_RENAMES))
     ok = ccall(
         (:git_diff_find_similar, LibGit2_jll.libgit2), Cint,
         (Ptr{Cvoid}, Ref{DiffFindOptions}), diff, opts
