@@ -94,13 +94,41 @@ function diff_ranges(diff::LibGit2.GitDiff)
     return out
 end
 
+# libgit2's `git_diff_find_options`, which the stdlib does not wrap. Zeroed thresholds and
+# limit take libgit2's defaults, and a null `metric` its own similarity measure.
+struct DiffFindOptions
+    version::Cuint
+    flags::UInt32
+    rename_threshold::UInt16
+    rename_from_rewrite_threshold::UInt16
+    copy_threshold::UInt16
+    break_rewrite_threshold::UInt16
+    rename_limit::Csize_t
+    metric::Ptr{Cvoid}
+end
+
+const GIT_DIFF_FIND_RENAMES = UInt32(1)
+
+# Pairs each deleted file with an added one it closely resembles, as `git diff` does by
+# default, so a moved file's patch holds only the lines the move changed.
+function find_renames!(diff::LibGit2.GitDiff)
+    opts = Ref(DiffFindOptions(1, GIT_DIFF_FIND_RENAMES, 0, 0, 0, 0, 0, C_NULL))
+    ok = ccall(
+        (:git_diff_find_similar, LibGit2_jll.libgit2), Cint,
+        (Ptr{Cvoid}, Ref{DiffFindOptions}), diff, opts
+    )
+    ok == 0 || throw(LibGit2.GitError(ok))
+    return diff
+end
+
 """
     changed_ranges(root, base) -> Dict{String,Vector{UnitRange{Int}}}
 
 The line ranges each file added or changed between `base` and the working tree, keyed by
 the path relative to `root`. The same question `git diff <base>` answers: the comparison
 is against the working tree with the index folded in, not against the index alone, so an
-uncommitted edit is in scope the way a review reads it.
+uncommitted edit is in scope the way a review reads it. A renamed file contributes only
+the lines its rename changed, as `git diff` detects renames by default.
 """
 function changed_ranges(root::AbstractString, base)
     repo = LibGit2.GitRepoExt(root)
@@ -108,7 +136,7 @@ function changed_ranges(root::AbstractString, base)
         tree = base_tree(repo, base, "base")
         diff = LibGit2.diff_tree(repo, tree)
         try
-            return diff_ranges(diff)
+            return diff_ranges(find_renames!(diff))
         finally
             close(diff)
             close(tree)
